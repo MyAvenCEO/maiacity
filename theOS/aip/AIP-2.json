@@ -21,6 +21,21 @@
     "Change: tell me what",
     "Send it back"
    ]
+  },
+  {
+   "q": "Gate B for AIP-2: try avenSANDBOX as you would use it. Ship, change, or send back?",
+   "try": [
+    "1. In the cloud environment's settings (claude.ai/code, this environment, Setup script), replace the script with the contents of theOS/sandbox/environment-setup.sh. It only finds theOS/sandbox/cloud-setup.sh, which pulls the box; it never fails a session and stops after 600 s. The previous script is kept in theOS/sandbox/environment-setup.previous.sh: pasting it back is the undo.",
+    "2. This needs the work on main first (the snapshot clones main): the goal pull request you ask avenMAIA for.",
+    "3. Start a new cloud session and run: theOS/sandbox/run.sh rustc --version. It should answer at once, with no pull (the box was warmed before the snapshot).",
+    "4. On your Mac, with OrbStack running, in a checkout of the same commit: theOS/sandbox/run.sh uname -m (it should say aarch64), then theOS/sandbox/test.sh (it should end with \"avenSANDBOX's test: green\").",
+    "5. After AIP-1's checkpoint 1 is in (checkpoint 4): theOS/sandbox/run.sh with theOS's check command, on your Mac and in the session; the same result as the image workflow's last step on the same commit."
+   ],
+   "options": [
+    "Ship",
+    "Change: tell me what",
+    "Send it back"
+   ]
   }
  ],
  "problem": {
@@ -565,6 +580,66 @@
    "writes": [
     "aip/AIP-2/c2-review"
    ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c4's test kept as a file, theOS/sandbox/test.sh: the environment's script exits 0 with a planted failure, a planted hang (cut at 3 s) and no setup file, and finds cloud-setup.sh one folder down; then run.sh runs a command in the box with theOS/ at /work. Green at 10:06 against theos-7f2a978d8e9df74f; before that tag was published it failed as it should (run.sh: not published yet).",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 2: c2-review (2 Major, 5 Nit). Not clean: round 1's fixes hold; both Majors are runs not yet on record.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, round 1, the diff of its fixes and the files",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Round 2 answered: each platform's build is smoked by digest before the join tags it (a failing box is never tagged), the platform is asserted, tag.sh is in the push paths and the hash, the concurrency comment says what it does.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "erratum",
+   "text": "The event 'Checkpoint 2's Review gate, round 1' carries 10:05 by hand; the round ended at about 10:03 (its answer is stamped 10:04). Hand-typed times are a lesson of this run.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2 at round 1's inputs, run 41295874265 (push of 649608d): theos-7f2a978d8e9df74f built for amd64 and arm64 (layers from the cache, about 5 s each; the base pinned by digest is the same image), joined, and smoked on both platforms, each on its own runner: every tool answered. latest skipped, as off main it should.",
+   "how": "AIP-2's thread (D-44), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:09Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2's 'same inputs build nothing', run 41296094936 (workflow_dispatch on the same commit 649608d): the plan found theos-7f2a978d8e9df74f built for both platforms and set complete; both builds and the join were skipped; the smoke still ran and passed on both platforms.",
+   "how": "AIP-2's thread (D-44), read off the run's jobs",
+   "writes": [],
    "reads": []
   }
  ],

@@ -78,6 +78,71 @@
      "note": "A comment says why: the image holds the browser, not the package."
     }
    ]
+  },
+  {
+   "round": 2,
+   "commit": "649608d55",
+   "reviewed": "round 1's fixes (git diff 432549947 649608d55 -- .github theOS/sandbox) and the files at 649608d55",
+   "prompt": "You are a \"goldfish\" critic: a fresh reader with no history of this project, doing avenCEO's Review gate on one checkpoint. You are strictly read-only: do not edit, write or create any file, do not run git commands that change anything, do not push or call GitHub.\n\nThe project is theOS, in /home/user/maiacity/theOS/. Code outside theOS/ is legacy, except what this intent moves. theOS keeps one JSON doc per thing; a path like \"aip/AIP-2\" is the file theOS/aip/AIP-2.json.\n\nRead the record /home/user/maiacity/theOS/aip/AIP-2.json (focus: claim c2 and checkpoint 2) and avenCEO's Review gate /home/user/maiacity/theOS/avenCEO/gates/review.json. Round 1 of this review is /home/user/maiacity/theOS/aip/AIP-2/c2-review.json, with an answer to every finding: those findings are settled; raise one again only if the fix did not actually happen or is wrong. Then review checkpoint 2's work as it stands at commit 649608d55:\n- round 1's fixes: <scratchpad>/c2-round2.diff\n- the files: /home/user/maiacity/theOS/sandbox/box/Dockerfile, /home/user/maiacity/.github/workflows/avensandbox-image.yml, /home/user/maiacity/theOS/sandbox/tag.sh, /home/user/maiacity/theOS/sandbox/run.sh.\n\nQuestions: Do the fixes work, and did any fix cause a new problem (job conditions and needs, matrix, outputs, the tag script run from the workflow's checkout, run.sh)? Does the work keep c2's promise (built only from theOS/sandbox/box, amd64 and arm64, tagged by the hash of that folder and the workflow, same inputs never build twice, every tool working on both platforms)? Security for a public repository?\n\nFor each finding give: Severity (Blocker | Major | Nit), kind (one of: bug, wrong fact, unclear, contradiction, YAGNI, security, missing check), the affected file and line, the reasoning, and a concrete fix. Give evidence a reader can verify. At most 500 words, plain text, no praise, lead with what is wrong. If there is no Blocker or Major, say so plainly.",
+   "result": "2 Major, 5 Nit: not clean. The fixes of round 1 hold; both Majors are runs not yet on record.",
+   "findings": [
+    {
+     "sev": "Major",
+     "kind": "missing check",
+     "scope": "c2 on both platforms at the current inputs",
+     "text": "Round 1's arm64 smoke and the new latest gating had not run on GitHub; the only build on record was for the old tag, smoked on amd64 only.",
+     "answer": "fix",
+     "note": "Run 41295874265 (push of 649608d) built theos-7f2a978d8e9df74f; round 3's inputs are built and smoked on both platforms by a new run, recorded in the events with its id."
+    },
+    {
+     "sev": "Major",
+     "kind": "missing check",
+     "scope": "same inputs build nothing",
+     "text": "Round 1's answer (a workflow_dispatch on the same commit) had not happened yet.",
+     "answer": "fix",
+     "note": "Dispatched on the same commit after the push's run finished; its run id, the plan's 'has: amd64,arm64' and the skipped builds recorded in the events."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "tag.sh outside the hash",
+     "text": "The workflow and run.sh take the tag from tag.sh, but a change to it neither triggers the workflow nor changes the tag.",
+     "answer": "fix",
+     "note": "tag.sh is in the push paths and in the hash."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "a tag exists before its smoke",
+     "text": "publish tagged the box before smoke, so a box that failed smoke stayed pullable and was never rebuilt.",
+     "answer": "fix",
+     "note": "The smoke step moved into each build job: it runs the platform's image by digest before the digest is kept, so a failing box is never joined and never tagged; the separate smoke job is gone, and latest waits for publish (or the box built and smoked before)."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "uname -m printed, not checked",
+     "text": "The platform was printed, not asserted.",
+     "answer": "fix",
+     "note": "The smoke step fails unless uname -m is x86_64 on amd64 and aarch64 on arm64."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "concurrency per ref",
+     "text": "Two branches pushing the same new inputs at once both build them.",
+     "answer": "fix",
+     "note": "Said in a comment above concurrency: the same image twice, harmless; one after another, the second builds nothing."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "Dockerfile header line length",
+     "text": "An edited header line ran to about 180 characters.",
+     "answer": "fix",
+     "note": "The header is re-wrapped to the file's width."
+    }
+   ]
   }
  ]
 }

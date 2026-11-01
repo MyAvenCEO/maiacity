@@ -1,9 +1,9 @@
 # avenSANDBOX's image, owned by theOS (theOS/aip/AIP-2.json): every tool theOS's checks are built and run with
 # (theOS/sandbox/box/Dockerfile). Built for amd64 (cloud sessions, runners) and arm64 (OrbStack on Apple Silicon), each
-# on a runner of its own kind, and joined into one image. Tagged theos-<hash of theOS/sandbox/box and this file>, so the
-# same inputs never build twice and every checkout runs exactly its own box (theOS/sandbox/tag.sh). A smoke step on each
-# platform proves every tool works inside it, and only then is main's box also "latest". Actions are pinned by commit.
-# Public, so it pulls without a token.
+# on a runner of its own kind, and joined into one image. Tagged theos-<hash of theOS/sandbox/box, this file and
+# theOS/sandbox/tag.sh>, so the same inputs never build twice and every checkout runs exactly its own box. Each
+# platform's build is smoked by digest (every tool works inside it) before the join gives it its tag; main's box is
+# also "latest". Actions are pinned by commit. Public, so it pulls without a token.
 name: avenSANDBOX image
 
 on:
@@ -11,10 +11,13 @@ on:
     paths:
       - theOS/sandbox/box/**
       - .github/workflows/avensandbox-image.yml
+      - theOS/sandbox/tag.sh
   workflow_dispatch:
 
 permissions: {}
 
+# Per ref: two branches pushing the same new inputs at once may both build them (the same image, twice); one after
+# another, the second finds it built and builds nothing.
 concurrency:
   group: avensandbox-image-${{ github.ref }}
   cancel-in-progress: true
@@ -39,7 +42,7 @@ jobs:
           image=$(bash theOS/sandbox/tag.sh)
           echo "name=${image%:*}" >> "$GITHUB_OUTPUT"
           echo "image=$image" >> "$GITHUB_OUTPUT"
-          echo "avenSANDBOX's tag: ${image##*:} (theOS/sandbox/tag.sh: theOS/sandbox/box and this workflow)"
+          echo "avenSANDBOX's tag: ${image##*:} (theOS/sandbox/tag.sh: theOS/sandbox/box, this workflow and tag.sh)"
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
@@ -94,6 +97,25 @@ jobs:
           # The layers' cache lives in the registry beside the image, per platform
           cache-from: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }},mode=max
+      # The box is smoked on its own platform by digest, before any tag names it: a box that fails here is never
+      # joined, so its tag never exists and the next run builds it again. The playwright package comes from npm at
+      # test time (the image holds the browser, not the package): it proves the image's own Chromium launches.
+      - name: Every tool works inside it (${{ matrix.arch }})
+        env:
+          IMAGE: ${{ needs.plan.outputs.name }}@${{ steps.push.outputs.digest }}
+          WANT: ${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}
+        run: |
+          docker run --rm -e WANT "$IMAGE" bash -euc '
+            [ "$(uname -m)" = "$WANT" ] && echo "platform $WANT"
+            rustc --version; cargo --version; cargo clippy --version; rustfmt --version
+            rustup target list --installed | grep -x wasm32-unknown-unknown
+            wasm-bindgen --version; bun --version; node --version; lean --version; lake --version
+            versitygw --help > /dev/null && echo "versitygw ok"
+            clang --version | head -n 1; llvm-ar --version | head -n 1
+            cargo "+$AVEN_NIGHTLY" --version; cargo fuzz --version
+            cd /tmp && npm install --no-save --silent playwright@1.64.1 > /dev/null
+            node -e "require(\"playwright\").chromium.launch().then(async (b) => { console.log(\"chromium\", b.version()); await b.close(); })"
+          '
       - name: Keep the digest
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
@@ -132,49 +154,14 @@ jobs:
           docker buildx imagetools create --tag "$IMAGE" $(printf "$NAME@sha256:%s " *)
           docker buildx imagetools inspect "$IMAGE"
 
-  # The box is ready when it was built for both platforms already, or the build and its join just succeeded; a failed
-  # build skips the join, and that skip must not read as "already built".
-  smoke:
-    name: Every tool works inside it (${{ matrix.arch }})
-    needs: [plan, publish]
-    if: >-
-      !cancelled() && needs.plan.result == 'success'
-      && (needs.plan.outputs.complete == 'true' || needs.publish.result == 'success')
-    strategy:
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - name: Each tool answers, wasm32 is installed, Chromium launches
-        env:
-          IMAGE: ${{ needs.plan.outputs.image }}
-          ARCH: ${{ matrix.arch }}
-        # The playwright package comes from npm at test time (the image holds the browser, not the package): it proves
-        # the image's own Chromium launches under the pinned version theOS's lockfile uses.
-        run: |
-          docker run --rm --platform "linux/$ARCH" "$IMAGE" bash -euc '
-            uname -m
-            rustc --version; cargo --version; cargo clippy --version; rustfmt --version
-            rustup target list --installed | grep -x wasm32-unknown-unknown
-            wasm-bindgen --version; bun --version; node --version; lean --version; lake --version
-            versitygw --help > /dev/null && echo "versitygw ok"
-            clang --version | head -n 1; llvm-ar --version | head -n 1
-            cargo "+$AVEN_NIGHTLY" --version; cargo fuzz --version
-            cd /tmp && npm install --no-save --silent playwright@1.64.1 > /dev/null
-            node -e "require(\"playwright\").chromium.launch().then(async (b) => { console.log(\"chromium\", b.version()); await b.close(); })"
-          '
-
   latest:
     name: main's box is latest
-    needs: [plan, smoke]
-    if: "!cancelled() && github.ref == 'refs/heads/main' && needs.smoke.result == 'success'"
+    needs: [plan, publish]
+    # Built and smoked before (complete), or just built, smoked and joined; a failed build skips publish, and that skip
+    # must not read as "already built".
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' && needs.plan.result == 'success'
+      && (needs.plan.outputs.complete == 'true' || needs.publish.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

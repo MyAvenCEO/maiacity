@@ -1,8 +1,10 @@
 # avenSANDBOX's image, owned by theOS (theOS/aip/AIP-2.json, D-24, D-33): every tool theOS's checks are built and run
-# with, never our code. The base images are pinned by digest and every tool by version; the apt packages (the
-# base's Ubuntu noble) and the rustup and elan installers are not, so a rebuild may take their newer patches. Its build context is this folder alone, and its tag is the hash of this
-# folder and of .github/workflows/avensandbox-image.yml, which builds it on every push that changes either; theOS/sandbox/
-# run.sh pulls it and runs a command inside it with theOS/ mounted, the same in a cloud session, on a runner and on a Mac.
+# with, never our code. The base images are pinned by digest and every tool by version; the apt packages (the base's
+# Ubuntu noble) and the rustup and elan installers are not, so a rebuild may take their newer patches. Its build context
+# is this folder alone, and its tag (theOS/sandbox/tag.sh) is the hash of this folder, the image workflow
+# (.github/workflows/avensandbox-image.yml, which builds it on every push that changes them) and tag.sh itself;
+# theOS/sandbox/run.sh pulls it and runs a command inside it with theOS/ mounted, the same in a cloud session, on a
+# runner and on a Mac.
 # avenDB's own step (compiling its third-party crates into the image) stayed behind: it comes back for theOS's own
 # crates when theOS has a Cargo workspace.
 
