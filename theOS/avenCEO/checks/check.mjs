@@ -28,19 +28,23 @@ function args(argv) {
   return o;
 }
 
-// Playwright: theOS's own (theOS/node_modules, pinned in theOS/package.json, as inside avenSANDBOX's image), else the
-// session's global one. Never the legacy repository's node_modules above theOS/.
-function playwright(root) {
+// Playwright: the check's own theOS's (theOS/node_modules, pinned in theOS/package.json, as inside avenSANDBOX's image),
+// else the session's global one; never the legacy repository's node_modules above theOS/, nor the replayed commit's.
+function playwright(root = resolve(HERE, '../..')) {
   const req = createRequire(join(root, 'package.json'));
   const own = join(root, 'node_modules/playwright/package.json');
   const pkg = existsSync(own) ? own : req.resolve('playwright/package.json', { paths: Module.globalPaths });
-  return { pw: req(dirname(pkg)), version: JSON.parse(readFileSync(pkg, 'utf8')).version };
+  const version = JSON.parse(readFileSync(pkg, 'utf8')).version;
+  const pinned = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).devDependencies?.playwright;
+  if (pinned && pinned !== version) console.error(`warning: Playwright ${version}, not the pinned ${pinned}: another Chromium can lay pages out differently`);
+  return { pw: req(dirname(pkg)), version };
 }
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.woff2': 'font/woff2' };
 function serve(root) {
   const server = createServer((req, res) => {
-    const path = normalize(join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname)));
+    let path;
+    try { path = normalize(join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname))); } catch { res.writeHead(400).end(); return; }
     let file = path.startsWith(root + sep) || path === root ? path : null;
     if (file && existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
     if (!file || !existsSync(file)) { res.writeHead(404).end(); return; }
@@ -145,10 +149,13 @@ async function crawl(browser, size, start, origin) {
   context.on('page', async (p) => { if (await p.opener()) await p.close(); }); // a link or button that opens a new tab
   const states = [], keys = new Map(), pressed = new Set(), queue = [], loaded = new Set();
   const doc = (url) => url.split('#')[0];
-  const found = async (page, recipe) => {
+  // A new state is checked, kept and queued to be opened; with layoutOnly, a known one is checked again and kept only
+  // when it fails, never opened (its key already is).
+  const found = async (page, recipe, layoutOnly = false) => {
     const key = await keyOf(page);
-    if (keys.has(key) || !page.url().startsWith(origin)) return key;
+    if ((keys.has(key) && !layoutOnly) || !page.url().startsWith(origin)) return key;
     const state = { size: `${size.width}x${size.height}`, url: page.url().slice(origin.length + 1), recipe, key, fails: await page.evaluate(docsCheck) };
+    if (layoutOnly) { if (state.fails.length) states.push({ ...state, layoutOnly }); return key; }
     keys.set(key, state);
     states.push(state);
     queue.push(state);
@@ -190,7 +197,11 @@ async function crawl(browser, size, start, origin) {
           if (!(await press(page, b))) continue;
           const route = page.url() !== here;
           if (route) pressed.add(pageSig);
-          moved = (await found(page, route ? { url: page.url(), clicks: [] } : { ...state.recipe, clicks: [...state.recipe.clicks, b] })) !== state.key;
+          const recipe = route ? { url: page.url(), clicks: [] } : { ...state.recipe, clicks: [...state.recipe.clicks, b] };
+          const key = await found(page, recipe);
+          // A button can change only the layout (the same text): that view is checked too, and kept when it fails.
+          if (key === state.key) await found(page, recipe, true);
+          moved = key !== state.key;
         }
         for (const l of links) await visit(page, l);
       } finally { busy--; }
@@ -205,7 +216,7 @@ async function crawl(browser, size, start, origin) {
 
 async function main() {
   const o = args(process.argv.slice(2));
-  const { pw, version } = playwright(o.root);
+  const { pw, version } = playwright();
   const server = await serve(o.root);
   const origin = `http://127.0.0.1:${server.address().port}`;
   const browser = await pw.chromium.launch();
@@ -213,7 +224,7 @@ async function main() {
   try {
     const states = (await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${o.entry}`, origin)))).flat();
     const failed = states.filter((s) => s.fails.length);
-    const results = states.map(({ size, url, recipe, fails, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }) }));
+    const results = states.map(({ size, url, recipe, fails, inPlaceOnly, layoutOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }), ...(layoutOnly && { layoutOnly }) }));
     const report = { root: o.root, entry: o.entry, playwright: version, seconds: Math.round((Date.now() - t0) / 1000), states: states.length, failed: failed.length, results };
     mkdirSync(o.out, { recursive: true });
     writeFileSync(join(o.out, 'report.json'), JSON.stringify(report, null, 1));

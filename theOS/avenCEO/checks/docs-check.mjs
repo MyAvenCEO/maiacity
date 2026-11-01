@@ -1,6 +1,8 @@
 // The docs check (AIP-1, claim c1): content a person can't reach. Its rule:
-//   1. every scroll container whose content is taller than it can scroll (its overflow-y is auto or scroll);
-//   2. the page never scrolls sideways;
+//   1. every scroll container whose content is taller than it can scroll: a box whose overflow-y clips (hidden or
+//      clip; in CSS, hidden makes a scroll container that only a script can scroll) fails when its content is taller
+//      than it; auto and scroll let a person scroll, visible hands the content to the box around it;
+//   2. the page never scrolls sideways: content wider than the window fails, whether the page scrolls to it or hides it;
 //   3. boxes made to scroll sideways are fine (their overflow is theirs, not the page's).
 // docsCheck runs inside the page (Playwright's page.evaluate), so it must not use anything from this module's scope.
 // It returns one entry per failure; an empty list is a pass.
@@ -26,8 +28,8 @@ export function docsCheck() {
   if (se.scrollHeight > innerHeight + SLACK && blocked(page.overflowY)) {
     fails.push({ rule: 'the page is taller than the window and cannot scroll', where: fromBody ? 'body' : 'html', content: se.scrollHeight, box: innerHeight, overflow: page.overflowY });
   }
-  if (se.scrollWidth > html.clientWidth + SLACK && !blocked(page.overflowX)) {
-    fails.push({ rule: 'the page scrolls sideways', where: 'page', content: se.scrollWidth, box: html.clientWidth, overflow: page.overflowX });
+  if (se.scrollWidth > html.clientWidth + SLACK) {
+    fails.push({ rule: blocked(page.overflowX) ? 'the page is wider than the window and hides the rest' : 'the page scrolls sideways', where: 'page', content: se.scrollWidth, box: html.clientWidth, overflow: page.overflowX });
   }
   for (const el of document.querySelectorAll('body *, body')) {
     if (el === body && fromBody) continue;
