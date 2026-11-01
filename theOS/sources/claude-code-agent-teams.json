@@ -1,0 +1,22 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/claude-code-agent-teams",
+ "title": "Claude Code: Orchestrate teams of Claude Code sessions",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/agent-teams.md",
+ "by": "Anthropic",
+ "summary": "Experimental (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1): a lead session spawns teammates, each its own Claude Code instance, with a shared task list and mailboxes. Teammates show in an agent panel below the prompt, or in tmux or iTerm2 split panes. Limits: one team per session, no nesting, in-process teammates are not restored on resume, the lead is fixed, permissions are set at spawn.",
+ "ideas": [
+  "A shared task list with blocked tasks mirrors an intent's tasks.",
+  "Not durable enough for intents that live for days: teammates end with the lead's process."
+ ],
+ "took": [
+  {
+   "idea": "Not adopted: teams end with the session",
+   "where": "aip/AIP-4/research: pattern agent-teams (no)"
+  }
+ ]
+}
