@@ -526,6 +526,20 @@
     "d-113f"
    ],
    "task": "t6"
+  },
+  {
+   "at": "2026-11-01T12:27Z",
+   "by": "a-6ffb",
+   "what": "parked",
+   "text": "Parked after Gate A (d-113f), at the clean cut (d-8912). Next step: checkpoint 1, theOS's release workflow with the checks 'Only from main', 'avenSANDBOX' and 'theOS', once aip-31df's checkpoint 1, aip-6fb1's checkpoint 4 and the goal pull request that brings theOS/ to main are in.",
+   "how": "by hand, aip-59ad's thread; time from date -u",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": [
+    "d-113f",
+    "d-8912"
+   ]
   }
  ],
  "problem": {
