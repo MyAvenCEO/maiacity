@@ -956,6 +956,40 @@
    "how": "aip-6fb1's thread (d-2519), by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T12:34Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "Checkpoint 4's check on the merged tree (e81c8f9: aip-31df's final checkpoint 1 and aip-836d's migration merged in), both on the same commit: inside the box through theOS/sandbox/run.sh, theos-4304affa59294591: green, 1285 states, 239 view types, 0 failed, Playwright 1.64.1, 106 s; this cloud session outside the box: green, 1274 states, 231 view types, 0 failed, Playwright 1.63.0, 108 s. The verdict is the same, but theOS/sandbox/same.mjs finds 63 states that differ: aip-31df's final check presses buttons only in the first state of each view type it reaches, and with three workers that first state varies, so two runs on one commit reach different sets of states. Its report also no longer carries Playwright's version. same.mjs's state-by-state comparison is now stricter than the check is repeatable: compare per view type, or the states both runs reached, next session.",
+   "how": "aip-6fb1's thread (d-44 relay), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/avenCEO/checks/check.mjs",
+    "theOS/sandbox/same.mjs"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:34Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 4's Review gate as it stands: not passed. rv-8bd0 round 1 (2 Major, 4 Nit) answered; round 2 (1 Major, 3 Nit) open, stopped at the wrap-up (d-8912). Checkpoints 1, 2 and 3 have passed their gates.",
+   "how": "aip-6fb1's thread (d-44 relay), by hand",
+   "writes": [],
+   "reads": [
+    "rv-8bd0"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:34Z",
+   "by": "a-6ffb",
+   "what": "parked",
+   "text": "Parked at the wrap-up (d-8912). Next step: close checkpoint 4's Review gate: (1) the Major: compare the box's Playwright with theOS/package.json's pin inside the check job, or add theOS/package.json to tag.sh's hash; (2) same.mjs: refuse a file that is not a report, compare each state's failing rules, and compare per view type now that the crawl samples; (3) tie a report to its commit (the artifact named by SHA, or the SHA in the report); then one more critic round. Then Gate B, its question put back from the draft in the 10:42Z event: paste theOS/sandbox/environment-setup.sh into the environment's setup script (environment-setup.previous.sh is the undo); the work on main first; in a new session theOS/sandbox/run.sh rustc --version answers with no pull; on the Mac with OrbStack, run.sh uname -m says aarch64, theOS/sandbox/test.sh is green, and theOS's check through run.sh matches the image workflow's report (same.mjs). Also open: the check has not run on arm64 (only the Mac at Gate B covers it); the outcome claim is unmeasured until Gate B; the image workflow now runs on every theOS change (a plan job and a 2 to 5 min check each), which avenMAIA may want to weigh against CI once per goal.",
+   "how": "aip-6fb1's thread (d-44 relay), by hand",
+   "writes": [],
+   "reads": [
+    "rv-8bd0"
+   ]
   }
  ],
  "reviews": [
