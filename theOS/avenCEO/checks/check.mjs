@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// theOS's check command (AIP-1): serve theOS/, crawl every state a person can reach from an HTML entry page, and run
+// theOS's check command (aip-31df): serve theOS/, crawl every state a person can reach from an HTML entry page, and run
 // the docs check (docs-check.mjs) on each, at 390x844 and 1280x720; --fixtures runs the check's own test pages instead.
 // Exits 1 when a state fails, 2 when the check itself could not run.
 // Usage: node theOS/avenCEO/checks/check.mjs [--root <theOS dir>] [--entry <page under the root>] [--out <dir>] [--fixtures]
@@ -156,7 +156,7 @@ async function press(page, b) {
 
 // Every state a person can reach from the entry page at one size, by following links and pressing buttons, each checked
 // by the docs check when first reached. Buttons are pressed only in the first state of each view type, one of each kind:
-// a first version, for speed (Samuel, 1 Nov); a state behind one of several buttons of the same kind can be missed.
+// a first version, for speed (d-5afb); a state behind one of several buttons of the same kind can be missed.
 async function crawl(browser, size, start, origin) {
   const context = await browser.newContext({ viewport: size });
   for (const f of [countFetches, pageButtons, pageView]) await context.addInitScript(f);

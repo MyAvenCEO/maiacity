@@ -1179,6 +1179,33 @@
    "writes": [],
    "reads": [],
    "task": "t5"
+  },
+  {
+   "at": "2026-11-01T12:27Z",
+   "by": "a-6ffb",
+   "what": "tried",
+   "text": "The undo of a republish, tried once by avenMAIA: version 86 of the theOS artifact put back version 84's docs/style.css, the same bytes (sha256 998acfd4…), and version 87 restored the fix. The page tool refuses to copy a file from an older version of the same page, so the undo republishes a saved copy of the earlier file.",
+   "how": "by avenMAIA, which publishes the artifact; recorded by aip-31df's thread from avenMAIA's message",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:27Z",
+   "by": "a-6ffb",
+   "what": "merged",
+   "text": "claude/avendb-architect (ce208cd) merged: AIP-3's migration, every doc by flat hash id in brain/. theOS/CLAUDE.md and the check's comments name aip-31df, aip-f4e2, d-19fb and d-5afb by id.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:27Z",
+   "by": "a-6ffb",
+   "what": "parked",
+   "text": "Parked at a clean cut (d-8912): checkpoint 1 through both gates; on the migrated tree the check is green, 1266 states checked (228 view types) in 56 s, and --fixtures right on 3 of 3. Next step: checkpoint 2: the c2 fixture (a state behind a button in theOS/avenCEO/checks/fixtures/), a screenshot of every state at both sizes, c4 timed on a one-doc change with an empty cache, and c2's replays at the parents of 106ba0e5f and 3ddc07339 (the OLD-AIP pages and their Learn tabs).",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
