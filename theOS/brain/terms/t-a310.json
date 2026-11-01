@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-a310",
  "word": "Task",
+ "about": [
+  "task"
+ ],
  "means": "One piece of an intent's work, in a step, done by someone. Its status is computed from the trace: done once an event marks it done.",
  "supersedes": [],
  "reflection": {

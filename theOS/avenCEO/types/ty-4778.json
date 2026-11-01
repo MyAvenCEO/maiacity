@@ -43,5 +43,62 @@
   "author": "agent",
   "note": "A fresh checker's findings; the worker's answers are added in the event that answers them.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "intent",
+   "lens",
+   "checker"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "review"
+    ]
+   },
+   "subtype": {
+    "type": "string"
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^rv-[0-9a-f]{4,}$"
+   },
+   "intent": {
+    "type": "string"
+   },
+   "checkpoint": {
+    "type": "number"
+   },
+   "lens": {
+    "type": "string"
+   },
+   "checker": {
+    "type": "string"
+   },
+   "prompt": {
+    "type": "string"
+   },
+   "prompt_note": {
+    "type": "string"
+   },
+   "rounds": {
+    "type": "array"
+   },
+   "round": {
+    "type": "number"
+   },
+   "commit": {
+    "type": "string"
+   },
+   "paraphrase": {
+    "type": "object"
+   },
+   "findings": {
+    "type": "array"
+   }
+  }
  }
 }

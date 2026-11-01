@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-5c2d",
  "word": "Erratum",
+ "about": [
+  "erratum"
+ ],
  "means": "A fix to the record's history, added as a new event; history is never edited.",
  "supersedes": [],
  "reflection": {

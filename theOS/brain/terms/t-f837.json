@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-f837",
  "word": "Doc",
+ "about": [
+  "doc"
+ ],
  "means": "One JSON file in theOS/ about one thing, with a type: an intent, a review, a decision, a session, a source, a step, a term and the rest.",
  "supersedes": [
   {

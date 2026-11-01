@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-d52c",
  "word": "AIP",
+ "about": [
+  "aip"
+ ],
  "means": "One intent in avenCEO's sequence: aip-31df, aip-6fb1 and on. The 91 legacy intents are OLD-AIP-1 to OLD-AIP-91 until they are consolidated.",
  "supersedes": [],
  "reflection": {

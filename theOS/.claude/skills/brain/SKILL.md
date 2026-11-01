@@ -1,23 +1,33 @@
 ---
 name: brain
-description: theOS's memory (brain) and the one door to it. Use before acting on any decision, term, source, lesson, metric or intent in theOS, to read what holds now instead of raw files.
+description: theOS's memory (brain) and the one door to it. Use before acting on any decision, term, source, lesson, metric or intent in theOS, and for every write to them.
 ---
 
 # brain
 
-brain is theOS's memory: one JSON doc per thing. A doc holds until a newer doc supersedes it; superseded in part, the
-rest still holds. What holds is computed, never stored. Read brain through these verbs, never by opening the raw JSON
-and guessing what still holds. Run them from theOS/.
+brain is theOS's memory: one JSON doc per thing, each named by a flat hash id (d-… a decision, aip-… an intent) and
+shown as its id and title. A doc holds until a newer doc supersedes it; superseded in part, the rest still holds. What
+holds is computed, never stored. Every read and every write goes through these verbs; never edit a doc's file by hand:
+brain check fails a commit that changed a doc without the event a verb writes. Run them from theOS/ as
+`node brain/brain.mjs <verb>`.
 
-- `brain prime` (`node brain/brain.mjs prime`): the decisions and terms that hold now, and what waits for Samuel. A
-  session-start hook already ran it for you; run it again after you changed brain.
-- `brain holds <type>` (`node brain/brain.mjs holds decision`): the docs of a type that hold now. Types: decision,
-  term, reference, intent, lesson, metric, session, author and the others in avenCEO/types.
-- `brain get <id>` (`node brain/brain.mjs get d-0e44`; an old name such as D-12 still resolves): one doc, whether it holds, what supersedes it, its
-  links and backlinks.
+- `brain prime`: the decisions and terms that hold now, and what waits for Samuel.
+- `brain holds <type>`: the docs of a type that hold now.
+- `brain get <id>`: one doc, whether it holds, what supersedes it, its links and backlinks.
+- `brain reflect <type> <draft.json>`: the docs a draft may supersede: same type, holding, a shared topic word.
+- `brain add <type> <doc.json> --intent <aip id> --by <author id> [--task <id>]`: a new doc: id minted, schema checked, filed, its event written.
+- `brain edit <id> <patch.json> --intent <aip id> --by <author id>`: a correction that keeps the meaning; a change of meaning is a new doc that supersedes it.
+- `brain append <id> <list> <entry.json> --intent <aip id> --by <author id>`: an entry at the end of a list that only grows.
+- `brain index`: the index docs and brain/ids.json written again from the folders.
+- `brain install`: this clone's pre-push hook (brain check) and the merge driver for lists that only grow.
+- `brain versions`: every link whose target changed after it was cited, into brain/versions.json for the apps (c5).
+- `brain mcp`: the same verbs (but install and mcp, which set up this clone) as an MCP server on stdio (theOS/.mcp.json).
+- `brain check [--range a..b]`: every commit in the range against its parent: events cover every changed doc, schemas, history only grows.
 
-Add `--json` for data. A refusal prints a fixed code and its fix (not_found, unknown_type, missing_arg, bad_root,
-unknown_verb); follow the fix.
+A write names the intent it serves (--intent) and its author (--by, an author doc's id) and appends that intent's event;
+commit the files it wrote with your work. To replace or drop a doc, add a newer one whose supersedes names it
+(`{ "doc": "<id>", "part": "all" or the part, "what": "…" }`); brain refuses a supersede of a doc that no longer
+holds, and records the candidates you left for the reviewer. Add `--json` for data. A refusal prints a fixed code and
+its fix; follow the fix.
 
-Writes (add, edit, append, index) come with the rest of brain's checkpoint 2 (aip-836d). Until then, write docs as the intent's record says.
-This file is written by hand at checkpoint 1; from checkpoint 2, brain index writes it from brain's verb list.
+This file is written by `brain index` from brain's verb list; do not edit it by hand.

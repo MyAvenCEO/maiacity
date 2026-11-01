@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-136d",
  "word": "Session",
+ "about": [
+  "session"
+ ],
  "means": "One working conversation with the orchestrator, from its first message to its last commit; corrections are counted per 10 of its commits.",
  "supersedes": [],
  "reflection": {

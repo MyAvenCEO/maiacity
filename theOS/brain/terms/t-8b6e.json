@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-8b6e",
  "word": "avenPEER",
+ "about": [
+  "avenpeer"
+ ],
  "means": "avenDB's peer (legacy): the Aven Peer at aven.maia.city runs its last release.",
  "supersedes": [],
  "reflection": {

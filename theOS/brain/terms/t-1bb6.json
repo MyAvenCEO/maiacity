@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-1bb6",
  "word": "stories.json",
+ "about": [
+  "stories.json"
+ ],
  "means": "The list of the docs app's chapters and pages (theOS/docs/stories.json).",
  "supersedes": [],
  "reflection": {

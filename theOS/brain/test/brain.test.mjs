@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { load, prime, holds, get } from '../brain.mjs';
+import { load, prime, holds, get, getFull, skill, VERBS } from '../brain.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = join(here, 'fixtures');
@@ -46,8 +46,12 @@ test('get: the doc, what supersedes it, its links and backlinks', () => {
   assert.equal(g.doc.title, 'Second, superseded in part');
   assert.equal(g.holds, 'holds in part');
   assert.deepEqual(g.supersededBy, [{ by: 'decisions/D-3', part: 'part', what: 'its wording' }]);
-  assert.deepEqual(g.links, ['decisions/D-1']);
-  assert.deepEqual(g.backlinks, ['decisions/D-3']);
+  // grouped by the field they sit in (c10)
+  assert.deepEqual(g.links, { supersedes: ['decisions/D-1'] });
+  assert.deepEqual(g.backlinks, { supersedes: ['decisions/D-3'] });
+  assert.deepEqual(g.citesSuperseded, []);
+  // D-4 holds and relates D-1, which no longer holds: a warning
+  assert.deepEqual(get(docs, 'decisions/D-4').citesSuperseded, ['decisions/D-1']);
 });
 
 test('get: the id prime and holds print resolves to the same doc', () => {
@@ -62,7 +66,7 @@ test('get: a missing doc is a fixed error with its fix', () => {
 test('the command line answers the same as the functions', () => {
   assert.deepEqual(cli('prime'), prime(docs));
   assert.deepEqual(cli('holds', 'decision'), holds(docs, 'decision'));
-  assert.deepEqual(cli('get', 'decisions/D-2'), get(docs, 'decisions/D-2'));
+  assert.deepEqual(cli('get', 'decisions/D-2'), getFull(fixtures, docs, 'decisions/D-2'));
   let err;
   try { cli('get', 'decisions/D-99'); } catch (e) { err = JSON.parse(e.stdout); }
   assert.equal(err.error, 'not_found');
@@ -72,10 +76,11 @@ test('the command line answers the same as the functions', () => {
   assert.equal(err.error, 'bad_root');
 });
 
-test('the skill teaches the verbs and names brain prime', () => {
-  const skill = readFileSync(join(theOS, '.claude', 'skills', 'brain', 'SKILL.md'), 'utf8');
-  assert.match(skill, /^---\nname: brain\ndescription: .+\n---/);
-  for (const v of ['brain prime', 'brain holds', 'brain get']) assert.ok(skill.includes(v), v);
+test('the skill is written from the verb list and teaches every verb', () => {
+  const file = readFileSync(join(theOS, '.claude', 'skills', 'brain', 'SKILL.md'), 'utf8');
+  assert.equal(file, skill(), 'run: node brain/brain.mjs index');
+  assert.match(file, /^---\nname: brain\ndescription: .+\n---/);
+  for (const [v] of VERBS) assert.ok(file.includes(`brain ${v}`), v);
 });
 
 test('the session-start hook runs brain prime, and theOS/CLAUDE.md names it first', () => {

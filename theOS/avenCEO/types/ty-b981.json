@@ -31,5 +31,43 @@
   "author": "agent",
   "note": "A measurement is an event of the intent it measures.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "name",
+   "what",
+   "want",
+   "how",
+   "measurements"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "metric"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^m-[0-9a-f]{4,}$"
+   },
+   "name": {
+    "type": "string"
+   },
+   "what": {
+    "type": "string"
+   },
+   "want": {
+    "type": "string"
+   },
+   "how": {
+    "type": "string"
+   },
+   "measurements": {
+    "type": "array"
+   }
+  }
  }
 }

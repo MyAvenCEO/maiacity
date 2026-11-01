@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-5c97",
  "word": "Work branch",
+ "about": [
+  "work branch"
+ ],
  "means": "The git branch the work is pushed to; never main.",
  "supersedes": [],
  "reflection": {

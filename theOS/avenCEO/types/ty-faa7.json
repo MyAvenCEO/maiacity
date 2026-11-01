@@ -41,5 +41,57 @@
   "author": "agent",
   "note": "Written by the intent's thread; each source it read is a read event of the intent.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "intent",
+   "question",
+   "sources",
+   "reads",
+   "patterns",
+   "recommendation",
+   "open_questions"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "research"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^rs-[0-9a-f]{4,}$"
+   },
+   "intent": {
+    "type": "string"
+   },
+   "question": {
+    "type": "string"
+   },
+   "sources": {
+    "type": "array"
+   },
+   "reads": {
+    "type": "array"
+   },
+   "answers": {
+    "type": "array"
+   },
+   "patterns": {
+    "type": "array"
+   },
+   "recommendation": {
+    "type": "string"
+   },
+   "open_questions": {
+    "type": "array"
+   },
+   "not_read": {
+    "type": "array"
+   }
+  }
  }
 }

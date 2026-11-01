@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-2311",
  "word": "Decision",
+ "about": [
+  "decision"
+ ],
  "means": "Your words, polished, with the time: an answer, a gate approval or a correction. Numbered d-1b6c, d-e028 and on until brain's hash ids land; it holds until a later decision supersedes it.",
  "supersedes": [
   {

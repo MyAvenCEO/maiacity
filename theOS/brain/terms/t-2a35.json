@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-2a35",
  "word": "Checkpoint",
+ "about": [
+  "checkpoint"
+ ],
  "means": "The smallest slice of the work that works end to end; it passes the Mechanical and Review gates before the next starts.",
  "supersedes": [],
  "reflection": {
