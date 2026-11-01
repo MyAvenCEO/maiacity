@@ -49,19 +49,20 @@ const Wof = (docs) => docs.W || wiki(THEOS);
 // Values made inside ui/wiki.js belong to its own JavaScript realm; answers are copied out as plain data.
 const plain = (x) => JSON.parse(JSON.stringify(x));
 const typesIn = (docs) => [...new Set([...docs.values()].map((d) => d.type))].sort();
-const titleOf = (d) => d.title || d.word || d.name || d.id;
+// What people see (D-76): a doc as its id and its title, and every id inside text the same way (ui/wiki.js).
+const titleOf = (docs, d) => Wof(docs).title(d);
 
 function holdsOf(docs, path) { return Wof(docs).holds(docs, path); }
 
-// brain holds <type>: the docs of a type that hold now, wholly or in part. Decisions newest first, the rest by title.
+// brain holds <type>: the docs of a type that hold now, wholly or in part. Newest first (by at, then n), the rest by title.
 export function holds(docs, type) {
   const types = typesIn(docs);
   if (!types.includes(type) || type === 'index') throw new BrainError('unknown_type', `a type is one of: ${types.filter((t) => t !== 'index').join(', ')}`);
   const xs = [...docs].filter(([, d]) => d.type === type)
-    .map(([p, d]) => ({ id: p, title: titleOf(d), holds: holdsOf(docs, p), n: d.n }))
+    .map(([p, d]) => ({ id: p, name: Wof(docs).name(d, p), title: titleOf(docs, d), holds: holdsOf(docs, p), n: d.n, at: d.at || '' }))
     .filter((x) => x.holds !== 'superseded')
-    .sort((a, b) => (b.n ?? 0) - (a.n ?? 0) || a.title.localeCompare(b.title));
-  return plain(xs.map(({ id, title, holds: h }) => ({ id, title, holds: h })));
+    .sort((a, b) => b.at.localeCompare(a.at) || (b.n ?? 0) - (a.n ?? 0) || a.title.localeCompare(b.title));
+  return plain(xs.map(({ id, name, title, holds: h }) => ({ id, name, title, holds: h })));
 }
 
 // What waits for Samuel: the open questions of every intent that is not closed, and his tasks not done at or before
@@ -74,10 +75,10 @@ function waits(docs) {
     const ev = I.events || [];
     const at = W.stepAt(ev, ev.length);
     if (at === 5) continue;
-    for (const q of I.questions || []) if (!q.answered && !q.replaced_by) questions.push({ intent: p, q: q.q, options: q.options });
+    for (const q of I.questions || []) if (!q.answered && !q.replaced_by) questions.push({ intent: p, name: W.name(I, p), q: W.named(q.q), options: q.options.map((o) => W.named(o)) });
     for (const t of I.tasks || []) {
       const done = ev.some((x) => x.task === t.id && x.what === 'done');
-      if (t.who === samuel && !done && t.step <= at) tasks.push({ intent: p, id: t.id, what: t.what });
+      if (t.who === samuel && !done && t.step <= at) tasks.push({ intent: p, name: W.name(I, p), id: t.id, what: W.named(t.what) });
     }
   }
   return { questions, tasks };
@@ -105,20 +106,20 @@ export function get(docs, ref) {
   const supersededBy = W.supersededBy(docs, path).map((s) => ({ by: s.p, part: s.part || 'whole', what: s.what || s.how || '' }));
   const links = [...W.paths(doc)].filter((q) => q !== path).sort();
   const backlinks = [...docs].filter(([p, d]) => p !== path && d.type !== 'index' && W.paths(d).has(path)).map(([p]) => p).sort();
-  return plain({ id: path, doc, holds: holdsOf(docs, path), supersededBy, links, backlinks });
+  return plain({ id: path, name: W.name(doc, path), doc, holds: holdsOf(docs, path), supersededBy, links, backlinks });
 }
 
 // The command line: brain <verb> [args] [--json] [--root <theOS folder>].
 function text(verb, out) {
-  const line = (x) => `- ${x.id.split('/').pop()} · ${x.title}${x.holds === 'holds in part' ? ' (holds in part)' : ''}`;
+  const line = (x) => `- ${x.name}${x.holds === 'holds in part' ? ' (holds in part)' : ''}`;
   if (verb === 'prime') {
     const w = out.waits;
     return [
       "brain prime: what holds now in theOS's memory. Act on these, not on superseded docs; brain get <path> shows one doc.",
       ...Object.entries(out.holds).flatMap(([t, xs]) => [`\n${t}s that hold (${xs.length}):`, ...xs.map(line)]),
       `\nWaits for Samuel (${w.questions.length} questions, ${w.tasks.length} tasks):`,
-      ...w.questions.map((q) => `- ${q.intent}: ${q.q}`),
-      ...w.tasks.map((t) => `- ${t.intent} ${t.id}: ${t.what}`),
+      ...w.questions.map((q) => `- ${q.name}: ${q.q}`),
+      ...w.tasks.map((t) => `- ${t.name} ${t.id}: ${t.what}`),
     ].join('\n');
   }
   if (verb === 'holds') return out.map(line).join('\n');
