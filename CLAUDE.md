@@ -1,5 +1,12 @@
 # Working rules for agents in this repository
 
+## avenDB's workflows are parked too; theOS owns the release pipeline (Samuel 2026-11-01)
+
+`avensandbox.yml`, `avensandbox-image.yml`, `avenpeer-image.yml` and `avendeploy.yml` live in
+`.github/workflows-avendb/` and don't run: nothing releases, builds an image or deploys. What is live stays live.
+theOS owns avenSANDBOX and the release pipeline from now on (`theOS/decisions/D-24.json`, the work in
+`theOS/aip/AIP-2.json`). The two sections below describe the flows as they were.
+
 ## v1's GitHub workflows are parked (Samuel 2026-10-29)
 
 `ci.yml`, `release.yml` and `ops.yml` live in `.github/workflows-v1/` and don't run: `main` has no CI, nothing deploys

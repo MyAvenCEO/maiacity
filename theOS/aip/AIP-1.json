@@ -7,7 +7,7 @@
  "problem": {
   "who": [
    "Samuel, the one person who decides, whose attention is the scarcest resource.",
-   "The agents that do the work, in 20 to 50 parallel threads (CLAUDE.md).",
+   "The agents that do the work: each AIP starts the ones its work needs, and several AIPs can run at once, each with its own (D-26).",
    "Anyone who later needs to know why something is the way it is."
   ],
   "experience": "Samuel catches problems the agents should have caught, and repeats corrections.",
@@ -763,6 +763,26 @@
     "aven/checkers/paraphrase",
     "aven/checkers/zoom-out"
    ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:10Z",
+   "by": "authors/samuel-andert",
+   "what": "correction",
+   "text": "The 20 to 50 parallel threads came from the legacy CLAUDE.md; agents are per AIP, as many as its work needs.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-26"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:10Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 6, corrected: who does the work is the agents each AIP starts, not 20 to 50 threads.",
+   "how": "by hand",
+   "writes": [],
    "reads": []
   }
  ],
