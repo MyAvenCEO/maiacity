@@ -740,6 +740,15 @@
    "how": "by hand, aip-59ad's thread, from the run's jobs and the deploy job's log",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T14:33Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c4 on the server: run 41316680629, 'theOS undo' to=26.10.31v6, green: aven.maia.city's title read avenOS's ('avenSANDBOX', avenOS 26.10.31v6), /ping 200. Run 41316730374, to=theos-19f774dc916c, green: theOS's title back at 14:33:15Z, /ping 200. aven.maia.city serves theOS again; Samuel now looks on his phone and his Mac.",
+   "how": "by hand, aip-59ad's thread, runs started and read by avenMAIA",
+   "writes": [],
+   "reads": []
   }
  ],
  "problem": {
@@ -952,7 +961,7 @@
    "fails": "The undo is untested, the earlier build is gone, or the undo leaves a mix.",
    "check": "Tried in the temporary folder: theOS to theOS, undo again forward, back to avenOS after the first deploy and by name after two, a missing name refused; then once on the server at Gate B with Samuel: deploy, undo to avenOS, deploy again, the health step green each time.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "pass"
   },
   {
    "id": "c5",
