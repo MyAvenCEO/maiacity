@@ -390,6 +390,26 @@
    "writes": [],
    "reads": [],
    "task": "t12"
+  },
+  {
+   "at": "2026-11-01T09:48Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Build avenSANDBOX now, as the first intent through all four steps, and measure how the flow holds up.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-38"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:48Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The measurement plan for this run written (measure): the outcome, and avenCEO's process metrics read off the trace.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
@@ -482,6 +502,50 @@
    "what": "Gate B: paste the environment's script, start a session, try it",
    "step": 3,
    "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t13",
+   "what": "Learn: measure the run (measure) and reflect on how the flow held up; lessons, and an AIP for any change to avenCEO",
+   "step": 4,
+   "who": "authors/avenmaia"
   }
- ]
+ ],
+ "measure": {
+  "what": "This run is measured as the first intent through all four steps (D-38): the product (the outcome claim) and the process (avenCEO's metrics).",
+  "metrics": [
+   {
+    "metric": "metrics/lead-time",
+    "how": "from the source event to the measured event, and the time in each step, read off the trace's timestamps"
+   },
+   {
+    "metric": "metrics/sent-back",
+    "how": "spec review rounds before Gate A, and rounds per checkpoint"
+   },
+   {
+    "metric": "metrics/first-pass",
+    "how": "checkpoints that pass both gates in their first round"
+   },
+   {
+    "metric": "metrics/touches",
+    "how": "your actions on this intent, against the two the flow plans for (Gate A, Gate B)"
+   },
+   {
+    "metric": "metrics/escalations",
+    "how": "findings that needed your knowledge"
+   },
+   {
+    "metric": "metrics/corrections",
+    "how": "your corrections of this intent's work (D-33 counts: it reversed revision 3)"
+   },
+   {
+    "metric": "metrics/mechanical-share",
+    "how": "claims checked by a machine, of all claims"
+   },
+   {
+    "metric": "metrics/undo",
+    "how": "releases undone and how long the undo took (the park and the move, tried)"
+   }
+  ],
+  "also": "Findings per round by severity and by kind (unclear, contradiction, YAGNI, wrong fact), and the agents spent per round, to see whether spec review earns its cost."
+ }
 }

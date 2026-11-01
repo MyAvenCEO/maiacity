@@ -40,6 +40,10 @@
   {
    "name": "design notes (pixel_diff and the like)",
    "means": "how a part of the plan works, step by step, where a claim alone would not say it"
+  },
+  {
+   "name": "measure",
+   "means": "what the Learn step measures for this intent: its outcome and the process metrics, read off the trace"
   }
  ],
  "written_by": "the orchestrator",

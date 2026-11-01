@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "D-38",
+ "n": 38,
+ "title": "Build avenSANDBOX now, and measure the flow",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "sandbox",
+  "process",
+  "metrics"
+ ],
+ "quote": "Let's now execute the full avenSANDBOX, so the flow gets another moving piece, especially its measuring and verification step. We use it as another run of our current flow, to reflect on how well the process holds up and improve it: eating our own dog food, one level up.",
+ "means": "AIP-2 is built now, after its round 3 is answered, as the first intent to run through all four steps. Its Learn step measures the run with avenCEO's process metrics and reflects on how the flow held up; what it learns becomes lessons and, where it changes avenCEO, a new AIP.",
+ "intents": [
+  "aip/AIP-2"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-33",
+  "decisions/D-24"
+ ],
+ "reflection": {
+  "checked": "every decision before D-38 that held",
+  "result": "supersedes nothing"
+ }
+}
