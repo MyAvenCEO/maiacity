@@ -2,6 +2,9 @@ Read what holds first with brain prime: `node brain/brain.mjs prime` (a session-
 
 # theOS: working rules for agents
 
+main is theOS's source of truth (d-6628): start from main, work on your own branch, and come back to main through a pull
+request (a draft while you work; theOS's check runs once, when the goal's pull request is ready for review).
+
 theOS is a standalone project: everything is built in theOS/, from scratch. Code outside theOS/ is legacy: read it if
 useful, never change it or depend on it. One JSON doc per thing; no markdown files (this file is the one Claude Code
 reads by name).
