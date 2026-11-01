@@ -990,6 +990,17 @@
    "reads": [
     "rv-8bd0"
    ]
+  },
+  {
+   "at": "2026-11-01T12:35Z",
+   "by": "a-6ffb",
+   "what": "resumed",
+   "text": "Resumed: Samuel wants aip-6fb1 finished in this session, through checkpoint 4's gate, Gate B and Learn (d-93eb, superseding the wrap-up's parking for this intent). The parked event above stands as history.",
+   "how": "aip-6fb1's thread, by hand, on avenMAIA's relay",
+   "writes": [],
+   "reads": [
+    "d-93eb"
+   ]
   }
  ],
  "reviews": [
