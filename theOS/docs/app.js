@@ -234,7 +234,8 @@ function renderRecord(R, F) {
   const table = (heads, rows) => `<table class="dtable"><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, k) => `<td>${k ? esc(c) : `<b>${esc(c)}</b>`}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   const ul = (xs) => `<ul>${xs.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>`;
   const sec = (h, body, note = '') => `<section class="dsec"><h2>${h}</h2>${note ? `<p class="dnote">${note}</p>` : ''}${body}</section>`;
-  const p = R.problem;
+  const p = R.problem || { who: [], experience: '', evidence: [], baseline: '', whys: [], truths: [], assumptions: [], risk: '' };
+  R = { reuse: [], options: [], claims: [], outcome: { promise: '', kind: '', result: '' }, checkpoints: [], questions: [], review: [], events: [], ...R };
   const rounds = [...new Set(R.review.map((r) => r.round || 1))];
   const review = R.review.length ? rounds.map((n) => `<div class="round"><h3>Round ${n}</h3>${R.review.filter((r) => (r.round || 1) === n).map((r) => {
       const count = ['Blocker', 'Major', 'Nit'].map((v) => [v, r.findings.filter((f) => f.sev === v).length]).filter(([, c]) => c).map(([v, c]) => `${c} ${v}`).join(', ') || 'no findings';
@@ -365,7 +366,7 @@ async function openDoc(st, i = 0) {
 }
 
 async function start() {
-  stories = (await (await fetch('stories.json')).json()).stories;
+  stories = (await (await fetch('docs/stories.json')).json()).stories;
   const counts = await Promise.all(stories.map(async (x) => (x.kind ? null : (await (await fetch(x.file)).json()).slides.length)));
   $('#stories').innerHTML = '<b class="navhead">theOS</b>' + stories.map((x, i) => x.kind
     ? `<button type="button" class="navdec" data-story="${x.id}">${esc(x.title)}</button>`

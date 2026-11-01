@@ -3,84 +3,84 @@
   {
    "id": "identity",
    "title": "Identity",
-   "file": "chapters/identity.json"
+   "file": "docs/chapters/identity.json"
   },
   {
    "id": "data",
    "title": "Data",
-   "file": "chapters/data.json"
+   "file": "docs/chapters/data.json"
   },
   {
    "id": "merge",
    "title": "Merging",
-   "file": "chapters/merge.json"
+   "file": "docs/chapters/merge.json"
   },
   {
    "id": "schema",
    "title": "Schemas",
-   "file": "chapters/schema.json"
+   "file": "docs/chapters/schema.json"
   },
   {
    "id": "ops",
    "title": "Operations",
-   "file": "chapters/ops.json"
+   "file": "docs/chapters/ops.json"
   },
   {
    "id": "policies",
    "title": "Policies",
-   "file": "chapters/policies.json"
+   "file": "docs/chapters/policies.json"
   },
   {
    "id": "check",
    "title": "Checking",
-   "file": "chapters/check.json"
+   "file": "docs/chapters/check.json"
   },
   {
    "id": "keys",
    "title": "Keys",
-   "file": "chapters/keys.json"
+   "file": "docs/chapters/keys.json"
   },
   {
    "id": "end",
    "title": "Endings",
-   "file": "chapters/end.json"
+   "file": "docs/chapters/end.json"
   },
   {
    "id": "time",
    "title": "Time",
-   "file": "chapters/time.json"
+   "file": "docs/chapters/time.json"
   },
   {
    "id": "net",
    "title": "Network",
-   "file": "chapters/net.json"
+   "file": "docs/chapters/net.json"
   },
   {
    "id": "sync",
    "title": "Sync",
-   "file": "chapters/sync.json"
+   "file": "docs/chapters/sync.json"
   },
   {
    "id": "carry",
    "title": "Carriers",
-   "file": "chapters/carry.json"
+   "file": "docs/chapters/carry.json"
   },
   {
    "id": "intents",
    "title": "Intents",
-   "file": "intents.json",
+   "file": "docs/intents.json",
    "kind": "intents"
   },
   {
    "id": "avenceo",
    "title": "avenCEO",
-   "file": "avenceo.json",
+   "file": "avenCEO/avenceo.json",
    "kind": "doc"
   },
   {
    "id": "sources",
    "title": "Sources",
-   "file": "intents.json",
+   "file": "docs/intents.json",
    "kind": "sources"
   }
  ]

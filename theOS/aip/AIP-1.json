@@ -9,7 +9,7 @@
   "at": "2026-11-01",
   "text": "Apply our own flow to building the flow engine. Call the agent harness avenCEO. Implement it now.",
   "links": [
-   "theOS/docs/avenceo.json"
+   "theOS/avenCEO/avenceo.json"
   ]
  },
  "problem": {
@@ -70,7 +70,7 @@
     ]
    }
   ],
-  "baseline": "Ten corrections by Samuel in one session (31 Oct to 1 Nov 2026), outside any gate. Seven were escapes, problems in work already called done (four layout, three sweeps); three were judgement.",
+  "baseline": "Ten corrections by Samuel in one session (31 Oct to 1 Nov 2026, 67 commits to theOS), outside any gate: 1.5 per 10 commits. Seven were escapes, problems in work already called done (four layout, three sweeps); three were judgement.",
   "whys": [
    "Samuel catches problems the agent should have caught. Why? The agent checks its own work, and only what it thinks of.",
    "Why? Nothing independent checks the work against what a person sees, and nothing says beforehand what must be true.",
@@ -85,11 +85,12 @@
    "Git keeps every version and who made it."
   ],
   "assumptions": [
-   "theOS is a standalone, fresh project: everything lives in theOS/, built from scratch. avenCEO touches no code outside theOS/: not maiacity, not avenDB (aven/DB2), not aven/ops, not the repository's .claude or CLAUDE.md.",
-   "The plan adds, all inside theOS/: theOS/avenCEO/ (one check command, the docs check, the terms check, their tests, the checkers' prompts), theOS/docs/glossary.json, theOS/CLAUDE.md with the done rule, and a fix in theOS/docs/app.js (stageOf reads events only).",
-   "theOS's 91 current intents (theOS/docs/intents.json) stay as they are until a later AIP consolidates them into this format.",
-   "Samuel is the only one who passes a gate.",
-   "Records are JSON files in theOS/docs/aip/, shown in the theOS docs app."
+   "theOS is a standalone, fresh project: everything lives in theOS/, built from scratch. avenCEO touches no code outside theOS/: not maiacity, not avenDB (aven/DB2), not aven/ops, not the repository's .claude or CLAUDE.md. One exception (Samuel, 1 Nov): the sandbox may be used for testing, without changing it.",
+   "theOS/aip/ is the single source of truth for every AIP and all its stages: problem, claims, review rounds with their prompts, answers and events. The theOS docs app (theOS/index.html and theOS/docs/) only shows them.",
+   "The plan adds, all inside theOS/: theOS/package.json and its lockfile (theOS's own dependencies, such as Playwright), theOS/CLAUDE.md with the done rule, theOS/avenCEO/ (the check command, the crawl, the docs check, the pixel diff, the terms check, the checker's prompt) and theOS/docs/glossary.json.",
+   "The 91 current intents and the Intents board are legacy too (Samuel, 1 Nov): learned from; their decisions and lessons move into avenCEO's format in a later consolidation AIP.",
+   "Viewer changes (theOS/docs) are ordinary edits under the done rule, not part of this AIP.",
+   "Samuel is the only one who passes a gate."
   ],
   "risk": "Can be undone: everything is files in git, inside theOS/. Nothing outside: no push to main, no deploy, nothing outside theOS changed."
  },
@@ -99,8 +100,12 @@
    "use": "Used (theOS): the viewer; one file per record, its stage computed from its events."
   },
   {
-   "what": "theOS/docs/intents.json",
-   "use": "Used (theOS): the 91 current intents, cited as theOS AIP-n until they are consolidated."
+   "what": "theOS/docs/intents.json and the Intents board",
+   "use": "Legacy (Samuel, 1 Nov): learned from; its decisions and lessons move into avenCEO's format when they are consolidated."
+  },
+  {
+   "what": "avenSANDBOX (aven/DB2/SANDBOX.md: the box and its browsers)",
+   "use": "Used for testing, by Samuel's exception (1 Nov): theOS's checks may run in it; nothing in it is changed."
   },
   {
    "what": "aven/DB2/sandbox/brain.mjs",
@@ -139,7 +144,7 @@
   },
   {
    "name": "Checks first",
-   "note": "The done rule for every theOS/docs commit: theOS's check command green (a docs check and a terms check), a fresh checker's look at the screenshots, pushed and published. An AIP only for work that needs Gate A. Everything in theOS/, from scratch. Measure over three sessions; the router, the Stop hook and a metrics script only as new AIPs, and only if escapes remain.",
+   "note": "The done rule for every theOS commit: theOS's check command green (the crawl, a pixel diff against the base commit, the docs check, the terms check), a fresh checker's look at every view whose pixels changed, pushed and published. An AIP only for work that needs Gate A. Everything in theOS/, from scratch. Measure over three sessions; the router, the Stop hook and a metrics script only as new AIPs, and only if escapes remain.",
    "chosen": true
   },
   {
@@ -156,56 +161,48 @@
  "claims": [
   {
    "id": "c1",
-   "promise": "Written before any replay, the docs check fails at the parents of faf266961 and b1d105b39 (content that could not be reached) and passes now.",
-   "fails": "It is tuned to the known bugs, or checks something a person doesn't see.",
-   "check": "Its rules (no view scrolls sideways; every scroll container whose content is taller than it can scroll) are committed first; then the replay at both parents and at the current commit, at 390x844, 1280x720 and 1440x900.",
+   "promise": "The docs check fails at the parent of faf266961, where content could not be reached, and passes now.",
+   "fails": "It checks something a person does not see, or is tuned to the known bug.",
+   "check": "Its rule (every scroll container whose content is taller than it can scroll; no view scrolls sideways) is committed before the replay, then run at 390x844, 1280x720 and 1440x900.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c2",
-   "promise": "A fresh checker shown only the screenshots of the changed views flags the parents of 106ba0e5f and 3ddc07339 as broken, and the current commit as fine.",
-   "fails": "A visual break is called done.",
-   "check": "The replay, with the checker's prompt and answer stored.",
-   "kind": "review",
+   "promise": "The crawl reaches every state a person can reach from theOS/index.html, following every link and button and dropping duplicate states, on any commit.",
+   "fails": "A state behind a button, or a renamed data file, is never seen.",
+   "check": "Run on the current commit and on the parents of 106ba0e5f, 3ddc07339 and faf266961: it reaches the intent pages and their Learn tabs with no edit per commit.",
+   "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c3",
-   "promise": "The terms check fails when a renamed word comes back in its scope, ignores words marked ⚠ outside their scope, and passes now.",
-   "fails": "A rename sweep misses a place, or a word with two meanings raises a false alarm.",
-   "check": "A test that plants each renamed word once in its scope and once outside it.",
-   "kind": "mechanical",
+   "promise": "A pixel diff against the base commit lists the views that changed, and a fresh checker shown only those flags the broken ones.",
+   "fails": "A visual break is called done, or the author picks which views are seen.",
+   "check": "Replayed on the commits that introduced the stretched chip, the squeezed table and the board that scrolled as a whole (found by bisecting with the crawl's screenshots): the checker flags each; its prompt and answer are stored.",
+   "kind": "review",
    "result": "open"
   },
   {
    "id": "c4",
-   "promise": "theOS's check command (bun theOS/avenCEO/check.mjs) runs both checks for every change under theOS/docs.",
-   "fails": "A change's check list misses them.",
-   "check": "A scenario test of the command's plan with theOS/docs paths.",
+   "promise": "The terms check fails when a renamed word comes back where its rename applies, stays quiet where the word keeps its other meaning, and passes now.",
+   "fails": "A rename sweep misses a place, or a word with two meanings raises a false alarm.",
+   "check": "A test plants each renamed word once where the rename applies (story ids, slide text fields) and once where its other meaning is correct (for example the rules of an Architecture panel); each entry cites the theOS AIP that decided it.",
    "kind": "mechanical",
    "result": "open"
-  },
-  {
-   "id": "c5",
-   "promise": "Every spec review runs fresh checkers that get only the record's path, avenCEO's definition and their lens; each review entry keeps their exact prompt and the commit they reviewed.",
-   "fails": "A checker sees the worker's reasoning and agrees with it.",
-   "check": "The review entries.",
-   "kind": "review",
-   "result": "met for rounds 1 and 2"
   }
  ],
  "outcome": {
-  "promise": "Over the next three sessions of theOS docs work: zero layout escapes, zero renamed-term escapes, and fewer than this session's ten corrections outside Gate A and Gate B.",
-  "how": "Tallied by hand per session, like the baseline; within an AIP each correction is also an event by Samuel.",
+  "promise": "Over the next three sessions of theOS work: zero layout escapes, zero renamed-term escapes, and fewer corrections per 10 commits than this session's 1.5 (10 in 67 commits).",
+  "how": "Tallied by hand per session, with the session's commit count; within an AIP each correction is also an event by Samuel (what: correction).",
   "kind": "measured",
   "result": "open"
  },
  "gaps": [
-  "The operations-shape sweep (one of the three) has no check; the screenshot checker may catch it, nothing promises it.",
+  "The operations-shape sweep (one of the three sweeps) has no check; the pixel-diff checker may catch it, nothing promises it.",
   "Running theOS's check command is part of the done rule, not enforced: enforcement is the deferred Stop hook."
  ],
- "done_rule": "A change to theOS/docs is done when theOS's check command is green, a fresh checker has looked at the screenshots of the views it changed and found no Blocker or Major, it is pushed to the work branch, and the theOS docs page (a private artifact) is republished with its version noted.",
+ "done_rule": "A change to theOS is done when theOS's check command is green (the crawl, the pixel diff against the base commit, the docs check and the terms check), a fresh checker has looked at every view whose pixels changed and found no Blocker or Major, it is pushed to the work branch, and the theOS docs page (a private artifact) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply.",
  "aip_when": "An AIP is opened for work that needs your Gate A: a decision about what must be true (architecture, product behaviour, how we work). Small edits follow the done rule only.",
  "mockup": [
   "theOS/docs: the avenCEO page (#avenceo-0)",
@@ -214,26 +211,24 @@
  "checkpoints": [
   {
    "n": 1,
-   "adds": "theOS/avenCEO/ from scratch: the check command (it picks checks by changed path), the terms check over theOS/docs/glossary.json (renames, ⚠ words, scopes), and their tests.",
+   "adds": "theOS/CLAUDE.md with the done rule (it says the root check does not apply in theOS); theOS/package.json and its lockfile; the check command; the terms check over theOS/docs/glossary.json, with its test.",
    "claims": [
-    "c3",
     "c4"
    ]
   },
   {
    "n": 2,
-   "adds": "The docs check, from scratch: every view from stories.json, intents.json and the records; 390x844, 1280x720, 1440x900; sideways scroll, reachability, contrast, slide text size, a screenshot of each; its replays.",
+   "adds": "The crawl and the docs check: every reachable state from theOS/index.html at 390x844, 1280x720 and 1440x900, the reachability rule, a screenshot of each; their replays; the done rule extended.",
    "claims": [
     "c1",
-    "c4"
+    "c2"
    ]
   },
   {
    "n": 3,
-   "adds": "The screenshot checker's prompt in theOS/avenCEO/checkers/, its replay, and the done rule in theOS/CLAUDE.md.",
+   "adds": "The pixel diff against the base commit, the checker's prompt in theOS/avenCEO/checkers/, its replays; the done rule extended.",
    "claims": [
-    "c2",
-    "c5"
+    "c3"
    ]
   }
  ],
@@ -265,39 +260,26 @@
  ],
  "deleted": [
   "Anything in legacy code: rules in the repository's check.mjs, entries in aven/ops/ci/suites.json, agents in the repository's .claude, a line in its CLAUDE.md. theOS is standalone (Samuel, 1 Nov).",
+  "Choosing which views the checker sees: the pixel diff chooses.",
+  "Picking checks by path: there is one app, and every check always runs.",
+  "Contrast and slide text size: no escape asked for them.",
+  "The memory and decision-history section: it moved into avenCEO's definition.",
   "A separate lessons file: lessons stay in avenCEO's definition."
  ],
- "design": {
-  "title": "Memory and decision history",
-  "rows": [
-   {
-    "kind": "History",
-    "how": "theOS's 91 current intents stay in theOS/docs/intents.json until they are consolidated. Each new AIP is one file in theOS/docs/aip/ with an append-only list of events: your gate approvals with your words and the time, findings and their answers, your corrections, checkpoint results. Git keeps every version underneath."
-   },
-   {
-    "kind": "Truth",
-    "how": "The record is the latest truth of one intent. The Architecture panels and specs are the latest truth of the product, tied to the records by rule IDs."
-   },
-   {
-    "kind": "Lessons",
-    "how": "Lessons stay in avenCEO's definition (cue, lesson, evidence, confidence). Each change to avenCEO is measured the way devx-speed's cycle does it (learned, not reused): measure, change one thing, keep or revert, in a table in theOS."
-   },
-   {
-    "kind": "Answers",
-    "how": "When a checker escalates something only you know, your answer goes into the record that needed it, so the next checker can read it."
-   },
-   {
-    "kind": "Sessions",
-    "how": "Chats and contexts are disposable. What an agent needs is in the record or linked from it."
-   }
-  ]
- },
  "questions": [
   {
-   "q": "What counts as your approval at a gate?",
+   "q": "Does your chat message, quoted into the record with its time, count as your approval at a gate?",
    "options": [
-    "Your chat message, quoted into the record with its time, for now; a passkey-signed approval later",
-    "Only a signed approval, from the start"
+    "Yes",
+    "No: tell me what does"
+   ]
+  },
+  {
+   "q": "Round 3 was not clean, the third round in a row. avenCEO's rule stops here and asks you: what next?",
+   "options": [
+    "One more round on revision 5 (recommended: revision 5 changed the design)",
+    "Build with the open findings",
+    "Back to Understand"
    ]
   }
  ],
@@ -698,6 +680,180 @@
      "note": "Two rules; the devx move is deleted; lessons stay in avenCEO's definition, and each change to avenCEO is measured with devx-speed's cycle."
     }
    ]
+  },
+  {
+   "round": 3,
+   "checker": "paraphrase",
+   "commit": "900c30ba2",
+   "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead only this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/aip/AIP-1.json\n\nIt is the record of one piece of planned work: building \"avenCEO\", an agent harness. Its definition is theOS/docs/avenceo.json; read that too (skip its \"protocols\" array, which only summarises outside sources).\n\nThe record's \"review\" field holds rounds 1 and 2 of this review, with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. Its \"events\" field is append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenceo.json.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+   "paraphrase": {
+    "proposes": "Build the first, smallest slice of avenCEO, all inside theOS/. It adds a check command (theOS/avenCEO/check.mjs) that picks checks by changed path, a terms check that reads a new glossary.json of decided renames, and a headless-browser docs check. The docs check renders every view at three window sizes, fails on sideways scroll or scroll content that can't be reached, and screenshots each view. It also adds a prompt for a fresh screenshot checker and a \"done rule\" in theOS/CLAUDE.md. The router, the Stop hook, the metrics script and the migration of the 91 old intents are deferred. Success means three sessions with zero layout escapes, zero renamed-term escapes and fewer than ten corrections outside the gates.",
+    "existing": "Agents check their own work, and Samuel catches layout and naming slips by looking. A static, hash-routed docs app (app.js) shows stories, the 91 intents and the avenCEO records, and works out each record's stage. Today avenCEO is a written process that the main session follows by hand. Gates pass on Samuel's chat message, quoted into the record, and spec reviews are stored in the record. Legacy tools (brain.mjs, GLOSSARY.md, check.mjs) serve only as models. I can't paraphrase what a \"session\" or the \"work branch\" is, or where the republished version is \"noted\"."
+   },
+   "findings": [
+    {
+     "sev": "Major",
+     "scope": "c1",
+     "text": "The parent of b1d105b39 had reachable content (the board scrolled as a whole); a reachability rule should pass there, so making it fail means tuning to the bug.",
+     "answer": "fix",
+     "note": "c1 now replays only faf266961's parent; the board that scrolled as a whole is a visual break and goes to the checker (c3)."
+    },
+    {
+     "sev": "Major",
+     "scope": "c2, done rule",
+     "text": "\"Changed views\" is undefined; a CSS change breaks views the author did not edit; one run of a non-deterministic checker on two cases proves little.",
+     "answer": "fix",
+     "note": "The pixel diff against the base commit chooses the views, not the author (c3); the checker sees every view whose pixels changed."
+    },
+    {
+     "sev": "Major",
+     "scope": "c3",
+     "text": "\"Scope\" is undefined; the test misses the false-alarm case inside the rename's own scope; the renames are never listed.",
+     "answer": "fix",
+     "note": "Scopes are story ids and slide text fields; the test plants each word once where the rename applies and once where its other meaning is correct; each entry cites the theOS AIP that decided it."
+    },
+    {
+     "sev": "Major",
+     "scope": "c5 met",
+     "text": "Checkers also get the root CLAUDE.md and can read git log, whose messages carry the worker's reasoning.",
+     "answer": "contest",
+     "note": "Partly: the root CLAUDE.md is project context, not the worker's reasoning, and it is the same for every agent. Commit messages describe changes, which a reviewer may read. c5 moved to avenCEO's rules as a practice, not a claim with a mechanical check."
+    },
+    {
+     "sev": "Major",
+     "scope": "outcome",
+     "text": "\"Session\" is undefined and nothing normalises for workload; Samuel's corrections are typed \"answer\", not \"correction\".",
+     "answer": "fix",
+     "note": "Session defined in the glossary; the outcome counts corrections per 10 commits (baseline: 10 in 67 commits, 1.5); \"correction\" (Samuel corrects work called done) and \"answer\" (Samuel answers or redirects) are defined; avenMAIA's fix to history is an erratum."
+    },
+    {
+     "sev": "Major",
+     "scope": "assumptions vs round-2 answers",
+     "text": "stageOf still reads review; renderRecord throws on a source-only record; the app.js fix is in no checkpoint.",
+     "answer": "fix",
+     "note": "Viewer changes are ordinary edits under the done rule, not part of this AIP; renderRecord now handles a source-only record; stageOf reads events for the stage and review rounds only for the Specify label (derived data)."
+    },
+    {
+     "sev": "Major",
+     "scope": "questions vs live.now",
+     "text": "avenCEO's definition already declared chat approval live, pre-empting the question.",
+     "answer": "fix",
+     "note": "live.now now says it waits for your answer at AIP-1's Gate A."
+    },
+    {
+     "sev": "Nit",
+     "scope": "roles",
+     "text": "Workers should do Understand and Specify; the events show avenMAIA did.",
+     "answer": "fix",
+     "note": "The definition says it: today the orchestrator also works as the worker."
+    },
+    {
+     "sev": "Nit",
+     "scope": "terms",
+     "text": "intent, view, stories.json, work branch are undefined.",
+     "answer": "fix",
+     "note": "Added to the glossary."
+    },
+    {
+     "sev": "Nit",
+     "scope": "done rule",
+     "text": "The root CLAUDE.md asks for aven/ops/devx/check.mjs, which conflicts.",
+     "answer": "fix",
+     "note": "theOS/CLAUDE.md says the root check does not apply in theOS (checkpoint 1)."
+    },
+    {
+     "sev": "Nit",
+     "scope": "escape",
+     "text": "Escape is defined two ways.",
+     "answer": "fix",
+     "note": "One definition: a problem found after the work was called done (a small edit: after its done rule; an AIP: after Gate B)."
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "checker": "zoom out",
+   "commit": "900c30ba2",
+   "prompt": "You are a \"goldfish\" reviewer with the persona of a skeptical architect: a fresh reader with no history of this project, who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/aip/AIP-1.json\n\nIt is the record of planned work: building \"avenCEO\", an agent harness that runs inside Claude Code. Its definition is theOS/docs/avenceo.json (skip its \"protocols\" array).\n\nImportant constraint from the project owner: theOS is a standalone, fresh project. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. Do not propose reusing it by import or by editing it.\n\nThe record's \"review\" field holds rounds 1 and 2 of this review, with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. Its \"events\" field is append-only history; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there (theOS/docs and its scripts) that the plan rebuilds needlessly?\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+   "findings": [
+    {
+     "sev": "Blocker",
+     "scope": "c2, done rule",
+     "text": "The author still chooses the views the checker sees; app.js and style.css change every view (about 270 states at three sizes). Diff every view's pixels against the base commit; the checker sees only views whose pixels changed.",
+     "answer": "fix",
+     "note": "Adopted: the crawl plus a pixel diff against the base commit choose the views (c2, c3)."
+    },
+    {
+     "sev": "Major",
+     "scope": "checkpoint 2, view list",
+     "text": "Listing views from data files misses states behind buttons (intent tabs), and the data files had other names at the replay commits (verified: theDECISIONS.json and theAUDIT.json at faf266961's parent, theINTENTS.json at the others).",
+     "answer": "fix",
+     "note": "Adopted: crawl the rendered app from theOS/index.html, follow every link and button, drop duplicate states (c2)."
+    },
+    {
+     "sev": "Major",
+     "scope": "assumptions",
+     "text": "Playwright resolves from the repository's root package.json, a silent dependency on legacy code (verified).",
+     "answer": "fix",
+     "note": "theOS/package.json and its lockfile, in checkpoint 1."
+    },
+    {
+     "sev": "Major",
+     "scope": "order",
+     "text": "Checkpoints 1 and 2 do nothing until checkpoint 3 adds the done rule; the root CLAUDE.md's check reports green for theOS with nothing run (verified: it asks for aven/ops/devx/check.mjs).",
+     "answer": "fix",
+     "note": "theOS/CLAUDE.md with the done rule comes in checkpoint 1 and grows with each checkpoint; it says the root check does not apply."
+    },
+    {
+     "sev": "Major",
+     "scope": "checkpoint 2",
+     "text": "Contrast and slide text size have no evidence or claim; a naive contrast check raises false alarms.",
+     "answer": "fix",
+     "note": "Deleted until an escape asks for them."
+    },
+    {
+     "sev": "Nit",
+     "scope": "c4",
+     "text": "One app, two checks: picking by path saves nothing.",
+     "answer": "fix",
+     "note": "Deleted: every check always runs."
+    },
+    {
+     "sev": "Nit",
+     "scope": "design",
+     "text": "It repeats avenCEO's definition; no checkpoint builds its table.",
+     "answer": "fix",
+     "note": "Moved into avenCEO's definition (Memory and decision history)."
+    },
+    {
+     "sev": "Nit",
+     "scope": "c5",
+     "text": "A process claim already met; nothing builds it.",
+     "answer": "fix",
+     "note": "Moved to avenCEO's rules."
+    },
+    {
+     "sev": "Nit",
+     "scope": "assumption on app.js",
+     "text": "The fix was committed before Gate A and is in no checkpoint.",
+     "answer": "fix",
+     "note": "Reworded: viewer changes are ordinary edits under the done rule."
+    },
+    {
+     "sev": "Nit",
+     "scope": "question 1",
+     "text": "live.now already answers it; signed approvals are YAGNI.",
+     "answer": "fix",
+     "note": "The question is now a plain yes or no; signing is dropped."
+    },
+    {
+     "sev": "Nit",
+     "scope": "glossary.json",
+     "text": "Word decisions already live in the current intents (theOS AIP-22, 32, 41) and slides mark terms; cite them, and scope by story ids.",
+     "answer": "fix",
+     "note": "Each entry cites the theOS AIP that decided it; scopes are story ids."
+    }
+   ]
   }
  ],
  "events": [
@@ -802,6 +958,54 @@
    "by": "avenMAIA",
    "what": "revised",
    "text": "Revision 4: everything in theOS/, from scratch: theOS/avenCEO/ with its own check command, theOS/docs/glossary.json, theOS/CLAUDE.md; legacy code is learned from, never touched; the question about the repository's CLAUDE.md is dropped."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "checkers",
+   "what": "review",
+   "text": "Round 3 on 900c30ba2: paraphrase (7 Major, 4 Nit) and zoom out (1 Blocker, 4 Major, 6 Nit). Not clean: the third round in a row."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "verified",
+   "text": "Round 3's facts checked: at the replay commits the data files were theDECISIONS.json and theAUDIT.json (faf266961's parent) and theINTENTS.json (106ba0e5f's and 3ddc07339's); Playwright is only in the repository's root package.json; the root CLAUDE.md asks for aven/ops/devx/check.mjs."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "Samuel",
+   "what": "answer",
+   "text": "We can reuse the sandbox for our testing, but nothing else. The current Intents board is legacy too: learn from it, and migrate its lessons into the new avenCEO harness."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "Samuel",
+   "what": "answer",
+   "text": "The single source of truth for every intent and all its stages is the theOS folder."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "moved",
+   "text": "Records to theOS/aip/, avenCEO's definition to theOS/avenCEO/avenceo.json, the viewer's entry to theOS/index.html; theOS/docs keeps the viewer and the legacy board's data."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "erratum",
+   "text": "The earlier event of avenMAIA typed \"correction\" is an erratum: \"correction\" is kept for Samuel correcting work called done."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "revised",
+   "text": "Revision 5: the crawl and a pixel diff choose what the checker sees; theOS/CLAUDE.md and theOS/package.json in checkpoint 1; contrast, text size and picking by path deleted; outcome per 10 commits; memory and decision history moved to avenCEO's definition."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "stopped",
+   "text": "Three rounds without a clean round: avenCEO's rule stops and asks Samuel what next (question 2)."
   }
  ]
 }
