@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-56",
+ "n": 56,
+ "title": "The Aven Peer stays at aven.maia.city",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "release",
+  "legacy"
+ ],
+ "quote": "Yes, keep it.",
+ "means": "theOS's release replaces only the pages at aven.maia.city; the Aven Peer (its relay, /aven.json, the vault and passkey there) stays as it is.",
+ "intents": [
+  "aip/AIP-5"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-30"
+ ],
+ "reflection": {
+  "checked": "every decision before D-56 that held",
+  "result": "supersedes nothing"
+ }
+}
