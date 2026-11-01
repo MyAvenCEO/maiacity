@@ -12,7 +12,7 @@
  "fields": [
   {
    "name": "quote",
-   "means": "your words, verbatim"
+   "means": "your words, polished: their clean essence, true to what you said and well written"
   },
   {
    "name": "means",
@@ -55,6 +55,8 @@
   ],
   "step": "any step",
   "author": "human",
-  "note": "Your words, recorded in the step that asked you; brain's reflection runs in the same event."
+  "note": "Your words, recorded in the step that asked you; brain's reflection runs in the same event.",
+  "kind": "kept",
+  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
  }
 }

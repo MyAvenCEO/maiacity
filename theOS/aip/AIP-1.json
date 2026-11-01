@@ -283,6 +283,14 @@
     "Back to Understand"
    ],
    "answered": "decisions/D-23"
+  },
+  {
+   "q": "Round 6 was not clean: the third round in a row since your restart, so avenCEO's rule stops here and asks you. Its findings sit almost all in checkpoint 3 (the pixel diff and the look checker) and in the outcome; checkpoints 1 and 2 (theOS/CLAUDE.md, package.json, the crawl and the docs check) drew none. What next?",
+   "options": [
+    "Gate A for checkpoints 1 and 2 now; checkpoint 3 and the outcome go back to Specify with round 6's findings (recommended)",
+    "Revision 9 for everything, then round 7",
+    "Build all three with the open findings"
+   ]
   }
  ],
  "events": [
@@ -906,6 +914,57 @@
    "writes": [],
    "reads": [],
    "task": "t10"
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Revision 8: all good; the pixel diff explained in detail.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-34"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The pixel diff described step by step in the record (pixel_diff): base, render, compare, group, pick, show, judge, and the checker's own test.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:40Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Round 6 on revision 8: r6-paraphrase (7 Major, 3 Nit); r6-zoom-out (2 Major, 5 Nit). Not clean: the third round in a row since your restart.",
+   "how": "fresh subagents with the prompts avenCEO/checkers/paraphrase and avenCEO/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-1/r6-paraphrase",
+    "aip/AIP-1/r6-zoom-out"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:40Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Round 6 ran.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T09:40Z",
+   "by": "authors/avenmaia",
+   "what": "stopped",
+   "text": "Three rounds without a clean round since your restart: avenCEO's rule stops and asks you what next. Round 6's findings stay open until you answer.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
@@ -918,13 +977,15 @@
   "aip/AIP-1/r4-paraphrase",
   "aip/AIP-1/r4-zoom-out",
   "aip/AIP-1/r5-paraphrase",
-  "aip/AIP-1/r5-zoom-out"
+  "aip/AIP-1/r5-zoom-out",
+  "aip/AIP-1/r6-paraphrase",
+  "aip/AIP-1/r6-zoom-out"
  ],
  "source": {
   "type": "idea",
   "by": "authors/samuel-andert",
   "at": "2026-11-01",
-  "text": "Apply our own flow to building the flow engine. Call the agent harness avenCEO. Implement it now.",
+  "text": "Apply our own flow to building the flow engine, call the agent harness avenCEO, and implement it now.",
   "links": [
    "avenCEO/avenCEO"
   ],
@@ -957,7 +1018,7 @@
   },
   {
    "id": "t11",
-   "what": "Spec review round 6, the last before avenCEO's rule stops and asks you",
+   "what": "Spec review round 6",
    "step": 2,
    "who": "two fresh checkers"
   },
@@ -1001,5 +1062,15 @@
    "for": "the outcome",
    "who": "authors/avenmaia"
   }
+ ],
+ "pixel_diff": [
+  "Base: the commit of the last published version, read off the newest commit message that names an artifact version.",
+  "Render: the crawl visits every state of the three apps at the base and at the change, at 390x844 and 1280x720, in the same box and browser; each screenshot waits for document.fonts.ready and for no network request in flight. A state is keyed by its route and size.",
+  "Compare: for each state in both, the two PNGs are compared pixel by pixel; a pixel counts as changed when any channel differs by more than a small threshold, so anti-aliasing noise is ignored. States only in the change are new; only in the base are gone.",
+  "Group: each changed or new state is grouped by its rendered structure (the sorted set of class names in it) and its size. A layout bug shows the same way across one structure, so one group is one kind of view.",
+  "Pick: from each group the program picks the state with the most changed pixels; it never picks by path, and the author never picks.",
+  "Show: the look checker, a fresh agent with its prompt in theOS/avenCEO/checkers/look.json, sees per group the before and after screenshots with the changed pixels marked, the group's count, and nothing of the conversation.",
+  "Judge: for each, it answers pass, or Blocker, Major or Nit with what looks broken (cut off, overlapping, squeezed, unreachable, off-style). A Blocker or Major stops the done rule; the answer is stored with the prompt.",
+  "Test of the checker: replayed on the fixes 106ba0e5f, 3ddc07339 and b1d105b39 as (the fix's parent, the fix): shown the parent's views it must flag them, shown the fix's it must pass them."
  ]
 }

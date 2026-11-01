@@ -30,6 +30,8 @@
   ],
   "step": "any step",
   "author": "agent",
-  "note": "Written once per author."
+  "note": "Written once per author.",
+  "kind": "kept",
+  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
  }
 }

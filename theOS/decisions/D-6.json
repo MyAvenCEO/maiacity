@@ -10,7 +10,7 @@
   "theOS",
   "memory"
  ],
- "quote": "also we want the SSOT for every intent and all its stages to be \"theOS\" repo folder",
+ "quote": "The theOS folder is the single source of truth for every intent and all its stages.",
  "means": "theOS/ holds every intent and all its stages.",
  "intents": [
   "aip/AIP-1",

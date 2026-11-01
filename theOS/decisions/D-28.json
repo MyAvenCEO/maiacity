@@ -10,7 +10,7 @@
   "naming",
   "avenCEO"
  ],
- "quote": "ok, lets again rename the harness itself to avenCEO, as the agent harness framework, and its instance using it stays avenMAIA",
+ "quote": "Rename the harness framework back to avenCEO; its instance stays avenMAIA.",
  "means": "The agent harness framework is avenCEO again; avenMAIA stays its instance.",
  "intents": [
   "aip/AIP-1"

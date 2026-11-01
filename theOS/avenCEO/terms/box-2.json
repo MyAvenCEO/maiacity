@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/box-2",
+ "word": "Box",
+ "means": "The avenSANDBOX image: where every theOS check runs, in every scenario.",
+ "supersedes": [
+  {
+   "term": "avenCEO/terms/box",
+   "how": "redefined: the image, not the session's own tools"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes box (redefined)"
+ }
+}

@@ -10,7 +10,7 @@
   "sources",
   "trace"
  ],
- "quote": "also the \"read\" flag can be dropped, as it's per intent session and not globally right?",
+ "quote": "Drop the read flag: whether something was read belongs to an intent and its session, not to the source.",
  "means": "A source doc says what the source is, not whether it was read: reading is an event of the intent that read it, with when, who and how, in its trace.",
  "intents": [
   "aip/AIP-3"

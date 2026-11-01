@@ -23,7 +23,7 @@
   "type": "idea",
   "by": "authors/samuel-andert",
   "at": "2026-11-01",
-  "text": "can you create also another AIP number 4, which should discover a Claude Code native mod as user interface to directly interact with the OS or with the aven harness from Claude Code sessions",
+  "text": "Create AIP-4: discover a native Claude Code mod as a user interface, so we can work with theOS and the aven harness directly from Claude Code sessions.",
   "links": [
    "avenCEO/avenCEO"
   ],

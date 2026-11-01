@@ -29,6 +29,8 @@
   ],
   "step": "4 · Learn",
   "author": "agent",
-  "note": "A measurement is an event of the intent it measures."
+  "note": "A measurement is an event of the intent it measures.",
+  "kind": "kept",
+  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
  }
 }

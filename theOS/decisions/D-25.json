@@ -11,7 +11,7 @@
   "formats",
   "references"
  ],
- "quote": "yes do it, move to AIP 3",
+ "quote": "Yes, do it: move it into AIP-3.",
  "means": "brain's direction is approved and AIP-3 takes it into Understand: one JSON doc per thing, JSON Lines for what only grows, a JSON Schema per type, binaries by content hash, internal references pinned as path@full commit SHA. The memory parts of AIP-1 (decisions, terms, the trace, authors) move to AIP-3.",
  "intents": [
   "aip/AIP-3",

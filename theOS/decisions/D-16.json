@@ -10,7 +10,7 @@
   "naming",
   "memory"
  ],
- "quote": "also lets name the AIP-3 product actually our \"brain\"",
+ "quote": "Name AIP-3's product our brain.",
  "means": "AIP-3's product, theOS's memory and its schema, is called brain.",
  "intents": [
   "aip/AIP-3"

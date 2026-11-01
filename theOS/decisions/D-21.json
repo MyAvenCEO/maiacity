@@ -12,7 +12,7 @@
   "authors",
   "trace"
  ],
- "quote": "also call the agent harness framework \"aven\" and its instance that we use, we call it avenMAIA. so I talk to avenMAIA (and claude or agent session authorship should therefore be marked as authored by avenMAIA). everything human from me is authored by \"Samuel Andert\"",
+ "quote": "Call the harness framework aven, and the instance we use avenMAIA: I talk to avenMAIA. Everything an agent session writes is authored by avenMAIA; everything human from me is authored by Samuel Andert.",
  "means": "The harness framework is aven; its instance we use is avenMAIA, the one you talk to. Every agent session writes as avenMAIA; everything human is authored by Samuel Andert.",
  "intents": [
   "aip/AIP-1",

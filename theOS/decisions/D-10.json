@@ -10,7 +10,7 @@
   "naming",
   "intents"
  ],
- "quote": "pls rename the legacy AIPs as OLD-AIP, not the theOS AIP",
+ "quote": "Rename the legacy AIPs to OLD-AIP, not theOS's own AIPs.",
  "means": "The 91 legacy intents are OLD-AIP-1 to OLD-AIP-91; AIP-n is avenCEO's sequence.",
  "intents": [
   "aip/AIP-1"

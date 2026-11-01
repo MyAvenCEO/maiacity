@@ -11,7 +11,7 @@
   "memory",
   "types"
  ],
- "quote": "can you also standardize the trace flow across all our types, it should be built and maintained by the AIP brain",
+ "quote": "Standardize the trace across all our types; brain (AIP-3) builds and maintains it.",
  "means": "Every type is traced the same way: its type doc says which events write its docs (what, in which step, by which kind of author), every doc shows the same trace, and AIP-3 (brain) builds it and keeps it, its check enforcing it.",
  "intents": [
   "aip/AIP-3"

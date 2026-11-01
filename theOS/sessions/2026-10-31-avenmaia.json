@@ -12,42 +12,42 @@
  "asks": [
   {
    "about": "theOS explainer",
-   "quote": "rename rule to policy; read has paths like every other operation; one SSOT for the operations shape; every reference names data id @ version",
+   "quote": "Rename rule to policy; give read paths like every other operation; keep one single source of truth for the shape of operations; every reference names its data id at a version.",
    "did": "The 13 chapters, their Architecture panels and the operations schema."
   },
   {
    "about": "security",
-   "quote": "make another deep security audit around all the current decided facts ... this is mission critical crypto design",
+   "quote": "Run another deep security audit of everything decided so far: this is mission-critical crypto design.",
    "did": "Audits from primary sources; findings became proposals."
   },
   {
    "about": "research",
-   "quote": "deep audit of other systems such as urbit / tlon, hypercore / pears, jazz lenses and loro branching, p2panda, iroh",
+   "quote": "Audit other systems in depth: Urbit and Tlon, Hypercore and Pears, Jazz's lenses, Loro's branching, p2panda and iroh.",
    "did": "Research that fed the current intents."
   },
   {
    "about": "guardian",
-   "quote": "one guardian per identity ... its own primitive ... the root of trust",
+   "quote": "One guardian per identity: its own primitive, the root of trust.",
    "did": "OLD-AIP-91, woven through the chapters."
   },
   {
    "about": "intents",
-   "quote": "lets create a proper flow pipeline instead ... learn, propose, decision ... a kanban board",
+   "quote": "Let's build a proper flow pipeline instead: learn, propose, decide, on a kanban board.",
    "did": "The Intents board (now legacy)."
   },
   {
    "about": "flow",
-   "quote": "lets define a new flow from scratch how we actually want to work",
+   "quote": "Let's define from scratch how we actually want to work.",
    "did": "The flow: first principles, design thinking, the Claude Code team, Shopify Helix, Harness², the Elephant-Goldfish Model."
   },
   {
    "about": "avenCEO",
-   "quote": "lets apply our own flow to building out the flow engine ... call it avenCEO",
+   "quote": "Let's apply our own flow to building the flow engine itself, and call it avenCEO.",
    "did": "AIP-1, three spec review rounds, five revisions."
   },
   {
    "about": "memory",
-   "quote": "we document everything in there also as our memory ... each in their own doc",
+   "quote": "We document everything there as our memory, each thing in its own doc.",
    "did": "This: one JSON doc per thing in theOS/."
   }
  ],
@@ -80,7 +80,14 @@
   "decisions/D-26",
   "decisions/D-27",
   "decisions/D-28",
-  "decisions/D-29"
+  "decisions/D-29",
+  "decisions/D-30",
+  "decisions/D-31",
+  "decisions/D-32",
+  "decisions/D-33",
+  "decisions/D-34",
+  "decisions/D-35",
+  "decisions/D-36"
  ],
  "corrections": [
   {

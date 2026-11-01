@@ -10,7 +10,7 @@
   "naming",
   "intents"
  ],
- "quote": "we still call them AIPs so AIP 1 not CEO-1",
+ "quote": "We still call them AIPs: it's AIP-1, not CEO-1.",
  "means": "Intents keep the name AIP.",
  "intents": [
   "aip/AIP-1"

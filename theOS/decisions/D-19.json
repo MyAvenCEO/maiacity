@@ -11,7 +11,7 @@
   "intents",
   "trace"
  ],
- "quote": "all those brain memory are maintained by the actual intent flow lifecycles right? so it also traces which step did when what and how right?",
+ "quote": "brain is maintained by the intents' lifecycles, so it also traces which step did what, when and how.",
  "means": "Every write to brain is an event of an intent's lifecycle. The event records when, who, what and how, and which docs it wrote; the step is the one the intent stood at, computed from the events before it. A doc's trace is the event that wrote it.",
  "intents": [
   "aip/AIP-3"

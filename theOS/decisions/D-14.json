@@ -10,7 +10,7 @@
   "apps",
   "style"
  ],
- "quote": "please style this purely in light mode",
+ "quote": "Style this in light mode only.",
  "means": "The dashboard and the Intents and Sources apps are light only.",
  "intents": [
   "aip/AIP-1"

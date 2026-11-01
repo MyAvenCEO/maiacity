@@ -28,6 +28,8 @@
   ],
   "step": "AIP-1's steps",
   "author": "agent",
-  "note": "A checker's prompt changes only by an event that names it."
+  "note": "A checker's prompt changes only by an event that names it.",
+  "kind": "living",
+  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is revised in place, each revision an event in the trace."
  }
 }

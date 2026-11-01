@@ -10,7 +10,7 @@
   "testing",
   "legacy"
  ],
- "quote": "please also move the whole \"responsibility and ownership lifecycle of avenSANDBOX\" into theOS, this helps with our testing gates test and lean and vectors etc, too right?",
+ "quote": "Move the whole responsibility for avenSANDBOX, and its lifecycle, into theOS. That helps our testing gates too: tests, Lean, vectors.",
  "means": "AIP-2 starts: theOS takes over avenSANDBOX's responsibility and lifecycle.",
  "intents": [
   "aip/AIP-2"

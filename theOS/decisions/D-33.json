@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "D-33",
+ "n": 33,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "sandbox",
+  "testing"
+ ],
+ "quote": "That's not what we wanted for AIP-2. Keep the name avenSANDBOX and keep the image workflow, so every scenario gets the same clean environment. Don't strip out its good parts such as Lean and bun: it was already a great sandbox.",
+ "means": "theOS takes avenSANDBOX whole: its name, its image with every tool (Playwright with Chromium, Rust with wasm, the nightly with cargo-fuzz, bun, Lean, versitygw, clang), its image workflow and its cloud setup, so every check runs in the same clean box in every scenario. Only what is avenDB's own (its crates and its four peers) stays behind.",
+ "intents": [
+  "aip/AIP-2"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-24"
+ ],
+ "reflection": {
+  "checked": "every decision before D-33 that held",
+  "result": "supersedes nothing"
+ }
+}

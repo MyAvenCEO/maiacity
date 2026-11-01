@@ -1,0 +1,61 @@
+{
+ "type": "review",
+ "id": "aip/AIP-1/r6-zoom-out",
+ "intent": "aip/AIP-1",
+ "round": 6,
+ "lens": "zoom-out",
+ "commit": "066b9eb54",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-1.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there that the plan rebuilds needlessly? Search theOS/ to find out.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "c3, the b1d105b39 replay",
+   "text": "That fix changes behaviour, not a broken layout: at its parent a still screenshot shows nothing broken. The look checker can flag it only if its prompt mentions per-column scrolling, which tunes it to the known bug. The escape was a preference nobody had written down: the other half of the root cause. Simpler: drop b1d105b39 from c3's replays and list it under gaps; write each layout correction as a rule the look checker reads, mechanical where it can be (a board column is its own scroll container).",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Major",
+   "scope": "done rule, the look checker",
+   "text": "A fresh agent on every change: a record edit changes its page, trace tables, backlinks and the dashboard, so nearly every commit wakes the checker, with no time limit, no limit on what it is shown, and no enforcement: the step most likely skipped. Simpler: mechanical checks on every change; the look checker only when view code (.js, .css, .html) changed, or a group's set of class names is new.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Nit",
+   "scope": "order, c4",
+   "text": "Checkpoint 2 times a command that diffs nothing; checkpoint 3 doubles the work. Move the screenshots and c4 to checkpoint 3; keep checkpoint 2 to buttons and the fixture.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Nit",
+   "scope": "the pixel diff's base",
+   "text": "No commit message names an artifact version yet, so at checkpoint 3 every view counts as changed. Publish the first version in checkpoint 1, or fall back to the parent commit.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Nit",
+   "scope": "title",
+   "text": "\"Build avenCEO, our agent harness\" no longer matches: it builds the done rule's checks for theOS's three apps. Rename it.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Nit",
+   "scope": "check and checker docs",
+   "text": "The look checker's prompt has two homes; the checker type lists only paraphrase and zoom-out; the check type repeats the claims: defer it until a second intent adds checks.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Nit",
+   "scope": "deferred",
+   "text": "\"An append-only check for events\" is AIP-3's c2: point there.",
+   "answer": "open",
+   "note": ""
+  }
+ ]
+}

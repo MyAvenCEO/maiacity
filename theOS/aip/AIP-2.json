@@ -3,7 +3,7 @@
  "id": "AIP-2",
  "title": "theOS owns avenSANDBOX",
  "kind": "product",
- "note": "theOS owns what the cloud environment avenSANDBOX runs. avenDB's pipeline is parked (checkpoint 1); the release moved to AIP-5.",
+ "note": "theOS takes avenSANDBOX whole (D-33): its name, its image with every tool, its image workflow and its cloud setup. avenDB's release, peer image and deploy stay parked; the release is AIP-5.",
  "questions": [
   {
    "q": "Move avenSANDBOX into theOS (theOS owns it and its release from then on), or copy it and leave avenDB's release where it is? And who releases the box afterwards?",
@@ -28,7 +28,7 @@
    "Samuel Andert, who wants one authority for what ships.",
    "avenMAIA, which lives in the box: the cloud environment avenSANDBOX warms every new session with the box's image."
   ],
-  "experience": "The cloud environment avenSANDBOX runs a legacy file (aven/DB2/sandbox/box/cloud-setup.sh) once before its disk is snapshotted, and that snapshot holds 24 GB of avenDB's Docker box (/var/lib/docker), which theOS does not use. theOS's checks need only bun, node and Chromium, which the base image already has.",
+  "experience": "avenSANDBOX gives every scenario the same clean box (a cloud session, a GitHub runner, a Mac with OrbStack): one image with every tool, built by its own workflow and tagged by its inputs. But its definition lives in avenDB, its workflow is parked, and its build reads avenDB's Cargo files, so theOS's checks have no box of their own.",
   "evidence": [
    {
     "group": "The pipeline was avenDB's",
@@ -61,9 +61,9 @@
   ],
   "baseline": "Before the park: four workflows, all avenDB's. theOS has no box, no workflow and no release of its own.",
   "whys": [
-   "The environment runs a legacy file and keeps a 24 GB snapshot theOS does not use. Why? The box was built for avenDB (29 to 31 Oct) before theOS became the standalone project (D-4).",
-   "Why? Nothing in theOS says what the environment should run.",
-   "Root cause: what the sandbox runs belongs to a legacy project."
+   "theOS's checks have no clean box of their own. Why? avenSANDBOX's image is defined, tagged and built from avenDB's files, and its workflow is parked with avenDB's.",
+   "Why? It was built for avenDB (29 to 31 Oct) before theOS became the standalone project (D-4).",
+   "Root cause: avenSANDBOX belongs to a legacy project."
   ],
   "truths": [
    "GitHub runs the workflow files of the branch an event happens on; a file moved out of .github/workflows/ on that branch never runs there.",
@@ -72,10 +72,12 @@
    "A workflow file must live in .github/workflows/; what it runs can live in theOS/."
   ],
   "assumptions": [
-   "theOS's checks need only bun, node and Chromium, all in the base image; Lean, Rust and the vectors join when an AIP needs them.",
-   "Changing the environment's setup script is a setting only you can change; you paste it at your direct ask (D-24), checkpoint 2."
+   "avenSANDBOX's tools stay as they are: Playwright with Chromium, Rust stable with wasm32 and wasm-bindgen, the nightly with cargo-fuzz, bun, elan with Lean, versitygw, clang and llvm (D-33).",
+   "Only avenDB's own parts stay behind: the step that compiles avenDB's crates, its compose file and its four peers. avenDB's `bun run up` stops working when the box moves; avenDB is parked.",
+   "The image keeps its name, ghcr.io/myavenceo/aven/sandbox; old tags stay in the registry.",
+   "Changing the environment's setup script is a setting only you can change; you paste it at Gate B."
   ],
-  "risk": "Can be undone: the park by moving the files back (tried in a scratch checkout, c1); the environment's script by pasting the previous one, kept in theOS/sandbox/. The script is shared by every session in the environment. production is frozen by its ruleset, which requires two checks only the parked workflow reported; it moves with the release (AIP-5)."
+  "risk": "Can be undone: the move by git mv back (tried in a scratch checkout); the environment's script by pasting the previous one, kept in theOS/sandbox/; the image's old tags stay pullable. The environment's script is shared by every session in it. production is frozen by its ruleset; it moves with the release (AIP-5)."
  },
  "reuse": [
   {
@@ -97,42 +99,58 @@
  ],
  "options": [
   {
-   "name": "Move avenDB's sandbox files into theOS",
-   "note": "Rejected: they build and test avenDB; theOS would carry and depend on legacy code (D-4).",
-   "chosen": false
-  },
-  {
-   "name": "Copy, and keep avenDB releasing until theOS's copy passes",
-   "note": "Rejected by Samuel Andert (D-24): theOS is the authority now.",
-   "chosen": false
-  },
-  {
-   "name": "Park avenDB's pipeline now; theOS builds its own box and pipeline from scratch",
-   "note": "Ownership moves at once (D-24); theOS's box and release grow in checkpoints, smallest first.",
+   "name": "Move avenSANDBOX into theOS whole",
+   "note": "Its name, its image with every tool, its image workflow and its cloud setup move under theOS/sandbox/; only avenDB's own parts stay behind (D-33).",
    "chosen": true
+  },
+  {
+   "name": "A setup script only, no image (revision 3)",
+   "note": "Rejected by you (D-33): the image is what keeps every scenario the same clean box.",
+   "chosen": false
+  },
+  {
+   "name": "Copy, and keep avenDB building it",
+   "note": "Rejected (D-24): theOS is the authority now.",
+   "chosen": false
   }
  ],
  "claims": [
   {
    "id": "c1",
-   "promise": "Once the park is on main, no avenDB workflow runs on main, and nothing live changes. Branches made before the park keep their copies until they merge main.",
+   "promise": "Once the park is on main, avenDB's release, peer-image and deploy workflows do not run on main, and nothing live changes. Branches made before the park keep their copies until they merge main.",
    "fails": "A parked workflow still runs on main, or the park takes something down.",
-   "check": "After the merge: main's Actions runs show none of the four; aven.maia.city answers; in a scratch checkout, moving one file back re-lists it.",
+   "check": "After the merge: main's Actions runs show none of the three; aven.maia.city answers.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c2",
+   "promise": "avenSANDBOX's image is built only from theOS/sandbox/box/ by its image workflow, back in .github/workflows/, for amd64 and arm64, tagged by the hash of its inputs, with every tool it had.",
+   "fails": "The build reads a file outside theOS/, a tool goes missing, or the same inputs build twice.",
+   "check": "A push that changes theOS/sandbox/box/ builds it; a push with the same inputs builds nothing; inside it, each tool answers its --version; its tag's inputs are all under theOS/.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c3",
-   "promise": "The environment runs only what theOS says: its setup script finds theOS/sandbox/setup.sh and runs it under a 600 s limit, and never fails or hangs a session.",
+   "promise": "theOS's check runs inside the image and gives the same report in every scenario: a cloud session, the image workflow's runner, and a Mac.",
+   "fails": "The check passes in one scenario and fails in another.",
+   "check": "The image workflow runs theOS's check inside the new image as its last step; the same check in a cloud session and on a Mac gives the same report.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c4",
+   "promise": "A new cloud session starts with the box warm, and a session whose warm-up fails or hangs still starts.",
    "fails": "A setup error or a hang stops every new session before Claude starts.",
-   "check": "theOS/sandbox/environment-setup.sh, run with no setup file, a failing one and a hanging one, exits 0 within the limit each time; after you paste it, one new session starts.",
+   "check": "theOS/sandbox/box/cloud-setup.sh pulls the image and runs theOS's check once, under a 600 s limit; run in a copy with a planted failure and a planted hang, the environment's script exits 0 each time; after you paste it at Gate B, a new session starts with the image there.",
    "kind": "mechanical",
    "result": "open"
   }
  ],
  "outcome": {
-  "promise": "After the environment's snapshot is rebuilt, a new session has no /var/lib/docker, and theOS's check (AIP-1, checkpoint 1) is green in it.",
-  "how": "Read off the first new session after checkpoint 2: du /var/lib/docker, and the check's report.",
+  "promise": "Every theOS check runs in one avenSANDBOX image built from theOS/, the same in every scenario; nothing of avenDB is read to build or warm it.",
+  "how": "Read off the image workflow's run, a cloud session and a Mac after Gate B.",
   "kind": "mechanical",
   "result": "open"
  },
@@ -146,25 +164,39 @@
   },
   {
    "n": 2,
-   "adds": "theOS/sandbox/environment-setup.sh (the script you paste) and its test; you paste it at your direct ask, and one new session is started.",
+   "adds": "The box moves: Dockerfile and tag.mjs to theOS/sandbox/box/, every tool kept, inputs read from theOS/ only; avensandbox-image.yml back in .github/workflows/, pointed there.",
+   "claims": [
+    "c2"
+   ]
+  },
+  {
+   "n": 3,
+   "adds": "After AIP-1's checkpoint 1: theOS's check run inside the image, as the image workflow's last step.",
    "claims": [
     "c3"
+   ]
+  },
+  {
+   "n": 4,
+   "adds": "theOS/sandbox/box/cloud-setup.sh and the environment's new setup script, for you to paste at Gate B.",
+   "claims": [
+    "c4"
    ]
   }
  ],
  "deferred": [
   {
-   "what": "theOS/sandbox/setup.sh and a box image, with Lean, Rust and the vectors",
-   "until": "An AIP's checks need an install that is slow."
+   "what": "Compiling theOS's own crates into the image (avenDB's deps step, reborn)",
+   "until": "theOS has a Cargo workspace."
   },
   {
-   "what": "Deleting avenDB's sandbox and its parked workflows",
+   "what": "Deleting avenDB's remaining sandbox files",
    "until": "theOS has released once (AIP-5)."
   }
  ],
  "mockup": [
-  "The environment's setup script, as you paste it",
-  "A new session: no /var/lib/docker; theOS's check report green"
+  "The image workflow's run: built for both platforms, each tool's version, theOS's check green inside it",
+  "A new cloud session: the image there, theOS's check green"
  ],
  "events": [
   {
@@ -325,6 +357,39 @@
    "writes": [],
    "reads": [],
    "task": "t10"
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Keep avenSANDBOX, its image workflow and every tool; it was already a great sandbox.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-33"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 4: avenSANDBOX whole into theOS (name, image with every tool, image workflow, cloud setup); only avenDB's crates and peers stay behind; theOS's check runs inside the image in every scenario. Revision 3's setup-script-only plan withdrawn; its round 3 stopped unread.",
+   "how": "by hand",
+   "writes": [
+    "avenCEO/terms/avensandbox-3",
+    "avenCEO/terms/box-2"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Revision 4 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t12"
   }
  ],
  "reviews": [
@@ -337,7 +402,7 @@
   "type": "idea",
   "by": "authors/samuel-andert",
   "at": "2026-11-01",
-  "text": "please also move the whole \"responsibility and ownership lifecycle of avenSANDBOX\" into theOS, this helps with our testing gates test and lean and vectors etc, too right?",
+  "text": "Move the whole responsibility for avenSANDBOX, and its lifecycle, into theOS. That helps our testing gates too: tests, Lean, vectors.",
   "links": [],
   "ref": "decisions/D-13"
  },
@@ -380,6 +445,12 @@
    "who": "authors/avenmaia"
   },
   {
+   "id": "t12",
+   "what": "Revision 4: avenSANDBOX whole (D-33)",
+   "step": 2,
+   "who": "authors/avenmaia"
+  },
+  {
    "id": "t11",
    "what": "Spec review round 3",
    "step": 2,
@@ -387,21 +458,28 @@
   },
   {
    "id": "t6",
-   "what": "Checkpoint 2: theOS/sandbox/environment-setup.sh and its test",
+   "what": "Checkpoint 2: move the box, its workflow back",
    "step": 3,
    "for": "checkpoint 2",
    "who": "authors/avenmaia"
   },
   {
    "id": "t7",
-   "what": "Paste the environment's setup script and start one session",
+   "what": "Checkpoint 3: theOS's check inside the image",
    "step": 3,
-   "for": "checkpoint 2",
-   "who": "authors/samuel-andert"
+   "for": "checkpoint 3",
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t9",
+   "what": "Checkpoint 4: cloud-setup.sh and the environment's script",
+   "step": 3,
+   "for": "checkpoint 4",
+   "who": "authors/avenmaia"
   },
   {
    "id": "t8",
-   "what": "Gate B: try it",
+   "what": "Gate B: paste the environment's script, start a session, try it",
    "step": 3,
    "who": "authors/samuel-andert"
   }

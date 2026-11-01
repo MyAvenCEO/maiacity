@@ -11,7 +11,7 @@
   "testing",
   "intents"
  ],
- "quote": "we can reuse f.e. the sandbox, for our testing - but else not. also our current \"intents board\" is legacy too -> we can learn from it - but want to migrate its lessons to build the new avenCEO harness, right?",
+ "quote": "We can reuse the sandbox for testing, but nothing else. The current intents board is legacy too: we learn from it and carry its lessons into the new avenCEO harness.",
  "means": "The sandbox may be used for testing; the Intents board is legacy, its lessons move into avenCEO.",
  "intents": [
   "aip/AIP-1"

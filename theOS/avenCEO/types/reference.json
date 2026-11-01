@@ -49,6 +49,8 @@
   ],
   "step": "any step",
   "author": "agent",
-  "note": "Reading is an event of the intent that read it; a doc of ours about it is written by an event too."
+  "note": "Reading is an event of the intent that read it; a doc of ours about it is written by an event too.",
+  "kind": "kept",
+  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
  }
 }

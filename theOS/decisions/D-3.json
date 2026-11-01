@@ -10,7 +10,7 @@
   "naming",
   "intents"
  ],
- "quote": "AIP 1 (we consolidate the current AIPs later into the new flow format)",
+ "quote": "Number it AIP-1. We'll consolidate the current AIPs into the new flow format later.",
  "means": "avenCEO starts a new AIP sequence at AIP-1; the 91 current intents are consolidated later.",
  "intents": [
   "aip/AIP-1"

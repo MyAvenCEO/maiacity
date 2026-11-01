@@ -11,7 +11,7 @@
   "terms",
   "decisions"
  ],
- "quote": "the brain reflection, maintenance, contradiction resolution flow is part of our own brain memory implementation right? so this should govern also our Terms in the same way, by superseding and merging terms",
+ "quote": "The reflection that maintains brain and resolves contradictions is part of brain itself, so it should govern terms the same way: superseding and merging them.",
  "means": "The reflection is brain's: it governs decisions and terms alike. A new term can supersede or merge earlier terms; the current glossary is computed.",
  "intents": [
   "aip/AIP-3"

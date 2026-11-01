@@ -71,7 +71,9 @@
   "avenCEO/terms/avenpeer",
   "avenCEO/terms/avensandbox",
   "avenCEO/terms/avensandbox-2",
+  "avenCEO/terms/avensandbox-3",
   "avenCEO/terms/box",
+  "avenCEO/terms/box-2",
   "avenCEO/terms/brain",
   "avenCEO/terms/check",
   "avenCEO/terms/checker-goldfish",
@@ -123,7 +125,8 @@
   "Checkers get the record's path, avenCEO's definition and their lens, never the worker's reasoning; each review entry keeps the exact prompt and the commit reviewed.",
   "brain's reflection runs on every new decision and every new term: it is checked against every one that still holds, and what it supersedes or merges, in whole or in part, is written on the new one. Old ones are never edited; what still holds is computed.",
   "Nothing is written to brain outside an intent's lifecycle: every write is an event of the intent it serves, with how it was done and what it wrote. A direct ask is traced the same way, in the intent it changes, as done ahead of that intent's gates.",
-  "Every agent session writes in brain as avenMAIA, and every human word as Samuel Andert; an event's how says which session and role."
+  "Every agent session writes in brain as avenMAIA, and every human word as Samuel Andert; an event's how says which session and role.",
+  "Your words are kept polished: clear, close to what you meant, true to what you said and well written. Only the polished words are stored."
  ],
  "roles": [
   {

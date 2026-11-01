@@ -9,7 +9,7 @@
  "about": [
   "formats"
  ],
- "quote": "wait the html json rule was better, keep that instead of markdown. its way more flexible in ui",
+ "quote": "The HTML and JSON rule was better; keep it instead of markdown. It is far more flexible for the UI.",
  "means": "Docs stay native HTML and JSON: one JSON doc per thing, no markdown.",
  "intents": [
   "avenCEO/avenCEO"

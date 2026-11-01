@@ -10,7 +10,7 @@
   "naming",
   "aven"
  ],
- "quote": "and rename avenCEO to just \"Aven\"",
+ "quote": "Rename avenCEO to Aven.",
  "means": "The agent harness is called Aven (it was avenCEO).",
  "intents": [
   "aip/AIP-1"

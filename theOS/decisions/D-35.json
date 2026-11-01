@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-35",
+ "n": 35,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "memory",
+  "human in the loop",
+  "style"
+ ],
+ "quote": "Always show my words in a cleaner form: not word for word, but the essence of what I asked, true to what I said and well written. Update every place.",
+ "means": "Your words are kept as their clean essence, true to what you said and well written.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-7"
+ ],
+ "reflection": {
+  "checked": "every decision before D-35 that held",
+  "result": "supersedes nothing"
+ }
+}

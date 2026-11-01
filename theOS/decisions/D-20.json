@@ -10,7 +10,7 @@
   "human in the loop",
   "gates"
  ],
- "quote": "and yes now the HITL is good enough from the chat",
+ "quote": "Yes: the human in the loop through chat is good enough for now.",
  "means": "Your chat message, quoted into the intent with its time, counts as your approval at a gate (AIP-1, question 1).",
  "intents": [
   "aip/AIP-1"

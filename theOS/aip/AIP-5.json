@@ -8,7 +8,7 @@
   "type": "idea",
   "by": "authors/samuel-andert",
   "at": "2026-11-01",
-  "text": "so the OS should be the new authority of the whole release pipeline, avenSANDBOX etc.",
+  "text": "theOS should be the authority over the whole release pipeline, avenSANDBOX included.",
   "links": [
    "aip/AIP-2"
   ],
@@ -21,7 +21,8 @@
     "theOS's apps as a site at aven.maia.city, in place of avenOS, once checkpoint 3 is green (recommended)",
     "Somewhere new: tell me where",
     "Nothing public yet: releases are versions on GitHub only"
-   ]
+   ],
+   "answered": "decisions/D-30"
   }
  ],
  "reviews": [],
@@ -50,6 +51,27 @@
     "aip/AIP-5"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "theOS releases its apps as the site at aven.maia.city, in place of avenOS.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-30"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Answered (D-30).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t1"
   }
  ]
 }

@@ -1,0 +1,86 @@
+{
+ "type": "review",
+ "id": "aip/AIP-1/r6-paraphrase",
+ "intent": "aip/AIP-1",
+ "round": 6,
+ "lens": "paraphrase",
+ "commit": "066b9eb54",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-1.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "AIP-1 builds the first part of avenCEO as checks, not automation, all inside theOS/. A done rule in theOS/CLAUDE.md requires every theOS change to pass a check command, then a review by a fresh look checker, then a push and a republish of the private theOS artifact. The check command has three parts: a Playwright crawl of every reachable state of the three apps at two screen sizes, a docs check that content can be reached and nothing scrolls sideways, and a pixel diff against the last published version. The look checker sees the view with the most changed pixels from each group. The plan has three checkpoints, each proven by replaying old layout fixes. Success means zero layout escapes over three later sessions.",
+  "existing": "theOS is a set of typed JSON docs that link to each other by path. Three static apps behind a dashboard show them. avenCEO is a written four-step process. Samuel passes Gates A and B with chat messages that are quoted into the record, and each checkpoint has a Mechanical gate and a Review gate. The main session (avenMAIA) runs all of it by hand. Nothing checks what the apps render, so Samuel catches layout breaks by looking."
+ },
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "done rule, terms/published-2",
+   "text": "Several AIPs run at once (D-26) but there is one artifact, and \"the newest commit whose message names an artifact version\" names no branch: a diff can take its base from another branch's publish, and republishes overwrite each other. The version is put in a commit pushed before the publish that creates it.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Major",
+   "scope": "checkpoints 1 and 2, gates/review",
+   "text": "The look checker is a checkpoint's only critic and arrives in checkpoint 3; checkpoints 1 and 2 change only check code, which no view shows, so their Review gate has nothing to run and no fresh checker reviews the check code. Which done rule applies before checkpoint 3 is unsaid.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Major",
+   "scope": "c3",
+   "text": "The fix commits also restyle views that were not broken, so \"at the parent, the checker flags them\" has no ground truth per group; \"passes the rest\" is never tested and a checker that flags too much passes. b1d105b39 is a scroll behaviour, but the checker sees stills; viewport or full-page is unsaid.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Major",
+   "scope": "c2, c3",
+   "text": "A state's identity is its route plus its rendered text, but the diff must pair views across two commits: any text edit turns a changed view into one removed and one new. Pairing and new views are undefined; the Mechanical gate diffs a new view against a mockup that small edits do not have.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Major",
+   "scope": "c3, c4",
+   "text": "Grouping by the exact set of class names has no upper bound, and c4 times only the check command: nothing limits how much the look checker is shown.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "A layout escape is a correction event, but events live in intents and small edits have no intent; avenCEO forbids writes outside an intent's lifecycle. The baseline is in a session doc, and avenMAIA, whose work is measured, decides the cause.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Major",
+   "scope": "risk",
+   "text": "\"Can be undone\" needs a tested undo; nothing tests republishing the previous version.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Nit",
+   "scope": "deferred, deleted",
+   "text": "They hand the release to AIP-2; assumption 1 and AIP-2 say AIP-5.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Nit",
+   "scope": "assumptions, checkpoint 3",
+   "text": "The look checker's prompt is in avenCEO/checks/ by assumption 3 and avenCEO/checkers/look.json by checkpoint 3; the checker type does not list it.",
+   "answer": "open",
+   "note": ""
+  },
+  {
+   "sev": "Nit",
+   "scope": "done rule",
+   "text": "Where the artifact is hosted and how it is republished is unsaid.",
+   "answer": "open",
+   "note": ""
+  }
+ ]
+}

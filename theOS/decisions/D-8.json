@@ -9,7 +9,7 @@
  "about": [
   "apps"
  ],
- "quote": "also split docs and avenCEO UI from each other. they are 2 different viewers. and sources as well. so index should have some kind of app screen dashboard with 3 sub apps: Docs, Intents (avenCEO harness UI), Sources",
+ "quote": "Split the viewers: Docs, Intents (the avenCEO harness UI) and Sources are three separate apps, behind a dashboard on the index page.",
  "means": "theOS/index.html is a dashboard of three apps: Docs, Intents (avenCEO) and Sources.",
  "intents": [
   "avenCEO/avenCEO"

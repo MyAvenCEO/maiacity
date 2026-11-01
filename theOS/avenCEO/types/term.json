@@ -28,6 +28,8 @@
   ],
   "step": "any step",
   "author": "agent",
-  "note": "A new term runs brain's reflection in the event that writes it."
+  "note": "A new term runs brain's reflection in the event that writes it.",
+  "kind": "kept",
+  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
  }
 }

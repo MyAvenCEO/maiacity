@@ -20,7 +20,8 @@
     "Keep JSON Lines and stored pins, as decided",
     "Only the arrays",
     "Only the computed version"
-   ]
+   ],
+   "answered": "decisions/D-31"
   },
   {
    "q": "Gate A for AIP-3, after its spec review: are its claims, assumptions, outcome and mockup what must be true?",
@@ -98,8 +99,8 @@
  ],
  "options": [
   {
-   "name": "The direction you approved (D-25)",
-   "note": "A JSON doc per thing, JSON Lines for what only grows, a JSON Schema per type, internal references pinned as path@full commit SHA; binaries by content hash when there are any.",
+   "name": "The direction you approved (D-25), simplified (D-31), for every type (D-32)",
+   "note": "A JSON doc per thing; one reflection and one trace for every type; arrays that only grow, checked; a link's version computed from git; binaries by content hash when there are any.",
    "chosen": true
   },
   {
@@ -119,9 +120,9 @@
   },
   {
    "id": "c3",
-   "promise": "No decision or term lands without a reflection that lists the ids it was checked against, equal to what held; a decision or term that existed may change only in its links; every path in every doc points at a doc that exists.",
-   "fails": "A decision lands without saying what it replaces, an old decision is edited, or a link points at nothing.",
-   "check": "The check fails a planted decision whose checked list misses a holding decision, an edited old decision, and a dangling path.",
+   "promise": "One reflection for every type: every new doc, of any type, lists the ids of the docs of its type it was checked against (equal to what held) and what it supersedes or merges, in whole or in part, each a doc that exists. A kept doc (decision, term, lesson, metric, reference, review, author) is never edited after, only superseded; a living doc (intent, step, gate, type, checker, check, session) is revised in place. Every path points at a doc that exists.",
+   "fails": "A new doc of some type lands without saying what it replaces, a kept doc is edited, or a link points at nothing.",
+   "check": "For each type, the check fails a planted new doc whose checked list misses a holding doc of its type, an edited kept doc, and a dangling path; each type doc says kept or living.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -143,25 +144,25 @@
   },
   {
    "id": "c7",
-   "promise": "Agents read what holds before they act: a command lists the decisions and terms that hold, and theOS/CLAUDE.md names it first.",
-   "fails": "Agents act on a superseded decision or word because they read raw files.",
-   "check": "The command's list equals the apps' Hold now and Current views on the same commit.",
+   "promise": "Agents read what holds before they act: a command lists, for every type, the docs that hold and the ones superseded, and theOS/CLAUDE.md names it first. The apps show the same Hold now and Superseded split for every type.",
+   "fails": "Agents act on a superseded doc of any type because they read raw files.",
+   "check": "The command's list equals the apps' lists for every type on the same commit.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c2",
-   "promise": "What only grows (an intent's events, a metric's measurements, a session's asks) only grows: a change that edits or drops an earlier entry fails.",
+   "promise": "What only grows (an intent's events, a metric's measurements, a session's asks) stays a JSON array that only grows: a change that edits or drops an earlier entry fails.",
    "fails": "History is rewritten and nothing notices.",
-   "check": "The check requires the base version to be a prefix of the new one; a planted edit of an old entry fails.",
+   "check": "The check requires the base array to be a deep-equal prefix of the new one; a planted edit, deletion or rename of an old entry fails.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c5",
-   "promise": "A link's version is known: the apps flag a link whose target changed after it was cited.",
+   "promise": "A link's version is computed, never stored: the version cited is the commit that added the citing line, and the check flags a link whose target changed since; the flag is written into the published artifact as one generated file, never committed.",
    "fails": "A link silently shows content that changed after it was cited.",
-   "check": "A planted citation of a doc that changed since is flagged; how the version is kept depends on your answer to question 2.",
+   "check": "A planted citation of a doc that changed after the citing commit is flagged, and the apps show the flag from the generated file.",
    "kind": "mechanical",
    "result": "open"
   }
@@ -175,7 +176,7 @@
  "checkpoints": [
   {
    "n": 1,
-   "adds": "After AIP-1's checkpoint 1: the schema inside each type doc, type docs for index and definition, the dangling-link check; the command that lists what holds, named first in theOS/CLAUDE.md.",
+   "adds": "After AIP-1's checkpoint 1: the schema inside each type doc, type docs for index and definition, kept or living on each type, the dangling-link check; the command that lists what holds for every type, named first in theOS/CLAUDE.md.",
    "claims": [
     "c1",
     "c7"
@@ -183,7 +184,7 @@
   },
   {
    "n": 2,
-   "adds": "The reflection and the trace enforced: checked lists, old decisions and terms unchanged, every changed doc written by an event in its change that fits its type's trace rule.",
+   "adds": "One reflection and one trace enforced for every type: checked lists, kept docs unchanged, every changed doc written by an event in its change that fits its type's rule; supersedes entries in one form ({doc, part, what}).",
    "claims": [
     "c3",
     "c4"
@@ -191,14 +192,14 @@
   },
   {
    "n": 3,
-   "adds": "Renames as term docs with their old word and scope; the terms check (from AIP-1).",
+   "adds": "Renames as term docs with their old word and scope; the terms check.",
    "claims": [
     "c6"
    ]
   },
   {
    "n": 4,
-   "adds": "History only grows; a link's version, as you answer question 2.",
+   "adds": "Arrays that only grow, checked; a link's version computed from git and its flag in the published artifact.",
    "claims": [
     "c2",
     "c5"
@@ -216,9 +217,8 @@
   }
  ],
  "mockup": [
-  "Decisions that hold: theOS/avenCEO/index.html#decisions",
-  "Terms: theOS/avenCEO/index.html#terms",
-  "A link whose target changed since it was cited: a chip \"changed since\" beside the link, opening the diff"
+  "Every list in the Intents app, split into Hold now and Superseded: theOS/avenCEO/index.html#decisions, #terms, #lessons, #metrics",
+  "A link whose target changed since it was cited: a chip \"changed since\" beside it, opening the diff"
  ],
  "events": [
   {
@@ -472,6 +472,199 @@
     "avenCEO/types/author"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Both simplifications: arrays that only grow, and a link's version computed from git.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-31"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Answered (D-31).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t3"
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "One logic for every type, not only decisions; the command list kept.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-32"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 3: one reflection for every type, each type kept or living; the command lists what holds for every type; arrays checked to only grow; a link's version computed from git.",
+   "how": "by hand",
+   "writes": [
+    "avenCEO/types/decision",
+    "avenCEO/types/term",
+    "avenCEO/types/lesson",
+    "avenCEO/types/metric",
+    "avenCEO/types/reference",
+    "avenCEO/types/review",
+    "avenCEO/types/author",
+    "avenCEO/types/intent",
+    "avenCEO/types/step",
+    "avenCEO/types/gate",
+    "avenCEO/types/type",
+    "avenCEO/types/checker",
+    "avenCEO/types/check",
+    "avenCEO/types/session"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Revision 3 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T09:39Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Always show your words in a cleaner form, true to what you said; update every place.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-35"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:39Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Every decision, the intents' sources and the session's asks carry your words twice: as typed, and as their clean essence. Added once to the kept decisions, their words as typed untouched.",
+   "how": "by hand, at your direct ask (D-35)",
+   "writes": [
+    "decisions/D-1",
+    "decisions/D-2",
+    "decisions/D-3",
+    "decisions/D-4",
+    "decisions/D-5",
+    "decisions/D-6",
+    "decisions/D-7",
+    "decisions/D-8",
+    "decisions/D-9",
+    "decisions/D-10",
+    "decisions/D-11",
+    "decisions/D-12",
+    "decisions/D-13",
+    "decisions/D-14",
+    "decisions/D-15",
+    "decisions/D-16",
+    "decisions/D-17",
+    "decisions/D-18",
+    "decisions/D-19",
+    "decisions/D-20",
+    "decisions/D-21",
+    "decisions/D-22",
+    "decisions/D-23",
+    "decisions/D-24",
+    "decisions/D-25",
+    "decisions/D-26",
+    "decisions/D-27",
+    "decisions/D-28",
+    "decisions/D-29",
+    "decisions/D-30",
+    "decisions/D-31",
+    "decisions/D-32",
+    "decisions/D-33",
+    "decisions/D-34",
+    "aip/AIP-1",
+    "aip/AIP-2",
+    "aip/AIP-3",
+    "aip/AIP-4",
+    "aip/AIP-5",
+    "sessions/2026-10-31-avenmaia",
+    "avenCEO/types/decision",
+    "avenCEO/avenCEO"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:40Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Keep only the polished words, as long as the message stays clean.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-36"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:40Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Only the polished words are kept: the words as typed are replaced by their clean essence in every decision, intent source and session ask.",
+   "how": "by hand, at your direct ask (D-36)",
+   "writes": [
+    "decisions/D-1",
+    "decisions/D-2",
+    "decisions/D-3",
+    "decisions/D-4",
+    "decisions/D-5",
+    "decisions/D-6",
+    "decisions/D-7",
+    "decisions/D-8",
+    "decisions/D-9",
+    "decisions/D-10",
+    "decisions/D-11",
+    "decisions/D-12",
+    "decisions/D-13",
+    "decisions/D-14",
+    "decisions/D-15",
+    "decisions/D-16",
+    "decisions/D-17",
+    "decisions/D-18",
+    "decisions/D-19",
+    "decisions/D-20",
+    "decisions/D-21",
+    "decisions/D-22",
+    "decisions/D-23",
+    "decisions/D-24",
+    "decisions/D-25",
+    "decisions/D-26",
+    "decisions/D-27",
+    "decisions/D-28",
+    "decisions/D-29",
+    "decisions/D-30",
+    "decisions/D-31",
+    "decisions/D-32",
+    "decisions/D-33",
+    "decisions/D-34",
+    "decisions/D-35",
+    "aip/AIP-1",
+    "aip/AIP-2",
+    "aip/AIP-3",
+    "aip/AIP-4",
+    "aip/AIP-5",
+    "sessions/2026-10-31-avenmaia",
+    "avenCEO/types/decision",
+    "avenCEO/avenCEO"
+   ],
+   "reads": []
   }
  ],
  "reviews": [
@@ -482,7 +675,7 @@
   "type": "idea",
   "by": "authors/samuel-andert",
   "at": "2026-11-01",
-  "text": "lets talk about our schema format of SSOT for all related data that we generate on AIPs and learnings and resources etc ... what is a json file or list of json entries, what is markdown or what is both? ... also any kind of our internal git resource should be linked universally via its committed commit hashes, never via just a file path, since history changes too",
+  "text": "Let's settle the schema of our single source of truth for everything we generate in AIPs, learnings and sources: what is a JSON file, what is a list of JSON entries, what is markdown, and what is both. And link every internal git resource by its commit hash, never by a bare file path, because history changes.",
   "links": [
    "avenCEO/avenCEO"
   ],
@@ -506,6 +699,12 @@
    "what": "Answer: the two simplifications (question 2)",
    "step": 2,
    "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t11",
+   "what": "Revision 3: one logic for every type (D-32), the simplifications (D-31)",
+   "step": 2,
+   "who": "authors/avenmaia"
   },
   {
    "id": "t4",

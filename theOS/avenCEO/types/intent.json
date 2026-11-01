@@ -36,6 +36,10 @@
   {
    "name": "events",
    "means": "the trace, append-only: when, who, what, how, the docs it wrote (writes) and the sources it read or tried to (reads), and a line of text; the step is computed from the events before it"
+  },
+  {
+   "name": "design notes (pixel_diff and the like)",
+   "means": "how a part of the plan works, step by step, where a claim alone would not say it"
   }
  ],
  "written_by": "the orchestrator",
@@ -75,6 +79,8 @@
   ],
   "step": "every step",
   "author": "human and agent",
-  "note": "Its own events are its trace; its source is your words."
+  "note": "Its own events are its trace; its source is your words.",
+  "kind": "living",
+  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is revised in place, each revision an event in the trace."
  }
 }

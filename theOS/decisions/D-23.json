@@ -10,7 +10,7 @@
   "intents",
   "review"
  ],
- "quote": "rev 6",
+ "quote": "Revision 6.",
  "means": "AIP-1 goes to revision 6, then spec review round 4: it folds in D-7 to D-25 and hands the memory parts (decisions, terms, the trace) to AIP-3.",
  "intents": [
   "aip/AIP-1",

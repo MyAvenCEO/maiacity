@@ -10,7 +10,7 @@
   "checkers",
   "legacy"
  ],
- "quote": "also ensure this \"theOS\" only ref is correct in all current sub agent prompts",
+ "quote": "Make sure every current subagent prompt states the theOS-only rule correctly.",
  "means": "Every checker prompt states theOS's rule: built in theOS/ from scratch; legacy code only learned from; the sandbox may be used for testing.",
  "intents": [
   "aip/AIP-1"

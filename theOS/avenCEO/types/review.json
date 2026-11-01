@@ -41,6 +41,8 @@
   ],
   "step": "2 · Specify, or 3 · Build at a checkpoint",
   "author": "agent",
-  "note": "A fresh checker's findings; the worker's answers are added in the event that answers them."
+  "note": "A fresh checker's findings; the worker's answers are added in the event that answers them.",
+  "kind": "kept",
+  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
  }
 }

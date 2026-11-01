@@ -12,7 +12,7 @@
   "legacy",
   "theOS"
  ],
- "quote": "move it now (since this very avenMAIA session is living inside of this). this also should comment out the current avenDB aven.maia.city pipeline that we had (since it should be overwritten by the new theOS from now on), so the OS should be the new authority of the whole release pipeline, avenSANDBOX etc. do you see what I mean?",
+ "quote": "Move it now, since this very avenMAIA session lives inside it. Switch off avenDB's aven.maia.city pipeline too: theOS replaces it from now on and becomes the authority over the whole release pipeline, avenSANDBOX included.",
  "means": "theOS owns avenSANDBOX and the whole release pipeline from now on. avenDB's pipeline (its releases, its box image, avenPEER's image and the aven.maia.city deploy) is parked, not deleted: what is live stays live until theOS releases in its place.",
  "intents": [
   "aip/AIP-2"

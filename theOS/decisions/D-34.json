@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "D-34",
+ "n": 34,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "intents",
+  "review"
+ ],
+ "quote": "AIP-1's revision is all good. Just explain the pixel diff checker in more detail.",
+ "means": "AIP-1's revision 8 is what you want; the pixel diff is explained in chat and in the record.",
+ "intents": [
+  "aip/AIP-1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-23"
+ ],
+ "reflection": {
+  "checked": "every decision before D-34 that held",
+  "result": "supersedes nothing"
+ }
+}

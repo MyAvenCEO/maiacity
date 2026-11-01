@@ -10,7 +10,7 @@
   "agents",
   "intents"
  ],
- "quote": "this should never be 20-50 per AIP right? multiple AIPs can and should work with multiple agents, but this generic rule is wrong: \"The agents that do the work, in 20 to 50 parallel threads (CLAUDE.md).\"",
+ "quote": "It should never be 20 to 50 agents per AIP. Several AIPs can and should run with several agents each, but that generic rule is wrong.",
  "means": "There is no fixed number of agents. Each AIP starts the agents its work needs; several AIPs can run at once, each with its own agents. The 20 to 50 threads came from the legacy CLAUDE.md and do not apply in theOS.",
  "intents": [
   "aip/AIP-1"

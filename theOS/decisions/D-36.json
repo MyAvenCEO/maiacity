@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "D-36",
+ "n": 36,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "memory",
+  "style"
+ ],
+ "quote": "We don't need my original wording stored exactly; store only the polished version, as long as it stays clear and close to what I originally meant.",
+ "means": "Only the polished words are kept, clear and close to your original intent: in every decision, intent source and session ask, the clean essence replaces what was typed.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-35",
+   "part": "part",
+   "what": "D-35 kept your words twice; only the polished words are kept."
+  }
+ ],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before D-36 that held",
+  "result": "supersedes D-35 (part)"
+ }
+}

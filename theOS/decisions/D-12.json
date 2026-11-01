@@ -11,7 +11,7 @@
   "formats",
   "references"
  ],
- "quote": "lets talk about our schema format of SSOT for all related data that we generate on AIPs and learnings and resources etc ... what is a json file or list of json entries, what is markdown or what is both? ... also any kind of our internal git resource should be linked universally via its committed commit hashes, never via just a file path, since history changes too",
+ "quote": "Let's settle the schema of our single source of truth for everything we generate in AIPs, learnings and sources: what is a JSON file, what is a list of JSON entries, what is markdown, and what is both. And link every internal git resource by its commit hash, never by a bare file path, because history changes.",
  "means": "AIP-3 starts: one schema for theOS's memory, and internal references pinned by commit.",
  "intents": [
   "aip/AIP-3"
