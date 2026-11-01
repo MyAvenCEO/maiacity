@@ -3,6 +3,8 @@
  "subtype": "repo",
  "id": "sources/iroh",
  "title": "iroh",
- "url": "https://github.com/n0-computer/iroh",
- "read": "yes"
+ "about": [
+  "p2p sync"
+ ],
+ "url": "https://github.com/n0-computer/iroh"
 }

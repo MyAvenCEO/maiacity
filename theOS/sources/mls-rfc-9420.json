@@ -1,8 +1,10 @@
 {
  "type": "reference",
- "subtype": "repo",
+ "subtype": "spec",
  "id": "sources/mls-rfc-9420",
  "title": "MLS: RFC 9420",
- "url": "https://github.com/mlswg/mls-protocol/blob/main/rfc9420.md",
- "read": "yes"
+ "about": [
+  "group encryption"
+ ],
+ "url": "https://github.com/mlswg/mls-protocol/blob/main/rfc9420.md"
 }

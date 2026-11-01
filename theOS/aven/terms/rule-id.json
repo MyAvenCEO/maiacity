@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "aven/terms/rule-id",
+ "word": "Rule ID",
+ "means": "The stable name of one rule in an Architecture panel, for example verify.2_record_key.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

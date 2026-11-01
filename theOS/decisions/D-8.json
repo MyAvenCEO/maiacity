@@ -1,0 +1,25 @@
+{
+ "type": "decision",
+ "id": "D-8",
+ "n": 8,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "apps"
+ ],
+ "quote": "also split docs and avenCEO UI from each other. they are 2 different viewers. and sources as well. so index should have some kind of app screen dashboard with 3 sub apps: Docs, Intents (avenCEO harness UI), Sources",
+ "means": "theOS/index.html is a dashboard of three apps: Docs, Intents (avenCEO) and Sources.",
+ "intents": [
+  "aven/aven"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-7"
+ ],
+ "reflection": {
+  "checked": "every decision before D-8 that held",
+  "result": "supersedes nothing"
+ }
+}

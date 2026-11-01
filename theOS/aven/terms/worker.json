@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "aven/terms/worker",
+ "word": "Worker",
+ "means": "An agent that writes: understands, specifies, builds, fixes.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

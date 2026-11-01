@@ -3,7 +3,7 @@
 const W = {
   root: '../',
   cache: new Map(),
-  folders: ['aip', 'decisions', 'sessions', 'sources', 'metrics', 'lessons', 'avenCEO'],
+  folders: ['aip', 'decisions', 'sessions', 'sources', 'metrics', 'lessons', 'authors', 'aven'],
   get(path) {
     if (!this.cache.has(path)) this.cache.set(path, fetch(`${this.root}${path}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
     return this.cache.get(path);
@@ -17,7 +17,7 @@ const W = {
     else if (o && typeof o === 'object') Object.values(o).forEach((x) => this.paths(x, out));
     return out;
   },
-  appOf: (path) => (path.startsWith('sources/') ? 'sources' : 'avenCEO'),
+  appOf: (path) => (path.startsWith('sources/') ? 'sources' : 'aven'),
   href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/index.html#${path}`; },
   label: (d, path) => (d && (d.title || d.name || d.word || d.id)) || path.split('/').pop(),
   // all docs reachable from the starting paths, and who points at whom
@@ -49,5 +49,34 @@ const W = {
   link(path, here, docs) {
     const d = docs?.get(path);
     return `<a class="wl" href="${this.href(path, here)}">${this.esc(this.label(d, path))}</a>`;
+  },
+  who(by, here, docs) { return this.isPath(by) ? this.link(by, here, docs) : this.esc(by); },
+  // The trace: every write to brain, and every read of a source, is an event of an intent's lifecycle. The step is where
+  // the intent stood, computed from the events before it: an AIP stands at the first step whose output is missing.
+  STEPS: ['Understand', 'Specify', 'Build', 'Learn', 'Closed'],
+  stepAt(ev, i) {
+    const has = (w) => ev.slice(0, i).some((x) => x.what === w);
+    return !has('understood') ? 1 : !has('gate-A') ? 2 : !has('gate-B') ? 3 : !has('measured') ? 4 : 5;
+  },
+  stepLink(n, here, docs) {
+    const s = `aven/steps/${n}-${this.STEPS[n - 1].toLowerCase()}`;
+    return docs?.has(s) ? `<a class="wl" href="${this.href(s, here)}">${n} · ${this.STEPS[n - 1]}</a>` : this.STEPS[n - 1];
+  },
+  // path → the events that wrote or read it, from every intent among the docs
+  trace(docs) {
+    const t = new Map(), add = (k, v) => { if (!t.has(k)) t.set(k, []); t.get(k).push(v); };
+    for (const [p, I] of docs) {
+      if (I?.type !== 'intent') continue;
+      (I.events || []).forEach((x, i) => {
+        const step = this.stepAt(I.events, i);
+        (x.writes || []).forEach((w) => add(w, { p, x, step, did: 'wrote' }));
+        (x.reads || []).forEach((r) => add(r, { p, x, step, did: x.what }));
+      });
+    }
+    return t;
+  },
+  traceTable(path, here, docs, trace) {
+    const rows = trace.get(path) || [];
+    return rows.length ? `<table class="t"><thead><tr><th>When</th><th>Intent</th><th>Step</th><th>Who</th><th>Did</th><th>How</th></tr></thead><tbody>${rows.map(({ p, x, step, did }) => `<tr><td><b>${this.esc(x.at)}</b></td><td>${this.link(p, here, docs)}</td><td>${this.stepLink(step, here, docs)}</td><td>${this.who(x.by, here, docs)}</td><td><b>${did}</b> ${this.text(x.text, here, docs)}</td><td>${this.text(x.how || '', here, docs)}</td></tr>`).join('')}</tbody></table>` : '';
   },
 };

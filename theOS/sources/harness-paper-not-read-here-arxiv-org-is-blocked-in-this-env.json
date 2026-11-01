@@ -1,8 +1,0 @@
-{
- "type": "reference",
- "subtype": "article",
- "id": "sources/harness-paper-not-read-here-arxiv-org-is-blocked-in-this-env",
- "title": "Harness²: paper (not read here; arxiv.org is blocked in this environment)",
- "url": "https://arxiv.org/abs/2610.14224",
- "read": "no: arxiv.org is blocked in this environment; read from the repository instead"
-}

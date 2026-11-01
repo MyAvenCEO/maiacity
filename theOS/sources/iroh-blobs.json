@@ -3,6 +3,8 @@
  "subtype": "repo",
  "id": "sources/iroh-blobs",
  "title": "iroh-blobs",
- "url": "https://github.com/n0-computer/iroh-blobs",
- "read": "yes"
+ "about": [
+  "p2p sync"
+ ],
+ "url": "https://github.com/n0-computer/iroh-blobs"
 }

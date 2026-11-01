@@ -1,6 +1,0 @@
-{
- "type": "term",
- "id": "avenCEO/terms/work-branch",
- "word": "Work branch",
- "means": "The git branch the work is pushed to; never main."
-}

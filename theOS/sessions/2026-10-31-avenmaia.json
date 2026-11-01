@@ -1,7 +1,7 @@
 {
  "type": "session",
  "id": "sessions/2026-10-31-avenmaia",
- "orchestrator": "avenMAIA",
+ "orchestrator": "authors/avenmaia",
  "from": "2026-10-31",
  "to": "2026-11-01",
  "commits": {
@@ -52,18 +52,28 @@
   }
  ],
  "decisions": [
-  "decisions/2026-11-01-build-avenceo",
-  "decisions/2026-11-01-we-call-them-aips",
-  "decisions/2026-11-01-aip-1-new-sequence",
-  "decisions/2026-11-01-theos-standalone",
-  "decisions/2026-11-01-sandbox-for-testing",
-  "decisions/2026-11-01-ssot-in-theos",
-  "decisions/2026-11-01-theos-is-our-memory",
-  "decisions/2026-11-01-three-viewers",
-  "decisions/2026-11-01-html-and-json",
-  "decisions/2026-11-01-old-aip",
-  "decisions/2026-11-01-sandbox-into-theos",
-  "decisions/2026-11-01-schema-and-commit-refs"
+  "decisions/D-1",
+  "decisions/D-2",
+  "decisions/D-3",
+  "decisions/D-4",
+  "decisions/D-5",
+  "decisions/D-6",
+  "decisions/D-7",
+  "decisions/D-8",
+  "decisions/D-9",
+  "decisions/D-10",
+  "decisions/D-11",
+  "decisions/D-12",
+  "decisions/D-13",
+  "decisions/D-14",
+  "decisions/D-15",
+  "decisions/D-16",
+  "decisions/D-17",
+  "decisions/D-18",
+  "decisions/D-19",
+  "decisions/D-20",
+  "decisions/D-21",
+  "decisions/D-22"
  ],
  "corrections": [
   {

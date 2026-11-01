@@ -1,0 +1,25 @@
+{
+ "type": "decision",
+ "id": "D-6",
+ "n": 6,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "theOS",
+  "memory"
+ ],
+ "quote": "also we want the SSOT for every intent and all its stages to be \"theOS\" repo folder",
+ "means": "theOS/ holds every intent and all its stages.",
+ "intents": [
+  "aip/AIP-1",
+  "aven/aven"
+ ],
+ "supersedes": [],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before D-6 that held",
+  "result": "supersedes nothing"
+ }
+}

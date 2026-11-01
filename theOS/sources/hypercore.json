@@ -3,6 +3,9 @@
  "subtype": "repo",
  "id": "sources/hypercore",
  "title": "Hypercore",
- "url": "https://github.com/holepunchto/hypercore",
- "read": "yes"
+ "about": [
+  "p2p sync",
+  "time and order"
+ ],
+ "url": "https://github.com/holepunchto/hypercore"
 }

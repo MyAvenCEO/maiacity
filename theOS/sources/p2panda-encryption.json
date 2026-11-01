@@ -1,8 +1,10 @@
 {
  "type": "reference",
- "subtype": "repo",
+ "subtype": "docs",
  "id": "sources/p2panda-encryption",
  "title": "p2panda: encryption",
- "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-encryption/README.md",
- "read": "yes"
+ "about": [
+  "group encryption"
+ ],
+ "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-encryption/README.md"
 }

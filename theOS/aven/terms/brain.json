@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "aven/terms/brain",
+ "word": "brain",
+ "means": "theOS's memory: every doc, their schema and brain's reflection, which keeps what still holds computed and never outdated (AIP-3).",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

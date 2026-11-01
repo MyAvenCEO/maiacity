@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "D-20",
+ "n": 20,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "human in the loop",
+  "gates"
+ ],
+ "quote": "and yes now the HITL is good enough from the chat",
+ "means": "Your chat message, quoted into the intent with its time, counts as your approval at a gate (AIP-1, question 1).",
+ "intents": [
+  "aip/AIP-1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-7"
+ ],
+ "reflection": {
+  "checked": "every decision before D-20 that held",
+  "result": "supersedes nothing"
+ }
+}

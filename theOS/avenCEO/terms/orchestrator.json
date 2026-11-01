@@ -1,6 +1,0 @@
-{
- "type": "term",
- "id": "avenCEO/terms/orchestrator",
- "word": "Orchestrator",
- "means": "The session that keeps the records and starts every other agent. Today the main session; a program (the router) later."
-}

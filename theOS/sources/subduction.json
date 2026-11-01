@@ -3,6 +3,9 @@
  "subtype": "repo",
  "id": "sources/subduction",
  "title": "Subduction",
- "url": "https://github.com/inkandswitch/subduction",
- "read": "yes"
+ "about": [
+  "p2p sync",
+  "local-first data"
+ ],
+ "url": "https://github.com/inkandswitch/subduction"
 }

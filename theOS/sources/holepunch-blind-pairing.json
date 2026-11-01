@@ -3,6 +3,9 @@
  "subtype": "repo",
  "id": "sources/holepunch-blind-pairing",
  "title": "Holepunch blind-pairing",
- "url": "https://github.com/holepunchto/blind-pairing",
- "read": "yes"
+ "about": [
+  "identity",
+  "p2p sync"
+ ],
+ "url": "https://github.com/holepunchto/blind-pairing"
 }

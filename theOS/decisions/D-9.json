@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "D-9",
+ "n": 9,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "formats"
+ ],
+ "quote": "wait the html json rule was better, keep that instead of markdown. its way more flexible in ui",
+ "means": "Docs stay native HTML and JSON: one JSON doc per thing, no markdown.",
+ "intents": [
+  "aven/aven"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-7",
+   "part": "part",
+   "what": "D-7's \"markdown doc\": docs stay native JSON, rendered by HTML."
+  }
+ ],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before D-9 that held",
+  "result": "supersedes D-7 (part)"
+ }
+}

@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "aven/terms/doc",
+ "word": "Doc",
+ "means": "One JSON file in theOS/ about one thing, with a type: an intent, a review, a decision, a session, a source, a step, a term and the rest.",
+ "supersedes": [
+  {
+   "term": "aven/terms/record",
+   "how": "merged: a record is the doc of one AIP"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes record (merged: a record is the doc of one AIP)"
+ }
+}

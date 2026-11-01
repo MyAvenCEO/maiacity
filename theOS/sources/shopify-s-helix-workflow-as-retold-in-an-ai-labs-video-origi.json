@@ -3,6 +3,9 @@
  "subtype": "retelling",
  "id": "sources/shopify-s-helix-workflow-as-retold-in-an-ai-labs-video-origi",
  "title": "Shopify's Helix workflow, as retold in an AI Labs video (original post not read)",
- "url": "",
- "read": "partly: a retelling"
+ "about": [
+  "agent harness",
+  "workflow"
+ ],
+ "url": ""
 }

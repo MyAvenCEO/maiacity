@@ -3,6 +3,8 @@
  "subtype": "article",
  "id": "sources/farnam-street-what-is-first-principles-thinking",
  "title": "Farnam Street: What is first principles thinking?",
- "url": "https://fs.blog/first-principles/",
- "read": "yes"
+ "about": [
+  "first principles"
+ ],
+ "url": "https://fs.blog/first-principles/"
 }

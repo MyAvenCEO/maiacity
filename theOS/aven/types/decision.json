@@ -1,0 +1,48 @@
+{
+ "type": "type",
+ "id": "aven/types/decision",
+ "name": "decision",
+ "file": "decisions/D-n.json",
+ "what": "Your words, verbatim, with the time: an answer, a gate approval or a correction, numbered D-1, D-2 and on. The human in the loop, recorded; whether it still holds is computed by brain's reflection.",
+ "subtypes": [
+  "answer",
+  "gate-approval",
+  "correction"
+ ],
+ "fields": [
+  {
+   "name": "quote",
+   "means": "your words, verbatim"
+  },
+  {
+   "name": "means",
+   "means": "what it changes"
+  },
+  {
+   "name": "about",
+   "means": "its topics, to group the decisions that hold"
+  },
+  {
+   "name": "supersedes",
+   "means": "earlier decisions it replaces, in whole or in part, with what; written by the reflection"
+  },
+  {
+   "name": "relates",
+   "means": "earlier decisions it builds on"
+  },
+  {
+   "name": "session, intents",
+   "means": "where it came from, what it affects"
+  },
+  {
+   "name": "reflection",
+   "means": "what it was checked against and the result; who, when and how are on the event that wrote it"
+  }
+ ],
+ "written_by": "The step that asked you, as an event of the intent it affects, which also runs brain's reflection.",
+ "links_to": [
+  "aven/types/author",
+  "aven/types/intent",
+  "aven/types/session"
+ ]
+}

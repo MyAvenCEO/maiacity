@@ -1,19 +1,9 @@
 {
  "type": "intent",
  "id": "AIP-1",
- "title": "Build avenCEO, our agent harness",
- "kind": "avenCEO",
- "note": "The first AIP of avenCEO's new sequence: avenCEO is built with its own steps, by hand, before any of it is automated. The 91 current intents (theOS/docs/intents.json, numbered OLD-AIP-1 to OLD-AIP-91) are consolidated into this format later, in their own AIP.",
- "source": {
-  "type": "idea",
-  "by": "Samuel",
-  "at": "2026-11-01",
-  "text": "Apply our own flow to building the flow engine. Call the agent harness avenCEO. Implement it now.",
-  "links": [
-   "avenCEO/avenCEO"
-  ],
-  "ref": "decisions/2026-11-01-build-avenceo"
- },
+ "title": "Build aven, our agent harness",
+ "kind": "aven",
+ "note": "The first AIP of aven's new sequence: aven is built with its own steps, by hand, before any of it is automated. The 91 current intents (theOS/docs/intents.json, numbered OLD-AIP-1 to OLD-AIP-91) are consolidated into this format later, in their own AIP.",
  "problem": {
   "who": [
    "Samuel, the one person who decides, whose attention is the scarcest resource.",
@@ -87,10 +77,10 @@
    "Git keeps every version and who made it."
   ],
   "assumptions": [
-   "theOS is a standalone, fresh project: everything lives in theOS/, built from scratch. avenCEO touches no code outside theOS/: not maiacity, not avenDB (aven/DB2), not aven/ops, not the repository's .claude or CLAUDE.md. One exception (Samuel, 1 Nov): the sandbox may be used for testing, without changing it.",
-   "theOS/ is the single source of truth and our memory: one JSON doc per thing (this intent, its reviews, your decisions, sessions, sources, avenCEO's steps, gates and types). Three viewers show them: Docs, Intents and Sources.",
-   "The plan adds, all inside theOS/: theOS/package.json and its lockfile (theOS's own dependencies, such as Playwright), theOS/CLAUDE.md with the done rule, theOS/avenCEO/ (the check command, the crawl, the docs check, the pixel diff, the terms check, the checker's prompt) and theOS/docs/glossary.json.",
-   "The 91 current intents and the Intents board are legacy too (Samuel, 1 Nov): learned from; their decisions and lessons move into avenCEO's format in a later consolidation AIP.",
+   "theOS is a standalone, fresh project: everything lives in theOS/, built from scratch. aven touches no code outside theOS/: not maiacity, not avenDB (aven/DB2), not aven/ops, not the repository's .claude or CLAUDE.md. One exception (Samuel, 1 Nov): the sandbox may be used for testing, without changing it.",
+   "theOS/ is the single source of truth and our memory: one JSON doc per thing (this intent, its reviews, your decisions, sessions, sources, aven's steps, gates and types). Three viewers show them: Docs, Intents and Sources.",
+   "The plan adds, all inside theOS/: theOS/package.json and its lockfile (theOS's own dependencies, such as Playwright), theOS/CLAUDE.md with the done rule, theOS/aven/ (the check command, the crawl, the docs check, the pixel diff, the terms check, the checker's prompt) and theOS/docs/glossary.json.",
+   "The 91 current intents and the Intents board are legacy too (Samuel, 1 Nov): learned from; their decisions and lessons move into aven's format in a later consolidation AIP.",
    "Viewer changes (theOS/docs) are ordinary edits under the done rule, not part of this AIP.",
    "Samuel is the only one who passes a gate."
   ],
@@ -103,7 +93,7 @@
   },
   {
    "what": "theOS/docs/intents.json and the Intents board",
-   "use": "Legacy (Samuel, 1 Nov): learned from; its decisions and lessons move into avenCEO's format when they are consolidated."
+   "use": "Legacy (Samuel, 1 Nov): learned from; its decisions and lessons move into aven's format when they are consolidated."
   },
   {
    "what": "avenSANDBOX (aven/DB2/SANDBOX.md: the box and its browsers)",
@@ -151,7 +141,7 @@
   },
   {
    "name": "The full harness now",
-   "note": "Records for every intent, a router, a Stop hook, a metrics script. Rejected for now: it would not have caught any of the ten, and avenCEO automates last.",
+   "note": "Records for every intent, a router, a Stop hook, a metrics script. Rejected for now: it would not have caught any of the ten, and aven automates last.",
    "chosen": false
   },
   {
@@ -207,8 +197,8 @@
  "done_rule": "A change to theOS is done when theOS's check command is green (the crawl, the pixel diff against the base commit, the docs check and the terms check), a fresh checker has looked at every view whose pixels changed and found no Blocker or Major, it is pushed to the work branch, and the theOS docs page (a private artifact) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply.",
  "aip_when": "An AIP is opened for work that needs your Gate A: a decision about what must be true (architecture, product behaviour, how we work). Small edits follow the done rule only.",
  "mockup": [
-  "The Intents app: theOS/avenCEO/index.html",
-  "This intent's page: theOS/avenCEO/index.html#aip/AIP-1"
+  "The Intents app: theOS/aven/index.html",
+  "This intent's page: theOS/aven/index.html#aip/AIP-1"
  ],
  "checkpoints": [
   {
@@ -228,7 +218,7 @@
   },
   {
    "n": 3,
-   "adds": "The pixel diff against the base commit, the checker's prompt in theOS/avenCEO/checkers/, its replays; the done rule extended.",
+   "adds": "The pixel diff against the base commit, the checker's prompt in theOS/aven/checkers/, its replays; the done rule extended.",
    "claims": [
     "c3"
    ]
@@ -249,7 +239,7 @@
   },
   {
    "what": "Release gating by version",
-   "until": "avenCEO releases anything on its own."
+   "until": "aven releases anything on its own."
   },
   {
    "what": "A metrics script",
@@ -265,8 +255,8 @@
   "Choosing which views the checker sees: the pixel diff chooses.",
   "Picking checks by path: there is one app, and every check always runs.",
   "Contrast and slide text size: no escape asked for them.",
-  "The memory and decision-history section: it moved into avenCEO's definition.",
-  "A separate lessons file: lessons stay in avenCEO's definition."
+  "The memory and decision-history section: it moved into aven's definition.",
+  "A separate lessons file: lessons stay in aven's definition."
  ],
  "questions": [
   {
@@ -274,15 +264,464 @@
    "options": [
     "Yes",
     "No: tell me what does"
-   ]
+   ],
+   "answered": "decisions/D-20"
   },
   {
-   "q": "Round 3 was not clean, the third round in a row. avenCEO's rule stops here and asks you: what next?",
+   "q": "Round 3 was not clean, the third round in a row. aven's rule stops here and asks you: what next? Since revision 5 you decided D-7 to D-20, which change the design again.",
    "options": [
-    "One more round on revision 5 (recommended: revision 5 changed the design)",
+    "Revision 6, then round 4 (recommended): fold in D-7 to D-20, and hand the memory parts (decisions, terms, the trace) to AIP-3, brain, so AIP-1 is only aven's flow, its checkers and the apps",
+    "Round 4 on revision 5 as it is",
     "Build with the open findings",
     "Back to Understand"
    ]
+  }
+ ],
+ "events": [
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "source",
+   "text": "Apply our own flow to building it; call it avenCEO; implement it now.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-1"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "understood",
+   "text": "Problem, evidence, root cause, truths, assumptions, risk and reuse written.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "specified",
+   "text": "Claims c1 to c10, the outcome claim, seven checkpoints, the memory design and four open questions drafted.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "spec review",
+   "text": "Round 1: paraphrase (4 Blocker, 11 Major, 2 Nit) and zoom out (1 Blocker, 8 Major, 4 Nit). Not clean.",
+   "how": "fresh subagents with the prompts aven/checkers/paraphrase and aven/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-1/r1-paraphrase",
+    "aip/AIP-1/r1-zoom-out"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "The zoom-out's facts checked against the repository: app-scroll.mjs exists and fails when a page scrolls; check.mjs's plan() runs decisions.mjs and Lean; aven/DB2/CLAUDE.md says avenMAIA writes the log; devx-speed has the improvement cycle and docs/devx/cycles.md; 37 files name aven/ops/devx.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "We still call them AIPs: AIP, not CEO-1.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-2"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "renamed",
+   "text": "CEO-1 is now AIP-92, the next number of the one AIP sequence (AIP-1 to AIP-91 are theOS's).",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 2: the root cause stops at why 2; the plan shrinks to a render check, a terms check, one checker pair and the done rule; the router, Stop hook, migration and metrics script are deferred; three questions dropped.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "AIP 1: we consolidate the current AIPs later into the new flow format.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-3"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "renamed",
+   "text": "AIP-92 is now AIP-1, the first of avenCEO's new sequence; the 91 current intents are consolidated later, in their own AIP.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Round 2 on cb781cef3: paraphrase (9 Major, 3 Nit) and zoom out (5 Major, 4 Nit). No Blocker; not clean.",
+   "how": "fresh subagents with the prompts aven/checkers/paraphrase and aven/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-1/r2-paraphrase",
+    "aip/AIP-1/r2-zoom-out"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "Round 2's facts checked: brain.mjs checks a hash-routed docs app with screenshots; GLOSSARY.md holds renames, ⚠ marks and scopes; theOS/docs scrolls at 390 px by design and hides page overflow on desktop; the Unowned-test rule is in aven/ops/ci/test.mjs; faf266961 fixed the pages that did not scroll.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "correction",
+   "text": "The revision 2 event said three questions were dropped: three of the four were dropped and one was added (where the done rule applies).",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 3: the done rule for every theOS/docs commit, an AIP only for work that needs Gate A; the docs check on brain.mjs, the terms check on GLOSSARY.md's format, a screenshot checker; the current intents cited as theOS AIP-n; event names defined.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "theOS should be its own standalone fresh project; everything we do lives in theOS; don't touch legacy code like maiacity or avenDB2; we build from scratch in theOS.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-4"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "Nothing outside theOS/ changed on this branch since its base on main (6f59481e6).",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 4: everything in theOS/, from scratch: theOS/aven/ with its own check command, theOS/docs/glossary.json, theOS/CLAUDE.md; legacy code is learned from, never touched; the question about the repository's CLAUDE.md is dropped.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Round 3 on 900c30ba2: paraphrase (7 Major, 4 Nit) and zoom out (1 Blocker, 4 Major, 6 Nit). Not clean: the third round in a row.",
+   "how": "fresh subagents with the prompts aven/checkers/paraphrase and aven/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-1/r3-paraphrase",
+    "aip/AIP-1/r3-zoom-out"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "Round 3's facts checked: at the replay commits the data files were theDECISIONS.json and theAUDIT.json (faf266961's parent) and theINTENTS.json (106ba0e5f's and 3ddc07339's); Playwright is only in the repository's root package.json; the root CLAUDE.md asks for aven/ops/devx/check.mjs.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "We can reuse the sandbox for our testing, but nothing else. The current Intents board is legacy too: learn from it, and migrate its lessons into the new avenCEO harness.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-5"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "The single source of truth for every intent and all its stages is the theOS folder.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-6"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "moved",
+   "text": "Records to theOS/aip/, avenCEO's definition to theOS/avenCEO/avenceo.json, the viewer's entry to theOS/index.html; theOS/docs keeps the viewer and the legacy board's data.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "erratum",
+   "text": "The earlier event of avenMAIA typed \"correction\" is an erratum: \"correction\" is kept for Samuel correcting work called done.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 5: the crawl and a pixel diff choose what the checker sees; theOS/CLAUDE.md and theOS/package.json in checkpoint 1; contrast, text size and picking by path deleted; outcome per 10 commits; memory and decision history moved to avenCEO's definition.",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "stopped",
+   "text": "Three rounds without a clean round: avenCEO's rule stops and asks Samuel what next (question 2).",
+   "how": "by hand",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "One doc per thing in theOS as our memory; doc types defined; you are asked in chat.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-7"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Three viewers behind a dashboard: Docs, Intents (avenCEO), Sources.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-8"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Keep native HTML and JSON instead of markdown.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-9"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "moved",
+   "text": "AIP-1 split into one doc per thing: this intent, its six review docs in aip/AIP-1/, your answers as decision docs, this chat as a session doc, every source as a reference doc; avenCEO's definition into steps, gates, types, checkers, terms, metrics and lessons.",
+   "how": "by hand",
+   "writes": [
+    "aven/aven",
+    "sessions/2026-10-31-avenmaia",
+    "sources/index",
+    "metrics/index",
+    "lessons/index"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Rename the legacy AIPs as OLD-AIP, not theOS AIP.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-10"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Every checker prompt carries theOS's rule.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-11"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Both checker prompts state theOS's rule: built in theOS/ from scratch, legacy only learned from, the sandbox for testing.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "aven/checkers/paraphrase",
+    "aven/checkers/zoom-out"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "The dashboard is light only.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-14"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "avenCEO is renamed Aven.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-17"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/avenmaia",
+   "what": "renamed",
+   "text": "avenCEO is Aven: its folder is theOS/aven/, its definition aven/aven; current fields say Aven, history keeps its words.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "aven/aven"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The dashboard restyled light only.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01T08:51Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Your chat message counts as your approval at a gate.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-20"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:51Z",
+   "by": "authors/avenmaia",
+   "what": "asked",
+   "text": "Question 2 asked again with the decisions since revision 5: revision 6 recommended before round 4.",
+   "how": "in chat",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "read",
+   "text": "Back-filled from the sources' read flags when the flag was dropped (D-22): read while the flow was defined, before AIP-1 began.",
+   "how": "fetched and read in full",
+   "writes": [],
+   "reads": [
+    "sources/dave-rensin-elephants-goldfish-and-the-new-golden-age-of-sof",
+    "sources/elephant-goldfish-model-repository-skills-and-reviewer-promp",
+    "sources/farnam-street-what-is-first-principles-thinking",
+    "sources/harness-repository-code-and-prompts",
+    "sources/more-than-digital-first-principles-thinking-a-comprehensive-"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "read",
+   "text": "Back-filled from the sources' read flags when the flag was dropped (D-22): read while the flow was defined, before AIP-1 began.",
+   "how": "pasted in chat by Samuel Andert, read in full",
+   "writes": [],
+   "reads": [
+    "sources/anthropic-redesigning-source-control-at-anthropic-scion"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "not read",
+   "text": "Back-filled from the sources' read flags when the flag was dropped (D-22): read while the flow was defined, before AIP-1 began. The paper itself was not read; its repository was.",
+   "how": "arxiv.org is blocked in this environment",
+   "writes": [],
+   "reads": [
+    "sources/harness-paper"
+   ]
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "retold",
+   "text": "Back-filled from the sources' read flags when the flag was dropped (D-22): read while the flow was defined, before AIP-1 began. Written from memory, not read from the source: claude-code-team-s-review-process-as-retold-in-an-ai-labs-vi, musk-s-five-step-algorithm-starbase-tour-2021-isaacson-elon-, shopify-s-helix-workflow-as-retold-in-an-ai-labs-video-origi, stanford-d-school-the-five-modes-of-design-thinking, uk-design-council-the-double-diamond-2005.",
+   "how": "from memory",
+   "writes": [
+    "sources/claude-code-team-s-review-process-as-retold-in-an-ai-labs-vi",
+    "sources/musk-s-five-step-algorithm-starbase-tour-2021-isaacson-elon-",
+    "sources/shopify-s-helix-workflow-as-retold-in-an-ai-labs-video-origi",
+    "sources/stanford-d-school-the-five-modes-of-design-thinking",
+    "sources/uk-design-council-the-double-diamond-2005"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01",
+   "by": "authors/avenmaia",
+   "what": "summarized",
+   "text": "Back-filled from the sources' read flags when the flag was dropped (D-22): read while the flow was defined, before AIP-1 began. Each protocol drawn as its flow, from the sources it cites.",
+   "how": "by hand",
+   "writes": [
+    "sources/claude",
+    "sources/design",
+    "sources/egm",
+    "sources/first",
+    "sources/harness",
+    "sources/helix"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T08:55Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "aven is the framework, avenMAIA its instance; agent sessions write as avenMAIA, everything human as Samuel Andert.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-21"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T08:55Z",
+   "by": "authors/avenmaia",
+   "what": "renamed",
+   "text": "Aven is aven; avenMAIA is its instance. Terms aven, avenMAIA (redefined) and Author.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "aven/aven",
+    "aven/terms/aven",
+    "aven/terms/avenmaia-2",
+    "aven/terms/author"
+   ],
+   "reads": []
   }
  ],
  "reviews": [
@@ -293,205 +732,14 @@
   "aip/AIP-1/r3-paraphrase",
   "aip/AIP-1/r3-zoom-out"
  ],
- "decisions": [
-  "decisions/2026-11-01-build-avenceo",
-  "decisions/2026-11-01-we-call-them-aips",
-  "decisions/2026-11-01-aip-1-new-sequence",
-  "decisions/2026-11-01-theos-standalone",
-  "decisions/2026-11-01-sandbox-for-testing",
-  "decisions/2026-11-01-ssot-in-theos",
-  "decisions/2026-11-01-old-aip"
- ],
- "events": [
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "source",
-   "text": "Apply our own flow to building it; call it avenCEO; implement it now.",
-   "ref": "decisions/2026-11-01-build-avenceo"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "understood",
-   "text": "Problem, evidence, root cause, truths, assumptions, risk and reuse written."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "specified",
-   "text": "Claims c1 to c10, the outcome claim, seven checkpoints, the memory design and four open questions drafted."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "checkers",
-   "what": "spec review",
-   "text": "Round 1: paraphrase (4 Blocker, 11 Major, 2 Nit) and zoom out (1 Blocker, 8 Major, 4 Nit). Not clean."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "verified",
-   "text": "The zoom-out's facts checked against the repository: app-scroll.mjs exists and fails when a page scrolls; check.mjs's plan() runs decisions.mjs and Lean; aven/DB2/CLAUDE.md says avenMAIA writes the log; devx-speed has the improvement cycle and docs/devx/cycles.md; 37 files name aven/ops/devx."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "We still call them AIPs: AIP, not CEO-1.",
-   "ref": "decisions/2026-11-01-we-call-them-aips"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "renamed",
-   "text": "CEO-1 is now AIP-92, the next number of the one AIP sequence (AIP-1 to AIP-91 are theOS's)."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "revised",
-   "text": "Revision 2: the root cause stops at why 2; the plan shrinks to a render check, a terms check, one checker pair and the done rule; the router, Stop hook, migration and metrics script are deferred; three questions dropped."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "AIP 1: we consolidate the current AIPs later into the new flow format.",
-   "ref": "decisions/2026-11-01-aip-1-new-sequence"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "renamed",
-   "text": "AIP-92 is now AIP-1, the first of avenCEO's new sequence; the 91 current intents are consolidated later, in their own AIP."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "checkers",
-   "what": "review",
-   "text": "Round 2 on cb781cef3: paraphrase (9 Major, 3 Nit) and zoom out (5 Major, 4 Nit). No Blocker; not clean."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "verified",
-   "text": "Round 2's facts checked: brain.mjs checks a hash-routed docs app with screenshots; GLOSSARY.md holds renames, ⚠ marks and scopes; theOS/docs scrolls at 390 px by design and hides page overflow on desktop; the Unowned-test rule is in aven/ops/ci/test.mjs; faf266961 fixed the pages that did not scroll."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "correction",
-   "text": "The revision 2 event said three questions were dropped: three of the four were dropped and one was added (where the done rule applies)."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "revised",
-   "text": "Revision 3: the done rule for every theOS/docs commit, an AIP only for work that needs Gate A; the docs check on brain.mjs, the terms check on GLOSSARY.md's format, a screenshot checker; the current intents cited as theOS AIP-n; event names defined."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "theOS should be its own standalone fresh project; everything we do lives in theOS; don't touch legacy code like maiacity or avenDB2; we build from scratch in theOS.",
-   "ref": "decisions/2026-11-01-theos-standalone"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "verified",
-   "text": "Nothing outside theOS/ changed on this branch since its base on main (6f59481e6)."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "revised",
-   "text": "Revision 4: everything in theOS/, from scratch: theOS/avenCEO/ with its own check command, theOS/docs/glossary.json, theOS/CLAUDE.md; legacy code is learned from, never touched; the question about the repository's CLAUDE.md is dropped."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "checkers",
-   "what": "review",
-   "text": "Round 3 on 900c30ba2: paraphrase (7 Major, 4 Nit) and zoom out (1 Blocker, 4 Major, 6 Nit). Not clean: the third round in a row."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "verified",
-   "text": "Round 3's facts checked: at the replay commits the data files were theDECISIONS.json and theAUDIT.json (faf266961's parent) and theINTENTS.json (106ba0e5f's and 3ddc07339's); Playwright is only in the repository's root package.json; the root CLAUDE.md asks for aven/ops/devx/check.mjs."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "We can reuse the sandbox for our testing, but nothing else. The current Intents board is legacy too: learn from it, and migrate its lessons into the new avenCEO harness.",
-   "ref": "decisions/2026-11-01-sandbox-for-testing"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "The single source of truth for every intent and all its stages is the theOS folder.",
-   "ref": "decisions/2026-11-01-ssot-in-theos"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "moved",
-   "text": "Records to theOS/aip/, avenCEO's definition to theOS/avenCEO/avenceo.json, the viewer's entry to theOS/index.html; theOS/docs keeps the viewer and the legacy board's data."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "erratum",
-   "text": "The earlier event of avenMAIA typed \"correction\" is an erratum: \"correction\" is kept for Samuel correcting work called done."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "revised",
-   "text": "Revision 5: the crawl and a pixel diff choose what the checker sees; theOS/CLAUDE.md and theOS/package.json in checkpoint 1; contrast, text size and picking by path deleted; outcome per 10 commits; memory and decision history moved to avenCEO's definition."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "stopped",
-   "text": "Three rounds without a clean round: avenCEO's rule stops and asks Samuel what next (question 2)."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "One doc per thing in theOS as our memory; doc types defined; you are asked in chat.",
-   "ref": "decisions/2026-11-01-theos-is-our-memory"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "Three viewers behind a dashboard: Docs, Intents (avenCEO), Sources.",
-   "ref": "decisions/2026-11-01-three-viewers"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "Keep native HTML and JSON instead of markdown.",
-   "ref": "decisions/2026-11-01-html-and-json"
-  },
-  {
-   "at": "2026-11-01",
-   "by": "avenMAIA",
-   "what": "moved",
-   "text": "AIP-1 split into one doc per thing: this intent, its six review docs in aip/AIP-1/, your answers as decision docs, this chat as a session doc, every source as a reference doc; avenCEO's definition into steps, gates, types, checkers, terms, metrics and lessons."
-  },
-  {
-   "at": "2026-11-01",
-   "by": "Samuel",
-   "what": "answer",
-   "text": "Rename the legacy AIPs as OLD-AIP, not theOS AIP.",
-   "ref": "decisions/2026-11-01-old-aip"
-  }
- ]
+ "source": {
+  "type": "idea",
+  "by": "authors/samuel-andert",
+  "at": "2026-11-01",
+  "text": "Apply our own flow to building the flow engine. Call the agent harness avenCEO. Implement it now.",
+  "links": [
+   "aven/aven"
+  ],
+  "ref": "decisions/D-1"
+ }
 }

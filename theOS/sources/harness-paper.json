@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "paper",
+ "id": "sources/harness-paper",
+ "title": "Harness²: paper",
+ "about": [
+  "agent harness"
+ ],
+ "url": "https://arxiv.org/abs/2610.14224"
+}

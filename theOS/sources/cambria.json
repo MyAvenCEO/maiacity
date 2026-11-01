@@ -3,6 +3,9 @@
  "subtype": "repo",
  "id": "sources/cambria",
  "title": "Cambria",
- "url": "https://github.com/inkandswitch/cambria-project",
- "read": "yes"
+ "about": [
+  "local-first data",
+  "schema and migrations"
+ ],
+ "url": "https://github.com/inkandswitch/cambria-project"
 }

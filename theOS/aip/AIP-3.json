@@ -1,31 +1,176 @@
 {
  "type": "intent",
  "id": "AIP-3",
- "title": "One schema for theOS's memory, with references pinned by commit",
- "kind": "avenCEO",
+ "title": "brain: theOS's memory, one schema, references pinned by commit",
+ "kind": "aven",
  "note": "In the inbox: only its source so far. A first proposal was given in chat on 1 Nov; it is specified here once you take it up.",
- "source": {
-  "type": "idea",
-  "by": "Samuel",
-  "at": "2026-11-01",
-  "text": "lets talk about our schema format of SSOT for all related data that we generate on AIPs and learnings and resources etc ... what is a json file or list of json entries, what is markdown or what is both? ... also any kind of our internal git resource should be linked universally via its committed commit hashes, never via just a file path, since history changes too",
-  "links": [
-   "avenCEO/avenCEO"
-  ],
-  "ref": "decisions/2026-11-01-schema-and-commit-refs"
- },
- "questions": [],
- "reviews": [],
- "decisions": [
-  "decisions/2026-11-01-schema-and-commit-refs"
+ "questions": [
+  {
+   "q": "Is brain's direction right: a JSON doc per thing, JSON Lines for whatever only grows, a JSON Schema per type, binaries named by content hash, and every internal reference pinned as path@full commit SHA?",
+   "options": [
+    "Yes, take it into AIP-3's Understand",
+    "Change it: tell me what"
+   ]
+  }
  ],
  "events": [
   {
    "at": "2026-11-01",
-   "by": "Samuel",
+   "by": "authors/samuel-andert",
    "what": "source",
    "text": "Define the schema of every kind of doc and list, and link internal resources by commit, never by path alone.",
-   "ref": "decisions/2026-11-01-schema-and-commit-refs"
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-12"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Decisions are D-1, D-2 and on, each reflected against the ones that hold.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-15"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "AIP-3's product is called brain.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-16"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/avenmaia",
+   "what": "renamed",
+   "text": "AIP-3 is titled brain.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The 12 dated decision docs renumbered D-1 to D-13 (D-11 recorded from chat), D-14 to D-17 added; brain's reflection run on each: D-5, D-9 and D-17 supersede parts of D-4, D-7 and D-1.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "decisions/index"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "brain's reflection governs terms too: superseding and merging them.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-18"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Terms carry supersedes and reflection; six terms added (Doc merges Record; Aven, brain, Reflection, Decision, OLD-AIP); D-18 supersedes part of D-15.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "aven/terms/doc",
+    "aven/terms/aven",
+    "aven/terms/brain",
+    "aven/terms/reflection",
+    "aven/terms/decision-d-n",
+    "aven/terms/old-aip"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "brain is kept by the intents' lifecycles, so every write is traced: which step, when, what, how.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-19"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Every event now says how it was done and which docs it wrote; the step is computed from the events before it; each decision and term shows the event that wrote it.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01T08:51Z",
+   "by": "authors/avenmaia",
+   "what": "asked",
+   "text": "Is brain's direction right?",
+   "how": "in chat",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01T08:55Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Authors are docs; every by points at Samuel Andert or avenMAIA (a one-time change of the field's form; words and meanings untouched).",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "authors/samuel-andert",
+    "authors/avenmaia",
+    "authors/index",
+    "aven/types/author"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T08:55Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Whether a source was read is per intent, not global.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-22"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T08:55Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The read flag left all 58 source docs; AIP-1's trace holds what was read, how, and what was only retold. 40 sources were read for the OLD-AIPs, outside brain; their reads come in with the consolidation.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "aven/types/reference"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T08:57Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Every source tagged with its topics (about) and its kind: article, paper, spec, design docs, code or repository. The Harness² paper's doc is sources/harness-paper; its title no longer says whether it was read.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "aven/types/reference",
+    "sources/harness-paper"
+   ],
+   "reads": []
   }
- ]
+ ],
+ "reviews": [],
+ "source": {
+  "type": "idea",
+  "by": "authors/samuel-andert",
+  "at": "2026-11-01",
+  "text": "lets talk about our schema format of SSOT for all related data that we generate on AIPs and learnings and resources etc ... what is a json file or list of json entries, what is markdown or what is both? ... also any kind of our internal git resource should be linked universally via its committed commit hashes, never via just a file path, since history changes too",
+  "links": [
+   "aven/aven"
+  ],
+  "ref": "decisions/D-12"
+ }
 }

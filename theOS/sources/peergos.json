@@ -1,8 +1,11 @@
 {
  "type": "reference",
- "subtype": "repo",
+ "subtype": "code",
  "id": "sources/peergos",
  "title": "Peergos",
- "url": "https://github.com/Peergos/Peergos/blob/master/src/peergos/shared/user/UserContext.java",
- "read": "yes"
+ "about": [
+  "access control",
+  "identity"
+ ],
+ "url": "https://github.com/Peergos/Peergos/blob/master/src/peergos/shared/user/UserContext.java"
 }

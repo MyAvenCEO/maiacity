@@ -4,26 +4,43 @@
  "title": "theOS owns avenSANDBOX's responsibility and lifecycle",
  "kind": "product",
  "note": "In the inbox: only its source so far. avenSANDBOX today builds avenDB's box image and releases from the production branch (avensandbox.yml), so this changes a release path and needs your Gate A.",
- "source": {
-  "type": "idea",
-  "by": "Samuel",
-  "at": "2026-11-01",
-  "text": "please also move the whole \"responsibility and ownership lifecycle of avenSANDBOX\" into theOS, this helps with our testing gates test and lean and vectors etc, too right?",
-  "links": [],
-  "ref": "decisions/2026-11-01-sandbox-into-theos"
- },
- "questions": [],
- "reviews": [],
- "decisions": [
-  "decisions/2026-11-01-sandbox-into-theos"
+ "questions": [
+  {
+   "q": "Move avenSANDBOX into theOS (theOS owns it and its release from then on), or copy it and leave avenDB's release where it is? And who releases the box afterwards?",
+   "options": [
+    "Copy it into theOS; avenDB keeps releasing until theOS's copy passes its gates (recommended: no release path changes before Gate A)",
+    "Move it: theOS owns it and its release now",
+    "Wait until AIP-2's Understand"
+   ]
+  }
  ],
  "events": [
   {
    "at": "2026-11-01",
-   "by": "Samuel",
+   "by": "authors/samuel-andert",
    "what": "source",
    "text": "Move avenSANDBOX's responsibility and lifecycle into theOS.",
-   "ref": "decisions/2026-11-01-sandbox-into-theos"
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-13"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:51Z",
+   "by": "authors/avenmaia",
+   "what": "asked",
+   "text": "Move or copy avenSANDBOX, and who releases it.",
+   "how": "in chat",
+   "writes": []
   }
- ]
+ ],
+ "reviews": [],
+ "source": {
+  "type": "idea",
+  "by": "authors/samuel-andert",
+  "at": "2026-11-01",
+  "text": "please also move the whole \"responsibility and ownership lifecycle of avenSANDBOX\" into theOS, this helps with our testing gates test and lean and vectors etc, too right?",
+  "links": [],
+  "ref": "decisions/D-13"
+ }
 }

@@ -1,0 +1,24 @@
+{
+ "type": "decision",
+ "id": "D-14",
+ "n": 14,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "apps",
+  "style"
+ ],
+ "quote": "please style this purely in light mode",
+ "means": "The dashboard and the Intents and Sources apps are light only.",
+ "intents": [
+  "aip/AIP-1"
+ ],
+ "supersedes": [],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before D-14 that held",
+  "result": "supersedes nothing"
+ }
+}

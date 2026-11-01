@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "aven/terms/avenmaia-2",
+ "word": "avenMAIA",
+ "means": "The instance of aven we use, the one Samuel Andert talks to. Every agent session (the orchestrator, its workers, its checkers) writes in brain as avenMAIA.",
+ "supersedes": [
+  {
+   "term": "aven/terms/avenmaia",
+   "how": "redefined: avenMAIA is no longer only the architect session, it is aven's instance and the author of every agent session"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes avenmaia (redefined)"
+ }
+}

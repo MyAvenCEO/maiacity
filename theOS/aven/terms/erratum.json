@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "aven/terms/erratum",
+ "word": "Erratum",
+ "means": "A fix to the record's history, added as a new event; history is never edited.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

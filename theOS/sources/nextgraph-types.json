@@ -1,8 +1,11 @@
 {
  "type": "reference",
- "subtype": "repo",
+ "subtype": "code",
  "id": "sources/nextgraph-types",
  "title": "NextGraph: types",
- "url": "https://github.com/nextgraph-org/nextgraph-rs/blob/main/engine/repo/src/types.rs",
- "read": "yes"
+ "about": [
+  "local-first data",
+  "schema and migrations"
+ ],
+ "url": "https://github.com/nextgraph-org/nextgraph-rs/blob/main/engine/repo/src/types.rs"
 }

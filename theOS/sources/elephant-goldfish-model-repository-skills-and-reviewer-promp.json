@@ -3,6 +3,9 @@
  "subtype": "repo",
  "id": "sources/elephant-goldfish-model-repository-skills-and-reviewer-promp",
  "title": "Elephant-Goldfish Model: repository, skills and reviewer prompts",
- "url": "https://github.com/google/elephant-goldfish-model",
- "read": "yes"
+ "about": [
+  "agent harness",
+  "review"
+ ],
+ "url": "https://github.com/google/elephant-goldfish-model"
 }

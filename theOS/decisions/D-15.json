@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "D-15",
+ "n": 15,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "decisions",
+  "memory"
+ ],
+ "quote": "also lets centralize all decisions each as its own standalone like AIPs, we call them D-1, D-2 etc. they also need to have a fully automatic maintenance / reflection step that can supersede old decisions or a group of old decisions so we always have a view of recently up to date decisions, that still hold true, and are never outdated",
+ "means": "Each decision is a standalone doc D-n. Every new decision runs the reflection: it records which earlier decisions it supersedes, in whole or in part; which decisions still hold is computed, never edited.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-7"
+ ],
+ "reflection": {
+  "checked": "every decision before D-15 that held",
+  "result": "supersedes nothing"
+ }
+}

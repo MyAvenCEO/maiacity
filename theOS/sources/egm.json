@@ -3,8 +3,11 @@
  "subtype": "protocol",
  "id": "sources/egm",
  "title": "Elephant-Goldfish Model",
+ "about": [
+  "agent harness",
+  "review"
+ ],
  "url": "",
- "read": "yes",
  "by": "Google's open-source plugin by Jim Quinn, Elise Ewing and Dave Rensin; its README says thousands of Google engineers use it. Read from its skills and reviewer prompts.",
  "summary": "Design with an elephant, review with a goldfish. A deep-context agent (the elephant) explores the idea with you and drafts the specification. Zero-context reviewers (goldfish) read only the document and what it links, so they expose unstated assumptions and blind spots. You resolve the trade-offs and approve the spec before any code is written, and the spec stays checked against the code for drift.",
  "steps": [

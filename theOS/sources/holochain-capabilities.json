@@ -1,8 +1,10 @@
 {
  "type": "reference",
- "subtype": "repo",
+ "subtype": "docs",
  "id": "sources/holochain-capabilities",
  "title": "Holochain: capabilities",
- "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/8_calls_capabilities.md",
- "read": "yes"
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/8_calls_capabilities.md"
 }

@@ -1,0 +1,31 @@
+{
+ "type": "type",
+ "id": "aven/types/step",
+ "name": "step",
+ "file": "aven/steps/<n>-<name>.json",
+ "what": "One of aven's four steps: its question, what to do, what it writes, its gate, who does it, and where it goes back.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "question, do, output",
+   "means": "the work"
+  },
+  {
+   "name": "gate",
+   "means": "the gate after it"
+  },
+  {
+   "name": "back",
+   "means": "where it goes back to, and when"
+  },
+  {
+   "name": "from",
+   "means": "the sources it comes from"
+  }
+ ],
+ "written_by": "Samuel, through aven intents",
+ "links_to": [
+  "aven/types/gate",
+  "aven/types/reference"
+ ]
+}

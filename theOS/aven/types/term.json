@@ -1,0 +1,24 @@
+{
+ "type": "type",
+ "id": "aven/types/term",
+ "name": "term",
+ "file": "aven/terms/<word>.json",
+ "what": "One word and what it means here. A new term can supersede or merge earlier terms; the current glossary is computed by brain's reflection.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "word, means",
+   "means": "the definition"
+  },
+  {
+   "name": "supersedes",
+   "means": "earlier terms it replaces or merges, with how"
+  },
+  {
+   "name": "reflection",
+   "means": "what it was checked against and the result; who, when and how are on the event that wrote it"
+  }
+ ],
+ "written_by": "the orchestrator",
+ "links_to": []
+}

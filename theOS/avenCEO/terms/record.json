@@ -1,6 +1,0 @@
-{
- "type": "term",
- "id": "avenCEO/terms/record",
- "word": "Record",
- "means": "The JSON file of one AIP: its problem, claims, checkpoints, review and events."
-}

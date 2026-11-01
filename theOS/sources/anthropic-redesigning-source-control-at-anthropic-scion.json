@@ -3,8 +3,11 @@
  "subtype": "article",
  "id": "sources/anthropic-redesigning-source-control-at-anthropic-scion",
  "title": "Anthropic: Redesigning source control at Anthropic (Scion)",
+ "about": [
+  "agent harness",
+  "source control"
+ ],
  "url": "https://www.anthropic.com/research/redesigning-source-control",
- "read": "yes: pasted in chat by Samuel",
  "summary": "Anthropic built Scion, its own source control, when merges grew from 2,500 to over 30,000 a day: clients always online, a thin client and a server that answers every question, changesets as entries in a write-ahead log, everything content-addressed, derived data computed from parents, and no global locks.",
  "ideas": [
   "Rethink priors made for human scale: ask what it would look like if designed for agents from the start.",
@@ -20,15 +23,15 @@
  "took": [
   {
    "idea": "Records are append-only logs; stages and views are derived",
-   "where": "avenCEO: stage computed from events"
+   "where": "aven: stage computed from events"
   },
   {
    "idea": "One doc per thing, linked by path; nothing materialised twice",
-   "where": "avenCEO's memory in theOS/"
+   "where": "aven's memory in theOS/"
   },
   {
    "idea": "You review intent at Gate A; you say no to over-engineering",
-   "where": "avenCEO's stopping rule at three rounds"
+   "where": "aven's stopping rule at three rounds"
   },
   {
    "idea": "Hermetic tests",

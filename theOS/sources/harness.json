@@ -3,8 +3,11 @@
  "subtype": "protocol",
  "id": "sources/harness",
  "title": "Harness²",
+ "about": [
+  "agent harness",
+  "workflow"
+ ],
  "url": "",
- "read": "yes",
  "by": "Google Research: Harness², Recursive Agent Harnessing for an Open World (Xu et al., 2026). Read from its code and prompts; the paper itself was not read here.",
  "summary": "Improve the system around the model (prompts, rules, memory, skills, tools), not the model. For each task, propose two kinds of change separately (how the agent works, and what a practitioner knows), run every candidate on the same task, and compose the result from how the runs differed, without an answer key. Then keep the adopted harness in full and at most one evidence-backed lesson for the next task.",
  "steps": [
@@ -120,6 +123,6 @@
  ],
  "sources": [
   "sources/harness-repository-code-and-prompts",
-  "sources/harness-paper-not-read-here-arxiv-org-is-blocked-in-this-env"
+  "sources/harness-paper"
  ]
 }

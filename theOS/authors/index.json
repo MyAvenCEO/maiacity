@@ -1,0 +1,9 @@
+{
+ "type": "index",
+ "id": "authors/index",
+ "title": "Authors",
+ "items": [
+  "authors/samuel-andert",
+  "authors/avenmaia"
+ ]
+}

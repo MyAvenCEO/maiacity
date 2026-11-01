@@ -3,6 +3,8 @@
  "subtype": "repo",
  "id": "sources/loro",
  "title": "Loro",
- "url": "https://github.com/loro-dev/loro",
- "read": "yes"
+ "about": [
+  "local-first data"
+ ],
+ "url": "https://github.com/loro-dev/loro"
 }

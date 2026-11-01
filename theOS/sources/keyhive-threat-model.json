@@ -1,8 +1,10 @@
 {
  "type": "reference",
- "subtype": "repo",
+ "subtype": "docs",
  "id": "sources/keyhive-threat-model",
  "title": "Keyhive: threat model",
- "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md",
- "read": "yes"
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
 }

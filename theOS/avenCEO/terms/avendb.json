@@ -1,6 +1,0 @@
-{
- "type": "term",
- "id": "avenCEO/terms/avendb",
- "word": "avenDB",
- "means": "Legacy implementation in aven/DB2. theOS and avenCEO learn from it and never touch it."
-}

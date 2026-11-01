@@ -1,0 +1,24 @@
+{
+ "type": "decision",
+ "id": "D-2",
+ "n": 2,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "naming",
+  "intents"
+ ],
+ "quote": "we still call them AIPs so AIP 1 not CEO-1",
+ "means": "Intents keep the name AIP.",
+ "intents": [
+  "aip/AIP-1"
+ ],
+ "supersedes": [],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before D-2 that held",
+  "result": "supersedes nothing"
+ }
+}

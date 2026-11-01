@@ -1,0 +1,32 @@
+{
+ "type": "step",
+ "id": "aven/steps/4-learn",
+ "n": 4,
+ "name": "Learn",
+ "writes": "measurement · new intents",
+ "question": "Did the outcome claim come true, and what did aven itself get wrong?",
+ "do": [
+  "Measure the outcome claim. Use it daily; a first-time agent that can't read the code uses it like a newcomer.",
+  "aven's own metrics are computed from the records of every intent.",
+  "A drift check (later) compares the spec (Architecture panels, rule IDs) with Lean and the code, and reports only the differences. Each rule ID links its theorem and its function, so the check stays mechanical.",
+  "Surprises become product intents. Signals about aven become aven intents, and they go through aven itself (see How aven improves itself).",
+  "Keep the full artifacts, never summaries."
+ ],
+ "output": "measurement · new intents",
+ "gate": "",
+ "gate_text": "Measured. The intent closes.",
+ "who": "The orchestrator, a first-time agent, machines.",
+ "back": [
+  {
+   "to": "aven/steps/1-understand",
+   "when": "new intents: product and aven"
+  }
+ ],
+ "from": [
+  "Design thinking: test in reality",
+  "Claude Code team: daily use, first-time user",
+  "Harness²: the improvement harness",
+  "Musk 5: automate last",
+  "Elephant-Goldfish Model: drift reports"
+ ]
+}

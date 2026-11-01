@@ -1,8 +1,10 @@
 {
  "type": "reference",
- "subtype": "repo",
+ "subtype": "docs",
  "id": "sources/keyhive-keyline",
  "title": "Keyhive: Keyline",
- "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline/README.md",
- "read": "yes"
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline/README.md"
 }

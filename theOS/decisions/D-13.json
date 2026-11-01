@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-13",
+ "n": 13,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "testing",
+  "legacy"
+ ],
+ "quote": "please also move the whole \"responsibility and ownership lifecycle of avenSANDBOX\" into theOS, this helps with our testing gates test and lean and vectors etc, too right?",
+ "means": "AIP-2 starts: theOS takes over avenSANDBOX's responsibility and lifecycle.",
+ "intents": [
+  "aip/AIP-2"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-4",
+  "decisions/D-5"
+ ],
+ "reflection": {
+  "checked": "every decision before D-13 that held",
+  "result": "supersedes nothing"
+ }
+}

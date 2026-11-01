@@ -1,8 +1,10 @@
 {
  "type": "reference",
- "subtype": "repo",
+ "subtype": "code",
  "id": "sources/p2panda-group-resolver",
  "title": "p2panda: group resolver",
- "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-auth/src/group/resolver.rs",
- "read": "yes"
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-auth/src/group/resolver.rs"
 }

@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "D-22",
+ "n": 22,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "sources",
+  "trace"
+ ],
+ "quote": "also the \"read\" flag can be dropped, as it's per intent session and not globally right?",
+ "means": "A source doc says what the source is, not whether it was read: reading is an event of the intent that read it, with when, who and how, in its trace.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-19"
+ ],
+ "reflection": {
+  "checked": "every decision before D-22 that held",
+  "result": "supersedes nothing"
+ }
+}

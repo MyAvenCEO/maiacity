@@ -3,8 +3,11 @@
  "subtype": "protocol",
  "id": "sources/first",
  "title": "First principles engineering",
+ "about": [
+  "workflow",
+  "first principles"
+ ],
  "url": "",
- "read": "yes",
  "by": "Aristotle's first principles, Socratic questioning, Toyota's Five Whys, and Musk's five-step algorithm.",
  "summary": "Break a problem down to what is known to be true (laws of nature, measured facts) and reason up from there, instead of by analogy to how it is usually done. Then improve in a strict order: question the requirement, delete, simplify, speed up, automate. Doing the later steps first optimizes or automates things that should not exist.",
  "steps": [

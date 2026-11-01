@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "aven/terms/avendb",
+ "word": "avenDB",
+ "means": "Legacy implementation in aven/DB2. theOS and aven learn from it and never touch it.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

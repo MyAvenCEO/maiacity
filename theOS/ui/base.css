@@ -1,4 +1,4 @@
-/* theOS apps: a dark nav beside a light paper ground; one doc per page. Shared by the dashboard, Intents and Sources. */
+/* theOS: light paper ground everywhere; the apps keep a dark nav beside it. One doc per page. Shared by the dashboard, Intents and Sources. */
 :root {
   --stage: #13212c; --stage-ink: #dcd5c6; --stage-soft: #8394a0; --line-dark: #2c4252;
   --ground: #ece3d2; --paper: #f6eedf; --card: #fbf7ee; --ink: #15242f; --ink-soft: #4f5a5f;
@@ -9,10 +9,10 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-body { background: var(--stage); color: var(--ink); font: 16px/1.5 var(--display); }
+body { background: var(--ground); color: var(--ink); font: 16px/1.5 var(--display); }
 a { color: inherit; }
 .app { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100%; }
-.side { padding: 24px 16px; color: var(--stage-ink); overflow-y: auto; }
+.side { padding: 24px 16px; background: var(--stage); color: var(--stage-ink); overflow-y: auto; }
 .side .home { display: block; font: 500 13px var(--mono); color: var(--stage-soft); text-decoration: none; margin-bottom: 18px; }
 .side h1 { margin: 0 0 4px; font: 500 22px var(--display); color: var(--paper); }
 .side p { margin: 0 0 16px; font-size: 13px; color: var(--stage-soft); line-height: 1.45; }
@@ -20,7 +20,7 @@ a { color: inherit; }
 .side nav a { display: flex; justify-content: space-between; padding: 7px 10px; border-radius: 6px; text-decoration: none; font-size: 14.5px; color: var(--stage-ink); }
 .side nav a span { font: 500 12px var(--mono); color: var(--stage-soft); }
 .side nav a.on { background: var(--paper); color: var(--ink); } .side nav a.on span { color: var(--ink-soft); }
-.side nav .gap { height: 10px; }
+.side nav .gap { height: 10px; } .side nav .navh { padding: 0 10px 2px; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--stage-soft); }
 .main { background: var(--ground); overflow-y: auto; padding: clamp(14px, 2.4vw, 28px); }
 .doc { background: var(--card); border-radius: 8px; padding: clamp(18px, 3vw, 36px); display: grid; gap: 18px; min-width: 0; max-width: 1180px; }
 .doc h1 { margin: 4px 0 6px; font: 500 clamp(24px, 3.4vw, 38px)/1.12 var(--display); }
@@ -68,6 +68,6 @@ details > summary { cursor: pointer; color: var(--ink-soft); font-size: 13px; } 
 .tmap .tedge { fill: none; stroke: #b9aa8e; stroke-width: 1.1; } .tmap .tcolh { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; fill: var(--ink-soft); }
 @media (max-width: 900px) {
   .app { grid-template-columns: minmax(0, 1fr); height: auto; } .side { padding: 14px 16px 8px; }
-  .side nav { grid-auto-flow: column; overflow-x: auto; } .side nav .gap { display: none; } .side nav a { white-space: nowrap; gap: 6px; }
+  .side nav { grid-auto-flow: column; overflow-x: auto; } .side nav .gap, .side nav .navh { display: none; } .side nav a { white-space: nowrap; gap: 6px; }
   .grid2, .grid3, .para { grid-template-columns: minmax(0, 1fr); }
 }

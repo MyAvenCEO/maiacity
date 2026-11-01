@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "aven/terms/published",
+ "word": "Published",
+ "means": "The private theOS docs page (an artifact) republished, its version noted.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

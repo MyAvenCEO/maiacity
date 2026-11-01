@@ -3,8 +3,11 @@
  "subtype": "protocol",
  "id": "sources/design",
  "title": "Design thinking",
+ "about": [
+  "workflow",
+  "design thinking"
+ ],
  "url": "",
- "read": "yes",
  "by": "Stanford d.school's five modes, and the UK Design Council's Double Diamond.",
  "summary": "Start from the people who have the problem, not from the solution. Understand them, name the real problem, open up many ideas, make cheap prototypes and test them with real people, then go back as often as the tests say. Open up, then narrow down: once for the problem, once for the solution.",
  "steps": [

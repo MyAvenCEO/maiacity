@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-11",
+ "n": 11,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "checkers",
+  "legacy"
+ ],
+ "quote": "also ensure this \"theOS\" only ref is correct in all current sub agent prompts",
+ "means": "Every checker prompt states theOS's rule: built in theOS/ from scratch; legacy code only learned from; the sandbox may be used for testing.",
+ "intents": [
+  "aip/AIP-1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-4",
+  "decisions/D-5"
+ ],
+ "reflection": {
+  "checked": "every decision before D-11 that held",
+  "result": "supersedes nothing"
+ }
+}

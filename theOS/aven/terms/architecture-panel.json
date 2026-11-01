@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "aven/terms/architecture-panel",
+ "word": "Architecture panel",
+ "means": "The part of a theOS slide that holds its exact records and rules with stable IDs.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

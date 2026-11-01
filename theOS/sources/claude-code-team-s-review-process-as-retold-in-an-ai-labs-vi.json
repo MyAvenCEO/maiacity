@@ -3,6 +3,9 @@
  "subtype": "retelling",
  "id": "sources/claude-code-team-s-review-process-as-retold-in-an-ai-labs-vi",
  "title": "Claude Code team's review process, as retold in an AI Labs video (original article not read)",
- "url": "",
- "read": "partly: a retelling"
+ "about": [
+  "agent harness",
+  "review"
+ ],
+ "url": ""
 }

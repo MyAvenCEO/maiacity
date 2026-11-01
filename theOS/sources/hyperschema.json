@@ -3,6 +3,8 @@
  "subtype": "repo",
  "id": "sources/hyperschema",
  "title": "Hyperschema",
- "url": "https://github.com/holepunchto/hyperschema",
- "read": "yes"
+ "about": [
+  "schema and migrations"
+ ],
+ "url": "https://github.com/holepunchto/hyperschema"
 }

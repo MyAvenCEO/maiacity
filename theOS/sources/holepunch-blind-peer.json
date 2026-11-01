@@ -3,6 +3,8 @@
  "subtype": "repo",
  "id": "sources/holepunch-blind-peer",
  "title": "Holepunch blind-peer",
- "url": "https://github.com/holepunchto/blind-peer",
- "read": "yes"
+ "about": [
+  "p2p sync"
+ ],
+ "url": "https://github.com/holepunchto/blind-peer"
 }

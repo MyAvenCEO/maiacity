@@ -3,8 +3,12 @@
  "subtype": "protocol",
  "id": "sources/claude",
  "title": "Claude Code team",
+ "about": [
+  "agent harness",
+  "review",
+  "workflow"
+ ],
  "url": "",
- "read": "yes",
  "by": "Anthropic's Claude Code team, as retold in an AI Labs video. The original article was not read here; the numbers are the video's.",
  "summary": "Agents build fast and call work done too early, so work is checked by evidence, not by the builder's word. Evals are written and approved before building; a fresh verifier and a fresh reviewer check every change, more deeply where a mistake would hurt more; repeated mistakes become rules; and after release, daily use, a first-time-user agent and fast undo catch what slipped through.",
  "steps": [

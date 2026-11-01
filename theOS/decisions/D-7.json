@@ -1,0 +1,25 @@
+{
+ "type": "decision",
+ "id": "D-7",
+ "n": 7,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "memory",
+  "formats",
+  "human in the loop"
+ ],
+ "quote": "so we document everything in there also as our memory. so define and specify the files and doc types we have, like intent, metrics, gates etc and all their sub types, that would build up our avenCEO skill/UI. and the human HITL should for now be a request back here in chat. but all chat context history, recorded decisions, references, flow steps, flow items types and should each reside in their own \"obsidian like wiki markdown doc\" right",
+ "means": "One doc per thing in theOS/, each of a defined type; you are asked in chat, and your answers become decision docs.",
+ "intents": [
+  "aven/aven"
+ ],
+ "supersedes": [],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before D-7 that held",
+  "result": "supersedes nothing"
+ }
+}

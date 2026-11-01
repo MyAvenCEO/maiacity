@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "D-17",
+ "n": 17,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "naming",
+  "aven"
+ ],
+ "quote": "and rename avenCEO to just \"Aven\"",
+ "means": "The agent harness is called Aven (it was avenCEO).",
+ "intents": [
+  "aip/AIP-1"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-1",
+   "part": "part",
+   "what": "D-1 named the harness avenCEO; it is Aven."
+  }
+ ],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before D-17 that held",
+  "result": "supersedes D-1 (part)"
+ }
+}

@@ -3,8 +3,11 @@
  "subtype": "protocol",
  "id": "sources/helix",
  "title": "Shopify Helix",
+ "about": [
+  "agent harness",
+  "workflow"
+ ],
  "url": "",
- "read": "yes",
  "by": "Shopify's Helix, used to rebuild their mobile app (about 300 screens) with agents, as retold in an AI Labs video. The original post was not read here.",
  "summary": "A big job is split into small checkpoints, smallest first. A person approves the plan; then each checkpoint must pass enforced gates (behaviour, screen, adversarial review) before the next one starts, and a person reviews the end result. Feedback becomes new checkpoints that pass the same gates. An attempt is allowed to be wrong; it is not allowed to ship until it isn't.",
  "steps": [
