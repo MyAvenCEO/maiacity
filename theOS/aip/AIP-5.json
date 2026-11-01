@@ -231,6 +231,27 @@
     "aip/AIP-5"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T11:00Z",
+   "by": "authors/samuel-andert",
+   "what": "observed",
+   "text": "Screenshots of the ruleset's required checks (Only from main, avenSANDBOX, from GitHub Actions), 0 approvals and merge commits only.",
+   "how": "in chat to AIP-5's thread; read by avenMAIA",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T11:00Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Your reading part of t3 is done: production's ruleset and the environment are recorded. The edits wait for Gate B.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t3"
   }
  ],
  "problem": {
@@ -305,6 +326,9 @@
      },
      {
       "text": "No file in this checkout names MAIA_CITY_GUARDIAN_SECRET. aven/DB2/PRODUCTION.md says MaiaCityGuardian's secret 'stays offline with its holder' and that only its public half goes into production. If that secret is the guardian's private key, it is held by GitHub and readable by any workflow run that names the environment production, from any branch, since nothing restricts the branches."
+     },
+     {
+      "text": "Seen in Samuel's screenshots of the additional settings (1 Nov): required status checks 'Only from main' and 'avenSANDBOX', both from GitHub Actions; branches need not be up to date; 0 required approvals; allowed merge method Merge only. production's ruleset is set as aven/DB2/SANDBOX.md wrote it, so no pull request to production can merge until a workflow reports those two checks again."
      }
     ]
    },
