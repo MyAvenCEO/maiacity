@@ -240,7 +240,125 @@
     "merge back as one change",
     "every device repeats and compares"
    ],
-   "deep": "On Loro: fork_at(F) at the frontier F of the valid view, apply the lens, take the diff; then on the main Doc check out F, edit detached under the derived peer ID (D63), apply the diff and commit one change that depends on F. Ops made on the fork are never signed. Peers verify by repeating the rewrite at F and dropping a mismatch. Old-version changes that never saw it are re-applied by their authors (D62, D68). A total break can instead start new data with its own birth record."
+   "deep": "On Loro: fork_at(F) at the frontier F of the valid view, apply the lens, take the diff; then on the main Doc check out F, edit detached under the derived peer ID (D63), apply the diff and commit one change that depends on F. Ops made on the fork are never signed. Peers verify by repeating the rewrite at F and dropping a mismatch. Old-version changes that never saw it are re-applied by their authors (D62, D68). A total break starts a successor instead (next slide)."
+  },
+  {
+   "title": "When nothing fits, the list gets a successor.",
+   "text": "Sometimes a change is too big even for a branch. Then the owner starts new data whose birth record names the old list and the exact point it continues from, and signs a {successor} link on the old list. The old list closes for writing, and every device reading it is led to the new one. Old edits that never saw the link go back to their authors, who apply them again on the new list.",
+   "code": {
+    "type": "data:b3:Rcd…@b3:4d7…#successor",
+    "on": "data:b3:7Hq…#house-list",
+    "successor": "data:b3:9Wn…#house-list-v3",
+    "frontier": "b3:c42…",
+    "proof": [
+     "data:b3:7Hq…#house-list"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "Both sides must agree: the new birth record names the predecessor and frontier, and the owner's link on the old data names the successor. Same owner for now (no hand-over, D54). Every peer checks that the new data starts from the old valid view at that frontier, through the lens if the schema changed (D71).",
+   "spec": {
+    "summary": "A two-way link that lets data continue as new data, verifiable by every peer, without moving ownership.",
+    "records": [
+     {
+      "name": "successor record",
+      "about": "On the old data, signed under its owner.",
+      "fields": [
+       [
+        "on",
+        "data ID",
+        "the old data"
+       ],
+       [
+        "successor",
+        "data ID",
+        "the new data"
+       ],
+       [
+        "frontier",
+        "b3 hash",
+        "b3 of the canonical list of the old valid view's frontier change IDs"
+       ],
+       [
+        "lens",
+        "lens ID, optional",
+        "when the schema changes on the way"
+       ],
+       [
+        "proof",
+        "record IDs",
+        "from the old data's birth record"
+       ],
+       [
+        "sig",
+        "signature",
+        "by an agent acting for the owner with own"
+       ]
+      ]
+     },
+     {
+      "name": "genesis record (the successor)",
+      "fields": [
+       [
+        "predecessor",
+        "{data, frontier}",
+        "the old data ID and the same frontier hash"
+       ],
+       [
+        "schema",
+        "schema ref",
+        "the new version"
+       ],
+       [
+        "policy",
+        "policy body",
+        "the same owner, own, no expiry"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "successor.mutual",
+      "text": "A succession holds only if the successor record and the new birth record name each other with the same frontier."
+     },
+     {
+      "id": "successor.same_owner",
+      "text": "Old and new data have the same owner; succession never moves ownership (D54)."
+     },
+     {
+      "id": "successor.unique",
+      "text": "Data has at most one successor; two concurrent successor records both fail until one sees the other."
+     },
+     {
+      "id": "successor.start",
+      "text": "The new data's first state equals the old valid view at frontier, projected through lens if given; every peer can recompute and compare it."
+     },
+     {
+      "id": "successor.closes",
+      "text": "The successor record ends every create, update and delete on the old data; read, want and keep stay until ended separately."
+     },
+     {
+      "id": "successor.late_writes",
+      "text": "Changes on the old data that didn't list the successor record go back to their authors as a conflict view, to be applied again on the successor (D62)."
+     },
+     {
+      "id": "successor.forward",
+      "text": "Links to the old data resolve forward through the chain of successors."
+     }
+    ],
+    "decisions": [
+     "D54",
+     "D62",
+     "D66",
+     "D67",
+     "D68",
+     "D71"
+    ]
+   }
   },
   {
    "title": "Values have schemas too.",
@@ -271,7 +389,7 @@
     "A schema is a Doc; each version is frozen, hashed and carried with the data.",
     "Every change names its version and is checked against it.",
     "New versions come with lenses; moving on rewrites nothing.",
-    "Breaking changes go through a branch that every device checks.",
+    "Breaking changes go through a branch; too big a break starts a successor.",
     "Paths give every part an address."
    ],
    "deep": "JSON Schema edited in Loro Docs, versions frozen by hash, lenses between versions, validated by every peer."

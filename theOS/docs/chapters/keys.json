@@ -8,7 +8,7 @@
   },
   {
    "title": "Three kinds of keys.",
-   "text": "Each agent has its own {lock}: a public key anyone can seal something to, which only that agent can open. A key sealed to a lock is an {envelope}. A {role key} is a lock shared by the agents that read for a role's members. A {data key} encrypts the data itself. No key is shared by all your agents: each gets only the envelopes its own policy covers.",
+   "text": "Each agent has its own {lock}: a public key anyone can seal something to, which only that agent can open. A key sealed to a lock is an {envelope}. A {role key} is a lock shared by the agents that read for the identities in a role. A {data key} encrypts the data itself. No key is shared by all your agents: each gets only the envelopes its own policy covers.",
    "list": [
     "Agent lock: each agent's own, published in its own history.",
     "Role key: a lock for the agents that read for a role's members.",
@@ -18,7 +18,7 @@
   },
   {
    "title": "Reading is a chain of envelopes.",
-   "text": "The content is encrypted with the data key. The data key sits in an envelope for every role that may read, and for each of the owner's agents that may read it. The role key sits in an envelope for each member's agents that may read for them. Your phone's lock opens the first envelope, and the chain opens the rest.",
+   "text": "The content is encrypted with the data key. The data key sits in an envelope for every role that may read, and for each of the owner's agents that may read it. The role key sits in an envelope for the agents of each identity in the role that may read for it. Your phone's lock opens the first envelope, and the chain opens the rest.",
    "flow": [
     "your phone's lock",
     "role key",
@@ -85,13 +85,13 @@
   },
   {
    "title": "Removing someone means new keys.",
-   "text": "The plumber still knows the old role key. So the role gets a new one, in envelopes for the remaining members only. Every piece of data the role reads gets a new data key the next time it changes. This is {rotation}: the plumber loses the future, and his honest devices forget the past.",
+   "text": "The plumber still knows the old role key. So the role gets a new one, in envelopes for the agents of the remaining identities only. Every piece of data the role reads gets a new data key the next time it changes. This is {rotation}: the plumber loses the future, and his honest devices forget the past.",
    "flow": [
     "remove plumber",
     "new role key",
     "new data key on next change"
    ],
-   "deep": "The role key rotates and is wrapped for the remaining members. Each piece of data the role reads gets a new data key on its next write (lazy rotation), because the old one is known to the removed member."
+   "deep": "The role key rotates and is wrapped for the remaining identities' agents. Each piece of data the role reads gets a new data key on its next write (lazy rotation), because the old one is known to the removed member."
   },
   {
    "title": "Taking a policy away.",

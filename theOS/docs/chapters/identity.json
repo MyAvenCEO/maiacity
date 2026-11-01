@@ -568,11 +568,11 @@
   },
   {
    "title": "You and Mia start a home.",
-   "text": "Together you form a {coop}: an identity made of identities. It has a {role}, a named set of identities, called “members”, which holds you and Mia. A policy lets that role act for the coop. Neither of you is the coop alone, and it lives on even if one of you loses every agent.",
-   "deep": "There are no membership records: a coop's members are simply its “members” role, and policies say what that role may do. A role holds humans or coops, never agents or signers.",
+   "text": "Together you form a {coop}: an identity made of identities. It has a {role}, a named set of identities, here called “family”, which holds you and Mia. A policy lets that role act for the coop. Neither of you is the coop alone, and it lives on even if one of you loses every agent.",
+   "deep": "There are no members and no membership records: a coop has roles, named sets of identities, and its policies are given to those roles. Role names are only labels. A role holds humans or coops, never agents or signers.",
    "code": {
     "type": "data:b3:R8d…@b3:ca4…#role",
-    "id": "role:b3:h8m…#home/members",
+    "id": "role:b3:h8m…#home/family",
     "of": "coop:b3:c7n2…#home",
     "identities": [
      "human:b3:q4x7…#you",
@@ -587,7 +587,7 @@
   },
   {
    "title": "A coop has one guardian too.",
-   "text": "A policy on the coop says what its “members” role may do for it: act, ordinary changes, and, if the guardian allows, own: managing the coop's roles, policies and data. The coop's guardian is one identity, for now you. Only you, as guardian, can name another guardian, and nobody below can remove you, so whatever happens below, you can always repair it.",
+   "text": "A policy on the coop says what a role may do for it, here “family”: act, ordinary changes, and, if the guardian allows, own: managing the coop's roles, policies and data. The coop's guardian is one identity, for now you. Only you, as guardian, can name another guardian, and nobody below can remove you, so whatever happens below, you can always repair it.",
    "code": {
     "type": "data:b3:R80…@b3:60a…#guardian",
     "of": "coop:b3:c7n2…#home",
@@ -603,7 +603,7 @@
    },
    "deep": "Members' act and own need one signature each (D49). Two holders of own who undo each other at the same moment both stand, and the guardian repairs (D59). Succession: the guardian signs a new guardian record naming its successor; it can't leave without one (D91).",
    "spec": {
-    "summary": "A coop's guardian is one identity, its root of trust; members get act and, if the guardian gives it, own.",
+    "summary": "A coop's guardian is one identity, its root of trust; its roles get act and, if the guardian gives it, own.",
     "records": [
      {
       "name": "guardian record (of a coop)",
@@ -684,10 +684,10 @@
   },
   {
    "title": "Coops can hold coops.",
-   "text": "Your street is a coop of homes, and a home is a coop of people. The street's “members” role holds the home coops, and a policy on the street says what they may do for it: here act, but not own. A home acts through its own members' agents. Coops can sit inside coops as deep as you like, never in a circle.",
+   "text": "Your street is a coop of homes, and a home is a coop of people. The street's role “homes” holds the home coops, and a policy on the street says what they may do for it: here act, but not own. A home acts through the people in its roles, and they through their agents. Coops can sit inside coops as deep as you like, never in a circle.",
    "code": {
     "type": "data:b3:R9f…@b3:00f…#policy",
-    "to": "role:b3:s9m…#street/members",
+    "to": "role:b3:s9m…#street/homes",
     "on": "coop:b3:s5t8…#street",
     "operations": {
      "act": {}
@@ -701,7 +701,7 @@
      "value": "…"
     }
    },
-   "deep": "The street's members role lists home coops; this policy gives that role act on the street, and the street's guardian stays its root. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for its members role, the street's policy for its members role. Roles are checked whenever they change; loops of coops are settled when the view is built (D63)."
+   "deep": "The street's role “homes” lists home coops; this policy gives that role act on the street, and the street's guardian stays its root. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for “family”, the street's policy for “homes”. Roles are checked whenever they change; loops of coops are settled when the view is built (D63)."
   },
   {
    "title": "Losing your phone.",
@@ -718,7 +718,7 @@
    "list": [
     "Humans and coops are identities that own and decide.",
     "Agents act for exactly one owner, each with its own signer, and only by its policies.",
-    "A role is a named set of identities; a coop's members are its “members” role.",
+    "A role is a named set of identities; policies are given to roles, and a coop has no members, only roles.",
     "Every identity has one guardian, its root of trust: yours is your passkey; a coop's is one identity, changed only by succession.",
     "Policies say what a role or an agent may do for an identity: act, own."
    ],

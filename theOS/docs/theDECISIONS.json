@@ -37,7 +37,7 @@
    "id": "D3",
    "title": "Three kinds of identity: human, coop, agent",
    "status": "decided",
-   "decision": "Identity types: human, coop, agent. Humans and coops own and decide. A coop's members are its “members” role, which holds humans or coops, never agents or signers; coops may be inside coops, never in a circle. Agents are owned and never in any role; they get policies directly from their owner.",
+   "decision": "Identity types: human, coop, agent. Humans and coops own and decide. A coop has roles, named sets of identities that hold humans or coops, never agents or signers; coops may be inside coops, never in a circle. Agents are owned and never in any role; they get policies directly from their owner.",
    "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
    "sources": [
     {
@@ -401,7 +401,7 @@
    "id": "D20",
    "title": "BeeKEM inside large roles, later",
    "status": "decided",
-   "decision": "Small roles use one envelope per member. Roles of several dozen members and up manage their role key with BeeKEM. Not per piece of data.",
+   "decision": "Small roles use one envelope per reading agent. Roles of several dozen identities and up manage their role key with BeeKEM. Not per piece of data.",
    "why": "BeeKEM per document (Keyhive) costs one update per document a removed reader could read; per role it costs one. Every Keyhive crate is pre-alpha and unaudited: pin and audit before use.",
    "sources": [
     {
@@ -621,7 +621,7 @@
    "title": "Only the owner changes policies",
    "status": "decided",
    "decision": "The owner writes and ends all policies on its data; ownership acts (retain, erase, open the archive, migrate to a new schema version) stay with the owner alone. Nobody else writes policies, and ownership is never handed over (D54).",
-   "why": "Identities work like Gnosis Safes: agents of its members sign under the identity's own policies (one signature for now, D49), with one guardian at the top of a coop (D59). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
+   "why": "Identities work like Gnosis Safes: agents of the identities in its roles sign under the identity's own policies (one signature for now, D49), with one guardian at the top of a coop (D59). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
    "supersedes": "D15; removes admin from the role do-list in D8",
    "sources": [
     {
@@ -670,7 +670,7 @@
    "id": "D32",
    "title": "Words, and dialing identities",
    "status": "decided",
-   "decision": "Agents sign for the identity that owns them; a coop's members are its “members” role; roles are sets of identities; data is acted upon. Peers dial identities: each identity publishes a signed record of its agents, each agent's history holds its current address (its signer's public key), and the connection goes to whichever agent is online.",
+   "decision": "Agents sign for the identity that owns them; roles are sets of identities; data is acted upon. Peers dial identities: each identity publishes a signed record of its agents, each agent's history holds its current address (its signer's public key), and the connection goes to whichever agent is online.",
    "why": "One word per thing. Addressing identities keeps the address stable while signers change, like a phone number and its SIM.",
    "sources": [],
    "slides": [
@@ -833,7 +833,7 @@
    "id": "D40",
    "title": "The archive belongs to the owner identity",
    "status": "decided",
-   "decision": "Cold keys are sealed to the owner's archive key, which is itself sealed to the locks of the owner's agents that hold own (for a coop: the agents of members with own, D57). Opening the archive follows the owner's own policies. The archive key is not tied to one device. A device may add a local tap as convenience, not as protection.",
+   "decision": "Cold keys are sealed to the owner's archive key, which is itself sealed to the locks of the owner's agents that hold own (for a coop: the agents acting for it with own, D57). Opening the archive follows the owner's own policies. The archive key is not tied to one device. A device may add a local tap as convenience, not as protection.",
    "why": "The identity owns, never a signer (D2). Ownership of the past follows the same policies as ownership of the present.",
    "supersedes": "D37",
    "sources": [],
@@ -902,7 +902,7 @@
    "id": "D44",
    "title": "An identity's policies and data policies never overlap",
    "status": "decided",
-   "decision": "An identity's own policies answer who speaks for it: policies on the identity, given to its members role or its own agents, with act and own; conditions may name which data an agent acts on. A piece of data's policies answer what an identity may do with it: policies on the data, given to roles, with data operations. Signature counts appear only on identity policies (D48, D49). A change is valid only if both hold. A coop is like a small DAO: members, governance, assets, nesting.",
+   "decision": "An identity's own policies answer who speaks for it: policies on the identity, given to its roles or its own agents, with act and own; conditions may name which data an agent acts on. A piece of data's policies answer what an identity may do with it: policies on the data, given to roles, with data operations. Signature counts appear only on identity policies (D48, D49). A change is valid only if both hold. A coop is like a small DAO: roles, a guardian, assets, nesting.",
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
    "slides": [
@@ -969,7 +969,7 @@
    "title": "One policy shape, one plugin system",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every policy has one shape: who, on what, operations, conditions, expiry. An identity's policies have its members role or its own agents as who and the identity itself as target, with operations act and own. A piece of data's policies have a role as who and the data as target. Operations and conditions (at, where, limit …; later signature counts, D49) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so signature conditions stay on identities (D44).",
+   "decision": "Every policy has one shape: who, on what, operations, conditions, expiry. An identity's policies have one of its roles or one of its own agents as who and the identity itself as target, with operations act and own. A piece of data's policies have a role as who and the data as target. Operations and conditions (at, where, limit …; later signature counts, D49) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so signature conditions stay on identities (D44).",
    "why": "One language and one engine for all policies, with the separation between agency and access kept by the target.",
    "supersedes": "D38",
    "sources": [],
@@ -985,7 +985,7 @@
    "title": "One signature by default; counts come later as plugins",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "For now, every act and own of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of a member (1 of 1). Behind them stands the identity's one guardian (D91). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (D48), and devices that do not know them treat them as not satisfied.",
+   "decision": "For now, every act and own of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of an identity in one of its roles (1 of 1). Behind them stands the identity's one guardian (D91). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (D48), and devices that do not know them treat them as not satisfied.",
    "why": "Keeps the first version simple while the plugin system leaves room to grow.",
    "sources": [],
    "slides": [
@@ -1014,9 +1014,9 @@
   },
   {
    "id": "D51",
-   "title": "Only roles and policies",
+   "title": "Only roles and policies; no members",
    "status": "decided",
-   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role; policies on the coop say what that role may do, act and own for a home's members, only act for the homes of a street; the coop's guardian is its root (D91), and may give own to a role so its holders manage roles and policies.",
+   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop has no members, only roles; policies on the coop say what each role may do, for example act and own for a home's “family”, only act for a street's “homes”; the coop's guardian is its root (D91), and may give own to a role so its holders manage roles and policies.",
    "why": "One mechanism for everything: who is in which group (roles) and what that group may do (policies).",
    "supersedes": "membership as its own record kind",
    "sources": [],
@@ -1130,8 +1130,8 @@
   {
    "id": "D57",
    "title": "Keys follow agents: no shared identity key",
-   "decision": "There is no key shared by all of an identity's agents. Each agent has its own lock, published in its own history (D19). A data key is sealed to the role keys of the roles that may read it and to the locks of the owner's agents whose policies cover reading it; a role key is sealed to the locks of each member's agents whose policies cover reading for that member. So an agent gets exactly the keys both layers give it: the data's policies (which identity may read) and the identity's policies (which of its agents reads for it, D58). Carriers get none. Any current reader that has seen a change in the reader set may turn a key; every peer checks that envelopes go only to current readers. When two key turns are concurrent, the next key is sealed only to the readers both allowed, and nobody encrypts under a generation older than an ending it knows. Adding someone: envelopes for their reading agents; a newcomer starts from today's snapshot unless the owner opens older history. Removing someone or losing an agent: it gets nothing new, and every role key and data key it could open turns (role keys now, data keys on the next write; data keys now when read is taken).",
-   "why": "Reading must follow the same delegation as writing: a watch limited to health data, or a backup with only want and keep, must not be able to decrypt everything, and removing a coop member must stop their reading without a cascade of identity-key turns. Keyhive does the same: every individual with Read is a leaf of the key tree, one with only Relay is not.",
+   "decision": "There is no key shared by all of an identity's agents. Each agent has its own lock, published in its own history (D19). A data key is sealed to the role keys of the roles that may read it and to the locks of the owner's agents whose policies cover reading it; a role key is sealed to the locks of the agents of each identity in the role whose policies cover reading for that identity. So an agent gets exactly the keys both layers give it: the data's policies (which identity may read) and the identity's policies (which of its agents reads for it, D58). Carriers get none. Any current reader that has seen a change in the reader set may turn a key; every peer checks that envelopes go only to current readers. When two key turns are concurrent, the next key is sealed only to the readers both allowed, and nobody encrypts under a generation older than an ending it knows. Adding someone: envelopes for their reading agents; a newcomer starts from today's snapshot unless the owner opens older history. Removing someone or losing an agent: it gets nothing new, and every role key and data key it could open turns (role keys now, data keys on the next write; data keys now when read is taken).",
+   "why": "Reading must follow the same delegation as writing: a watch limited to health data, or a backup with only want and keep, must not be able to decrypt everything, and removing someone from a coop's role must stop their reading without a cascade of identity-key turns. Keyhive does the same: every individual with Read is a leaf of the key tree, one with only Relay is not.",
    "supersedes": "D16 and D18",
    "sources": [
     {
@@ -1186,7 +1186,7 @@
    "id": "D59",
    "title": "One top: one owner per piece of data, one guardian per coop",
    "decision": "Authority has exactly one top and flows only downward: a piece of data has one owner (D5), and every identity has one guardian (D91). Nobody can give more than it holds, and nobody below can touch the guardian. When two holders below the top remove each other at the same moment, both removals stand and the guardian repairs, for example by adding one back; there is no seniority and no coin flip. The top cannot clash with itself because it is one.",
-   "why": "Without a total order, peers with equal power can remove each other at once and leave nobody, and with one signature any member could take a coop over. Keyhive's Keyline calls this mutual destruction in the root role; its mitigation is a single owner at the top, with every layer below repairable from above. Gnosis Safes avoid it with a blockchain's total order, which a local-first system does not have.",
+   "why": "Without a total order, peers with equal power can remove each other at once and leave nobody, and with one signature anyone in a coop's role could take it over. Keyhive's Keyline calls this mutual destruction in the root role; its mitigation is a single owner at the top, with every layer below repairable from above. Gnosis Safes avoid it with a blockchain's total order, which a local-first system does not have.",
    "sources": [
     {
      "label": "Keyhive design: Keyline",
@@ -1387,7 +1387,7 @@
     "schema-6",
     "schema-7",
     "schema-8",
-    "schema-11"
+    "schema-12"
    ],
    "status": "decided",
    "date": "2026-10-31"
@@ -1395,7 +1395,7 @@
   {
    "id": "D68",
    "title": "Breaking changes go through a Loro branch",
-   "decision": "A change that a lens cannot run both ways (splitting a field, a list becoming a map) is a rewrite. The owner's agent takes the frontier F of the valid view, forks the Doc at F (fork_at), applies the lens there and takes the diff; on the main Doc it checks out F, edits detached under its derived peer ID (D63), applies the diff and commits one change that depends on F, signed with a migration record. Ops made on the fork are never signed. Every peer verifies by repeating the rewrite at F; a mismatch is dropped. Old-version changes that never saw the rewrite go back to their authors, who apply them again through the lens (D62). A total break may instead start new data with its own birth record and end the old data's write policies.",
+   "decision": "A change that a lens cannot run both ways (splitting a field, a list becoming a map) is a rewrite. The owner's agent takes the frontier F of the valid view, forks the Doc at F (fork_at), applies the lens there and takes the diff; on the main Doc it checks out F, edits detached under its derived peer ID (D63), applies the diff and commits one change that depends on F, signed with a migration record. Ops made on the fork are never signed. Every peer verifies by repeating the rewrite at F; a mismatch is dropped. Old-version changes that never saw the rewrite go back to their authors, who apply them again through the lens (D62). A total break starts a successor instead (D71).",
    "why": "Loro has no branch object, but fork_at, checkout and apply_diff give a deterministic branch-and-merge that every peer can recompute, so nobody has to trust the migrating device.",
    "sources": [
     {
@@ -1460,11 +1460,11 @@
   },
   {
    "id": "D71",
-   "title": "Successor records for data",
-   "status": "proposed",
+   "title": "Successors: data that continues other data",
+   "status": "decided",
    "date": "2026-10-31",
-   "decision": "New data may name a predecessor in its birth record (data ID and frontier hash), and the old data gets a signed forward link from its owner. This is the path for total schema breaks and any future change of owner.",
-   "why": "Data named by its birth record has no way to continue under a new one.",
+   "decision": "Data may continue as new data. The owner starts new data whose birth record names a predecessor (the old data ID and the hash of the old valid view's frontier) and signs a successor record on the old data naming the new data, the same frontier and, if the schema changes, a lens. A succession holds only if both name each other with the same frontier. Old and new have the same owner; succession never moves ownership (D54). Data has at most one successor; two concurrent successor records both fail until one sees the other. The new data's first state equals the old valid view at the frontier, through the lens if given, and every peer can recompute it. The successor record ends every create, update and delete on the old data; read, want and keep stay until ended separately. Changes on the old data that didn't see the successor record go back to their authors as a conflict view, to be applied again on the successor (D62). Links to old data resolve forward through the chain.",
+   "why": "A clean way out for breaks too big even for a branch (D68), checkable by everyone, without hand-over and without rewriting history. Hypercore's prologue and Holochain's CloseChain/OpenChain do the same for logs and chains.",
    "sources": [
     {
      "label": "Hypercore",
@@ -1476,7 +1476,8 @@
     }
    ],
    "slides": [
-    "data-2"
+    "data-2",
+    "schema-10"
    ]
   },
   {
@@ -1601,7 +1602,7 @@
    "status": "proposed",
    "date": "2026-10-31",
    "decision": "Every signer's records form a hash chain (running number plus previous hash); chain headers travel without content. Every ending or removal names the ended signer's chain head, and records that are not ancestors of that head are dropped on all data. The owner, the one top, is the linearisation point for its own authority.",
-   "why": "Critical: an ending in another history (an agent revoked on its human, a member removed from a coop) can't be listed by the data's records, so backdated changes slip in.",
+   "why": "Critical: an ending in another history (an agent revoked on its human, an identity removed from a coop's role) can't be listed by the data's records, so backdated changes slip in.",
    "sources": [
     {
      "label": "Keybase teams: loader",

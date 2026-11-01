@@ -34,7 +34,82 @@
     "write the birth record",
     "sign it",
     "its hash is the data ID"
-   ]
+   ],
+   "spec": {
+    "summary": "A piece of data is named by the hash of its birth record; the record fixes its schema version, its owner and, optionally, the data it continues.",
+    "records": [
+     {
+      "name": "genesis record (data)",
+      "fields": [
+       [
+        "type",
+        "schema ref",
+        "the root genesis schema (D90)"
+       ],
+       [
+        "nonce",
+        "b3 hash",
+        "random; keeps two births apart"
+       ],
+       [
+        "schema",
+        "schema ref",
+        "the exact version the data follows (D66)"
+       ],
+       [
+        "policy",
+        "policy body",
+        "to the owner, operations own, expires null"
+       ],
+       [
+        "predecessor",
+        "optional",
+        "{data: old data ID, frontier: hash of the old frontier} when this data continues another (D71)"
+       ],
+       [
+        "proof",
+        "record IDs",
+        "from the owner's birth record to the signing agent"
+       ],
+       [
+        "sig",
+        "signature",
+        "by an agent acting for the owner with own"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "data.id",
+      "text": "The data ID is data:b3: and b3(cbor(record without sig)); a second birth record is different data."
+     },
+     {
+      "id": "data.signed_by_own",
+      "text": "The birth record is valid only if signed along a chain that carries own on the named owner (D91)."
+     },
+     {
+      "id": "data.owner_policy",
+      "text": "Its policy names exactly one owner, an identity, with own and no expiry (D5)."
+     },
+     {
+      "id": "data.sub_birth",
+      "text": "Data born inside other data is born under the parent's create policy and follows the parent's owner and policies by link (D64)."
+     },
+     {
+      "id": "data.predecessor",
+      "text": "A predecessor counts only together with the old data's forward link naming this data (successor.mutual)."
+     }
+    ],
+    "decisions": [
+     "D5",
+     "D50",
+     "D64",
+     "D66",
+     "D71",
+     "D91"
+    ]
+   }
   },
   {
    "title": "Its first policy makes you the owner.",
