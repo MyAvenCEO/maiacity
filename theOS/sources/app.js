@@ -1,7 +1,8 @@
 // Sources: one doc per source theOS and avenCEO learned from. A protocol is drawn as its flow. "Used by" follows every
 // path from avenCEO's definition, the AIPs and their reviews to this source; who read it, when and how, is the trace of
 // the intents that read it. Reads only.
-const HERE = 'sources';
+// this app is brain's (in brain/) after AIP-3's migration, the Sources app (in sources/) before it
+const HERE = location.pathname.includes('/brain/') ? 'brain' : 'sources';
 const $ = (s) => document.querySelector(s);
 const e = W.esc;
 let G = null;
@@ -40,7 +41,7 @@ function page(p, d) {
 
 function show() {
   const route = decodeURIComponent(location.hash.slice(1)) || 'all';
-  if (route && !route.startsWith('sources/') && W.isPath(route)) { location.href = `../avenCEO/index.html#${route}`; return; }
+  if (route && W.isPath(route) && W.appOf(route) === 'avenCEO') { location.href = `../avenCEO/index.html#${route}`; return; }
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route));
   const d = G.docs.get(route);
   $('#main').innerHTML = route === 'all' ? list() : route.startsWith('topic/') ? list(null, route.slice(6)) : GROUPS.some(([k]) => k === route) ? list(route)
@@ -49,9 +50,10 @@ function show() {
 }
 
 async function start() {
-  const index = await W.get('sources/index');
-  const def = await W.get('avenCEO/avenCEO');
-  G = { ...(await W.crawl(['sources/index', 'avenCEO/avenCEO', ...def.indexes.filter((p) => !p.startsWith('sources/'))])), items: index.items };
+  await W.ready();
+  const index = await W.get(W.indexOf('sources'));
+  const def = await W.get(W.DEF);
+  G = { ...(await W.crawl([W.indexOf('sources'), W.DEF, ...def.indexes])), items: index.items };
   G.trace = W.trace(G.docs);
   $('#nav').innerHTML = `<a href="#all" data-r="all">All<span>${refs().length}</span></a><span class="gap"></span>`
     + GROUPS.map(([k, t]) => [k, t, refs().filter(([, d]) => d.subtype === k).length]).filter(([, , n]) => n).map(([k, t, n]) => `<a href="#${k}" data-r="${k}">${t}<span>${n}</span></a>`).join('')
