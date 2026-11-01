@@ -176,6 +176,9 @@ body {
   display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 0 2px; }
 .nav .track button i { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid #3b5466; background: var(--stage); box-sizing: border-box; }
 .nav .track button span { white-space: normal; font: 500 10px/1.25 var(--mono); color: #5d7383; text-align: center; overflow-wrap: anywhere; max-width: 100%; }
+/* Phones: a chapter's dots fit beside Back and Next without padding; with it, a long chapter pushed the bar, and the
+   page, sideways (found by theOS's check, AIP-1). */
+@media (max-width: 900px) { .nav .track button { padding: 0; } }
 .nav .track button.past i { background: var(--stage-ink); border-color: var(--stage-ink); }
 .nav .track button.now i { background: var(--ochre); border-color: var(--ochre); transform: scale(1.3); }
 .nav .track button.now span { color: var(--ochre); }
