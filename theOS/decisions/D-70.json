@@ -1,0 +1,40 @@
+{
+ "type": "decision",
+ "id": "D-70",
+ "n": 70,
+ "title": "avenSANDBOX stays a required check",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "release",
+  "checks"
+ ],
+ "quote": "Why remove avenSANDBOX? We still want it built and published, and AIP-2 does that anyway.",
+ "means": "production's ruleset keeps all three required checks: Only from main, avenSANDBOX and theOS. theOS's release workflow reports avenSANDBOX as proof that the box of the commit released is published and works; AIP-2's image workflow builds it. Samuel set the source of theOS to GitHub Actions on 1 November, so nothing is left for him in GitHub's settings.",
+ "intents": [
+  "aip/AIP-5",
+  "aip/AIP-2"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-63",
+   "part": "avenSANDBOX leaves at Gate B",
+   "what": "avenSANDBOX stays a required check beside Only from main and theOS."
+  },
+  {
+   "decision": "decisions/D-59",
+   "part": "in place of the old ones",
+   "what": "theOS's checks join the ruleset beside the old ones instead of replacing them."
+  }
+ ],
+ "relates": [
+  "decisions/D-24",
+  "decisions/D-33"
+ ],
+ "reflection": {
+  "checked": "every decision before D-70 that held",
+  "result": "supersedes D-63 in part (avenSANDBOX leaving at Gate B) and D-59 in part (checks replaced at Gate B)"
+ }
+}
