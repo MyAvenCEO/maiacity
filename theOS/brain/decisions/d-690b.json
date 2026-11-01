@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-690b",
+ "title": "theOS's check ships at today's coverage",
+ "subtype": "gate-B",
+ "by": "a-4c7a",
+ "at": "2026-11-01T13:04Z",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "checks"
+ ],
+ "quote": "I don't want to test it by hand: I trust the results. So it's good.",
+ "means": "Gate B passes for aip-31df on the check's results, without a manual try: green on the current tree, red with page, box and size named when a page is broken on purpose (shown by avenMAIA), green again after the undo, in about two minutes. c2 passes at today's coverage: every doc page and OLD-AIP page, 97 to 98 of 123 slides and 9 of 23 Learn tabs; the rest stays in the intent's gaps. The outcome is measured over the next three sessions that change view code.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-5afb",
+  "d-93eb"
+ ],
+ "reflection": {
+  "checked": "every decision before d-690b that held",
+  "result": "supersedes nothing"
+ }
+}
