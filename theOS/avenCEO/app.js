@@ -153,7 +153,7 @@ function typeMap() {
 }
 
 function waiting() {
-  return ofType('intent').flatMap(([p, I]) => (I.questions || []).filter((q) => !q.answered).map((q) => `<div class="wait"><span class="path">${L(p)}</span><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`)).join('');
+  return ofType('intent').flatMap(([p, I]) => (I.questions || []).filter((q) => !q.answered && !q.replaced_by).map((q) => `<div class="wait"><span class="path">${L(p)}</span><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`)).join('');
 }
 
 function home() {
@@ -214,7 +214,7 @@ const PAGES = {
     const reviews = all.filter((r) => r.findings), cpReviews = all.filter((r) => r.rounds);
     const rounds = [...new Set(reviews.map((r) => r.round))];
     return `${head(I, [`<span class="chip">${e(I.kind)}</span>`, `<span class="chip clay">${e(stage)}</span>`], `<p class="lead">${T(I.source?.text)} ${I.source?.ref ? L(I.source.ref) : ''}</p>${I.note ? `<p class="note">${T(I.note)}</p>` : ''}`)}
-      ${sec('Waiting for you', (I.questions || []).filter((q) => !q.answered).map((q) => `<div class="wait"><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`).join(''), 'Asked here in chat; your answers become decision docs.')}
+      ${sec('Waiting for you', (I.questions || []).filter((q) => !q.answered && !q.replaced_by).map((q) => `<div class="wait"><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`).join(''), 'Asked here in chat; your answers become decision docs.')}
       ${tasks(I)}
       ${sec('1 · Understand: the problem', p.who ? `<p><b>Who</b></p>${ul(p.who)}<p><b>What they experience</b> ${T(p.experience)}</p><p><b>Evidence</b> ${T(p.baseline)}</p>
         ${(p.evidence || []).map((g) => `<span class="label">${e(g.group)}</span><ul>${g.items.map((x) => `<li>${T(x.text)} ${x.commit ? `<span class="note">fixed in</span> ${commit(x.commit)}` : ''}</li>`).join('')}</ul>`).join('')}
@@ -322,7 +322,7 @@ async function start() {
   G.sources = await W.get('sources/index');
   const n = (type) => ofType(type).length;
   $('#nav').innerHTML = `<a href="#home" data-r="home">avenCEO</a>` + LISTS.map(([k, t, type]) => (k === 'gap' ? '<span class="gap"></span>'
-    : `<a href="#${k}" data-r="${k}">${t}<span>${k === 'waiting' ? ofType('intent').reduce((s, [, I]) => s + (I.questions || []).filter((q) => !q.answered).length, 0) : n(type)}</span></a>`)).join('');
+    : `<a href="#${k}" data-r="${k}">${t}<span>${k === 'waiting' ? ofType('intent').reduce((s, [, I]) => s + (I.questions || []).filter((q) => !q.answered && !q.replaced_by).length, 0) : n(type)}</span></a>`)).join('');
   $('#main').addEventListener('click', (ev) => { const j = ev.target.closest('[data-jump]'); if (j) { const s = G.def.steps.find((p) => p.startsWith(`avenCEO/steps/${j.dataset.jump.split('-')[1]}-`)); if (s) location.hash = s; } });
   addEventListener('hashchange', show);
   show();
