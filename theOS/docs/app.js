@@ -148,10 +148,10 @@ async function openIntents(st, i) {
   let body = '';
   if (current === 'learn') {
     const l = x.learn;
-    body = `${l.weakness ? `<p class="ddec"><b>Weakness</b> ${linkify(l.weakness)}</p>` : ''}
+    body = `${l.weakness ? `<div><b class="ilabel">Weakness</b><p class="ddec">${linkify(l.weakness)}</p></div>` : ''}
       ${l.strengths.length || l.elsewhere.length ? `<div class="agrid"><div><b>Strengths</b>${ul(l.strengths)}</div><div><b>Elsewhere</b>${ul(l.elsewhere)}</div></div>` : ''}
-      ${l.scenarios.length ? `<table class="atable ends"><thead><tr><th>Scenario</th><th>Verdict</th><th>Why</th><th>Fix</th></tr></thead><tbody>${l.scenarios.map((r) =>
-        `<tr><td>${esc(r.scenario)}</td><td><span class="verdict ${r.verdict}">${r.verdict}</span></td><td>${esc(r.why)}</td><td>${esc(r.fix || '–')}</td></tr>`).join('')}</tbody></table>` : ''}`;
+      ${l.scenarios.length ? `<div class="scens"><b class="ilabel">Scenarios</b>${l.scenarios.map((r) =>
+        `<section class="scen"><p class="shead"><span class="verdict ${r.verdict}">${r.verdict}</span><span>${linkify(r.scenario)}</span></p><div class="sgrid"><div><b class="ilabel">Why</b><p>${linkify(r.why)}</p></div>${r.fix ? `<div><b class="ilabel">Fix</b><p>${linkify(r.fix)}</p></div>` : ''}</div></section>`).join('')}</div>` : ''}`;
   } else if (current === 'propose') {
     body = `<p class="ddec">${linkify(x.proposal.text)}</p>${x.proposal.why ? `<p class="dwhy"><b>Why</b> ${linkify(x.proposal.why)}</p>` : ''}`;
   } else {
