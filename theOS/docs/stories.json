@@ -72,6 +72,12 @@
    "kind": "intents"
   },
   {
+   "id": "flow",
+   "title": "Flow",
+   "file": "flow.json",
+   "kind": "doc"
+  },
+  {
    "id": "sources",
    "title": "Sources",
    "file": "intents.json",

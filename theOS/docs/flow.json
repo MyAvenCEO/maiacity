@@ -1,0 +1,1127 @@
+{
+ "title": "The flow",
+ "status": "draft",
+ "date": "2026-11-01",
+ "summary": "How we work, from anything that comes in to what we learned from it. Every intent is one record, filled in step by step; its stage is computed from what is filled in, risk decides how much evidence it needs, nobody verifies their own work, and work is built in small checkpoints that can't pass an open gate. An attempt may be wrong; it may not ship until it isn't. Each cycle improves the product and the way we work.",
+ "bands": [
+  {
+   "name": "Problem",
+   "steps": [
+    1,
+    2
+   ]
+  },
+  {
+   "name": "Solution",
+   "steps": [
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "name": "Delivery",
+   "steps": [
+    6,
+    7
+   ]
+  },
+  {
+   "name": "Reality",
+   "steps": [
+    8
+   ]
+  }
+ ],
+ "steps": [
+  {
+   "n": 1,
+   "name": "Capture",
+   "question": "What came in?",
+   "do": [
+    "Record anything, unfiltered: an idea, an audit finding, a bug, a user report, research, a surprise from Learn.",
+    "One line, its source as a link, and who raised it."
+   ],
+   "output": "source",
+   "gate": "It says what happened or what is wanted.",
+   "who": "Anyone: you, an agent, a user.",
+   "from": [
+    "Design thinking: empathize"
+   ],
+   "writes": "source"
+  },
+  {
+   "n": 2,
+   "name": "Understand",
+   "question": "Who is affected, what do they experience, and what is the root cause?",
+   "do": [
+    "Observe or reproduce it with the real person or scenario. A failure seen once is a hypothesis; a failure that repeats is a property.",
+    "Ask why until the answer is a first principle (Five Whys).",
+    "Question it: what exactly do we think, how do we know, what if the opposite were true, what if we are wrong?",
+    "Separate truths (mathematics, cryptography, network laws, measured facts) from assumptions (conventions, analogies, how it is usually done).",
+    "Give every requirement a person and a why.",
+    "Rate the risk: looks wrong, breaks, or can't be undone."
+   ],
+   "output": "problem: who · what they experience · root cause · truths · assumptions · risk",
+   "gate": "Reproduced or observed, root cause named, risk set. Otherwise dropped, with the reason.",
+   "who": "Author agent. You confirm a can't-be-undone rating.",
+   "from": [
+    "First principles: Socratic questions, Five Whys",
+    "Musk 1: question every requirement",
+    "Design thinking: empathize, define"
+   ],
+   "writes": "problem · risk"
+  },
+  {
+   "n": 3,
+   "name": "Shape",
+   "question": "What can we remove so the problem disappears? If nothing, what is the simplest thing that keeps the claims?",
+   "do": [
+    "Delete first: try removing a concept, a rule, a step or a component. If that solves it, the intent becomes a deletion.",
+    "Get options from fresh agents that can't see each other, in two kinds: how we work (process, checks, tools) and what is true (architecture rules). \"Keep as is\" is always one of them. High risk: several independent proposals (wide). Refinement: one after another (deep).",
+    "Compare with patterns proven in the wild, from primary sources.",
+    "Choose the simplest option. Count the concepts it adds and removes, and write why it was chosen.",
+    "Write the claims: the promise · how it could fail · the check that would catch it · the kind of evidence its risk requires · who needs it.",
+    "Make the mockup: the slides and the Architecture panel diff with rule IDs; for a screen, a clickable page.",
+    "Plan the checkpoints: smallest first, each building on the one before, each naming its claims and the gates it must pass."
+   ],
+   "output": "options · chosen · why · claims · mockup · checkpoints",
+   "gate": "Gate A: you approve the problem, the claims, the mockup and the checkpoint plan. Nothing is proved or built before.",
+   "who": "Author agent and fresh option agents. You at Gate A.",
+   "from": [
+    "Musk 2 and 3: delete, simplify",
+    "Design thinking: ideate",
+    "Claude Code team: evals and mockup before building",
+    "Harness²: two kinds of change, keep as is",
+    "Shopify Helix: a checkpoint plan a person reviews"
+   ],
+   "writes": "claims · mockup · checkpoints"
+  },
+  {
+   "n": 4,
+   "name": "Prove",
+   "question": "What is the cheapest thing that could prove us wrong?",
+   "do": [
+    "A fresh verifier, never the author, gathers each claim's evidence: a Lean model and theorem, vectors from the model, a person test of the mockup, a measured spike.",
+    "Try to break every claim with the scenarios from Understand.",
+    "If options are still open, compare them blind: anonymised, judged in this order: delivered, conforms (only what was asked), faithful to the sources, consistent with itself, usable by whoever comes next, finished.",
+    "A counterexample goes back to Shape with the exact case. Three failed rounds go back to Understand."
+   ],
+   "output": "one artifact per claim, with its result",
+   "gate": "Every claim has an artifact that passed, or you accept it as an assumption.",
+   "who": "Verifier agent (fresh), Lean's checker, a person for person tests.",
+   "from": [
+    "Design thinking: prototype, test",
+    "Claude Code team: a separate verifier, proof instead of claims",
+    "Harness²: blind selection, the judging order",
+    "Lean"
+   ],
+   "writes": "evidence per claim"
+  },
+  {
+   "n": 5,
+   "name": "Decide",
+   "question": "Given the evidence, yes or no?",
+   "do": [
+    "Read the problem, the claims, their evidence and the options.",
+    "Write every line of the decision as: kept, revised or dropped → what → the evidence that decided it."
+   ],
+   "output": "decision: accepted, rejected or superseded · why · rejected options · supersedes",
+   "gate": "Gate B: your yes. From here on the rules count as true, and the Architecture panels show them.",
+   "who": "You.",
+   "from": [
+    "The intent record",
+    "Harness²: evidence on every decision line"
+   ],
+   "writes": "decision"
+  },
+  {
+   "n": 6,
+   "name": "Build",
+   "question": "What is the smallest checkpoint that works end to end, and does it pass every gate?",
+   "do": [
+    "Check the starting point first: it builds and every existing check is green.",
+    "One branch per intent, one checkpoint at a time, smallest first. The next checkpoint starts only when the current one passed its gates.",
+    "Behavior gate: the checkpoint's checks are written first and fail first (tests, vectors from the model); then the builder writes the code; a fresh verifier runs the tests, the vectors, the Aeneas proof that the Rust keeps the model, and the same tests in wasm.",
+    "Screen gate, when the checkpoint has a screen: two fresh reviewers, one for how it looks and one for how it behaves, compare it with the mockup in the same state. They see only the mockup and the design rules, never our instructions.",
+    "Adversarial gate: a fresh critic assumes the code is wrong and checks it against the written review rules; a fixer answers; it repeats until the critic approves. Every finding names its kind; after the first round only what changed is checked.",
+    "A stop hook keeps an agent working while a gate is open. Three rounds without passing go back to Shape."
+   ],
+   "output": "code · every checkpoint through its gates · every rule green on every layer",
+   "gate": "Every checkpoint passed its gates. Then Gate C: you use it as a person would.",
+   "who": "Orchestrator, test writer, builder, verifier, screen reviewers, critic and fixer, each agent in a fresh context.",
+   "from": [
+    "Musk 4: speed up",
+    "Claude Code team: the build loop, its stopping rules",
+    "Shopify Helix: checkpoints, gates, critic and fixer",
+    "Lean and Aeneas"
+   ],
+   "writes": "checkpoints through gates"
+  },
+  {
+   "n": 7,
+   "name": "Ship",
+   "question": "Does it work for a person, is it live, and can we take it back?",
+   "do": [
+    "Gate C: you use it as a person would. Your feedback becomes new checkpoints that pass the same gates, and a candidate lesson.",
+    "Write how to undo it before releasing.",
+    "Release. The release notes are generated from the intents it contains."
+   ],
+   "output": "your review · release · how to undo",
+   "gate": "Gate C passed, released.",
+   "who": "You.",
+   "from": [
+    "Shopify Helix: the final human review",
+    "Claude Code team: undo in minutes"
+   ],
+   "writes": "release · undo"
+  },
+  {
+   "n": 8,
+   "name": "Learn",
+   "question": "Did it work, and what do we change in the product and in how we work?",
+   "do": [
+    "Use it daily. Send a first-time-user agent that can't read the code, on throwaway data.",
+    "Measure the outcome claim.",
+    "Surprises become new intents in Capture.",
+    "Write at most one lesson for the product and one for how we work, each as cue · lesson · evidence · confidence, with every change rated helped, hurt, no effect or confounded. \"None\" is a valid answer. A lesson is added only with your approval, and an always-on rule only if another one goes.",
+    "Keep the full artifact, never a summary.",
+    "Speed up the slowest step. Automate a step that was done by hand three times and stopped changing."
+   ],
+   "output": "measurement · new intents · lessons",
+   "gate": "Measured. The intent closes.",
+   "who": "First-time agent and author agent. You approve lessons.",
+   "from": [
+    "Design thinking: test in reality",
+    "Claude Code team: use it daily, first-time user",
+    "Harness²: the lesson library, improving the harness",
+    "Musk 4 and 5"
+   ],
+   "writes": "measurement · lessons"
+  }
+ ],
+ "gates": [
+  {
+   "id": "A",
+   "after": 3,
+   "who": "you",
+   "what": "You approve the problem, the claims, the mockup and the checkpoint plan. Nothing is proved or built before."
+  },
+  {
+   "id": "B",
+   "after": 5,
+   "who": "you",
+   "what": "You decide with the evidence in view. From here on the rules count as true. Only for risk that can't be undone."
+  },
+  {
+   "id": "C",
+   "after": 6,
+   "who": "you",
+   "what": "You use it as a person would. Your feedback becomes new checkpoints through the same gates."
+  }
+ ],
+ "loops": [
+  {
+   "from": 4,
+   "to": 3,
+   "when": "counterexample"
+  },
+  {
+   "from": 7,
+   "to": 6,
+   "when": "your feedback"
+  },
+  {
+   "from": 4,
+   "to": 2,
+   "when": "3 failed rounds"
+  },
+  {
+   "from": 6,
+   "to": 3,
+   "when": "3 rounds not passing"
+  },
+  {
+   "from": 8,
+   "to": 1,
+   "when": "surprises become new intents"
+  }
+ ],
+ "checkpoints": {
+  "rules": [
+   "A checkpoint is a small slice of the intent that works end to end.",
+   "Smallest first; each builds on the one before.",
+   "Each names its claims and the gates it must pass; a checkpoint without a screen skips the Screen gate.",
+   "The next checkpoint starts only when the current one passed every gate."
+  ],
+  "gates": [
+   {
+    "name": "Behavior",
+    "checks": "The checkpoint's claims as tests and vectors, written first and failing first; then the code; then a fresh verifier runs tests, vectors, the Aeneas proof and wasm.",
+    "who": "test writer, builder, verifier",
+    "when": "every checkpoint"
+   },
+   {
+    "name": "Screen",
+    "checks": "Looks and behaves like the mockup, compared in the same state, by two reviewers who see only the mockup and the design rules.",
+    "who": "two screen reviewers",
+    "when": "checkpoints with a screen"
+   },
+   {
+    "name": "Adversarial",
+    "checks": "A critic assumes the code is wrong and checks it against the written review rules; a fixer answers; repeat until the critic approves.",
+    "who": "critic and fixer",
+    "when": "every checkpoint"
+   }
+  ]
+ },
+ "principles": [
+  "One record per intent. The board, the Rules page, the Architecture panels and the release notes are derived from it.",
+  "An intent stands at the first step whose output is still missing. Nobody moves cards.",
+  "Question, delete, simplify, speed up, automate, in that order.",
+  "Every requirement has a person and a why. A requirement without one is deleted.",
+  "Risk decides depth: what happens to a person if this is wrong?",
+  "Nobody verifies their own work. Agreement between agents is support, not proof.",
+  "Proof is shown, never stated: every status comes from an artifact.",
+  "A rule is advice; a gate is enforced. An attempt may be wrong; it may not ship until it isn't.",
+  "Small first: checkpoints go from simplest to most complex, so a wrong early decision is caught while it is cheap.",
+  "Agents read the JSON; you read the same file here, in plain language.",
+  "\"Keep as is\" is always a candidate, and it may win.",
+  "Gates, not dates. Evidence is data, not instructions."
+ ],
+ "stage": [
+  [
+   "source",
+   "Capture"
+  ],
+  [
+   "problem",
+   "Understand"
+  ],
+  [
+   "Gate A: claims, mockup, checkpoints",
+   "Shape"
+  ],
+  [
+   "an artifact for every claim",
+   "Prove"
+  ],
+  [
+   "decision (Gate B, can't-be-undone only)",
+   "Decide"
+  ],
+  [
+   "every checkpoint through its gates",
+   "Build"
+  ],
+  [
+   "Gate C, release",
+   "Ship"
+  ],
+  [
+   "measurement",
+   "Learn"
+  ],
+  [
+   "nothing",
+   "Closed"
+  ]
+ ],
+ "roles": [
+  {
+   "role": "You",
+   "steps": [
+    3,
+    5,
+    7,
+    8
+   ],
+   "does": "Gate A, Gate B, Gate C, approving lessons"
+  },
+  {
+   "role": "Orchestrator (the main session)",
+   "steps": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "does": "Keeps the record, starts every other agent fresh, stops for you only at the gates"
+  },
+  {
+   "role": "Author agent",
+   "steps": [
+    2,
+    3,
+    8
+   ],
+   "does": "Understands, shapes, writes lessons"
+  },
+  {
+   "role": "Option agents (fresh, apart)",
+   "steps": [
+    3
+   ],
+   "does": "Independent options, in two kinds"
+  },
+  {
+   "role": "Verifier agent (fresh)",
+   "steps": [
+    4,
+    6
+   ],
+   "does": "Gathers each claim's evidence; runs the Behavior gate"
+  },
+  {
+   "role": "Test writer and builder",
+   "steps": [
+    6
+   ],
+   "does": "Checks first, then the code that passes them"
+  },
+  {
+   "role": "Screen reviewers (fresh, two)",
+   "steps": [
+    6
+   ],
+   "does": "How it looks, how it behaves, against the mockup only"
+  },
+  {
+   "role": "Critic and fixer (fresh)",
+   "steps": [
+    6
+   ],
+   "does": "The Adversarial gate"
+  },
+  {
+   "role": "Lean's checker",
+   "steps": [
+    4,
+    6
+   ],
+   "does": "Judges every proof: the model in Prove, the Rust in Build"
+  },
+  {
+   "role": "A person",
+   "steps": [
+    4,
+    7,
+    8
+   ],
+   "does": "Person tests of the mockup; Gate C; daily use"
+  },
+  {
+   "role": "First-time agent (no code)",
+   "steps": [
+    8
+   ],
+   "does": "Uses the live product like a newcomer"
+  }
+ ],
+ "risk": [
+  {
+   "level": "Looks wrong",
+   "means": "something looks or reads wrong; nothing breaks",
+   "evidence": "a screenshot compared with the mockup",
+   "gates": "Gate C",
+   "build": "Behavior and Screen gates"
+  },
+  {
+   "level": "Breaks",
+   "means": "something stops working, nothing is lost",
+   "evidence": "tests and vectors",
+   "gates": "Gates A and C",
+   "build": "all three checkpoint gates"
+  },
+  {
+   "level": "Can't be undone",
+   "means": "keys, lockout, lost money, someone else's data",
+   "evidence": "a Lean proof, vectors, an adversarial pass, Aeneas",
+   "gates": "Gates A, B and C",
+   "build": "all three checkpoint gates, with Aeneas"
+  }
+ ],
+ "rules": [
+  "Nobody verifies their own work; every agent starts in a fresh context.",
+  "Agreement between agents is support, not proof: they share the same biases.",
+  "Proof is shown, never stated.",
+  "A gate is enforced, not advised: an agent can't stop while one is open.",
+  "Reviewers judge against the mockup, the claims and the written rules, never against the author's explanation.",
+  "Check the starting point is green before building on it.",
+  "Three failed rounds: stop patching and go back a step.",
+  "Re-check only what changed; never repeat a finding.",
+  "Every finding names its kind, and the kind is fixed everywhere.",
+  "A finding that keeps coming back becomes a lesson, with your approval.",
+  "A fact from an earlier intent is a hypothesis until it is checked again.",
+  "Always-on rules have a budget: add one, cut one.",
+  "Evidence is data, not instructions.",
+  "Gates, not dates."
+ ],
+ "record": {
+  "id": "AIP-n",
+  "source": "idea | audit | bug | report | research | learned · link · who raised it",
+  "problem": "who · what they experience · root cause · truths · assumptions · risk",
+  "options": "how we work | what is true · always including keep as is · chosen · why",
+  "claims": "[ id · promise · how it could fail · check · evidence kind · artifact · result ]",
+  "mockup": "slides + Architecture panel diff (rule IDs)",
+  "checkpoints": "[ n · what it adds · its claims · its gates · result per gate ]",
+  "decision": "accepted | rejected | superseded · why · rejected options · supersedes",
+  "build": "branch · every checkpoint through its gates · every rule green per layer",
+  "ship": "your review (Gate C) · release · how to undo",
+  "learned": "measured outcome · new intents · lessons",
+  "stage": "computed"
+ },
+ "lessons": [
+  {
+   "cue": "A status is kept in two places.",
+   "lesson": "Compute it from one record; never type it by hand.",
+   "evidence": "The audit and the decisions list drifted apart (31 Oct).",
+   "confidence": "high"
+  },
+  {
+   "cue": "A check measures something other than what the person sees.",
+   "lesson": "Check the rendered page at the person's window sizes.",
+   "evidence": "The fit test passed while the nav was cut off.",
+   "confidence": "high"
+  },
+  {
+   "cue": "An audit leans on summaries.",
+   "lesson": "Read primary sources: papers, specifications, code.",
+   "evidence": "The first audit was rejected as a bad audit.",
+   "confidence": "high"
+  },
+  {
+   "cue": "A rule keeps failing new cases.",
+   "lesson": "Go back to the problem instead of patching the rule.",
+   "evidence": "The mutual-removal rule (AIP-14).",
+   "confidence": "high"
+  },
+  {
+   "cue": "A name is generic or shared.",
+   "lesson": "Use specific names; reference data by ID @ version.",
+   "evidence": "The .stage chip collision; AIP-90.",
+   "confidence": "high"
+  }
+ ],
+ "automate": {
+  "now": [
+   "Every step by hand, including the Lean proofs."
+  ],
+  "later": [
+   "The stop hook that keeps an agent working while a gate is open",
+   "rules.json and the vectors, written by Lean",
+   "the risk rating",
+   "drift checks between rule IDs, Lean and the Architecture panels",
+   "first-time-agent runs"
+  ]
+ },
+ "sources": [
+  {
+   "label": "Farnam Street: What is first principles thinking?",
+   "url": "https://fs.blog/first-principles/"
+  },
+  {
+   "label": "More than Digital: First principles thinking, a comprehensive guide",
+   "url": "https://morethandigital.info/en/understanding-and-applying-first-principles-thinking-a-comprehensive-guide/"
+  },
+  {
+   "label": "Harness²: repository, code and prompts",
+   "url": "https://github.com/google-research/harness2"
+  },
+  {
+   "label": "Harness²: paper (not read here; arxiv.org is blocked in this environment)",
+   "url": "https://arxiv.org/abs/2610.14224"
+  },
+  {
+   "label": "Shopify's Helix workflow, as retold in an AI Labs video (original post not read)",
+   "url": ""
+  },
+  {
+   "label": "Claude Code team's review process, as retold in an AI Labs video (original article not read)",
+   "url": ""
+  }
+ ],
+ "protocols": [
+  {
+   "id": "first",
+   "name": "First principles engineering",
+   "by": "Aristotle's first principles, Socratic questioning, Toyota's Five Whys, and Musk's five-step algorithm.",
+   "summary": "Break a problem down to what is known to be true (laws of nature, measured facts) and reason up from there, instead of by analogy to how it is usually done. Then improve in a strict order: question the requirement, delete, simplify, speed up, automate. Doing the later steps first optimizes or automates things that should not exist.",
+   "steps": [
+    {
+     "n": 1,
+     "name": "Question",
+     "writes": "every requirement, with a name and a why"
+    },
+    {
+     "n": 2,
+     "name": "Delete",
+     "writes": "the parts and steps that aren't needed"
+    },
+    {
+     "n": 3,
+     "name": "Simplify",
+     "writes": "only what remains"
+    },
+    {
+     "n": 4,
+     "name": "Accelerate",
+     "writes": "shorter cycles"
+    },
+    {
+     "n": 5,
+     "name": "Automate",
+     "writes": "last, once it is stable"
+    }
+   ],
+   "gates": [],
+   "loops": [
+    {
+     "from": 5,
+     "to": 1,
+     "when": "the next cycle questions again"
+    }
+   ],
+   "ideas": [
+    "Reason from first principles, not by analogy: what are we sure is true? Then reason up from there.",
+    "Separate truths (laws, measured facts) from assumptions (conventions, how it is usually done).",
+    "Socratic questioning: clarify what you think, challenge the assumptions, look for evidence, consider other views, examine the consequences, question the question itself.",
+    "Five Whys: ask why until you reach the root cause, not the symptom.",
+    "Every requirement carries the name of the person who made it.",
+    "Delete before you simplify: if you never have to add something back, you did not delete enough.",
+    "The most common mistake of a smart engineer is optimizing something that should not exist.",
+    "Automate last: automating a broken process only makes it fail faster."
+   ],
+   "took": [
+    [
+     "Socratic questions, Five Whys, truths vs assumptions",
+     "Understand"
+    ],
+    [
+     "Every requirement has a person and a why",
+     "Understand, Principles"
+    ],
+    [
+     "Delete first, then simplify",
+     "Shape"
+    ],
+    [
+     "Speed up: small checkpoints, short loops",
+     "Build"
+    ],
+    [
+     "Automate last, after three runs by hand",
+     "Learn, Automate last"
+    ]
+   ],
+   "sources": [
+    {
+     "label": "Farnam Street: What is first principles thinking?",
+     "url": "https://fs.blog/first-principles/"
+    },
+    {
+     "label": "More than Digital: First principles thinking, a comprehensive guide",
+     "url": "https://morethandigital.info/en/understanding-and-applying-first-principles-thinking-a-comprehensive-guide/"
+    },
+    {
+     "label": "Musk's five-step algorithm (Starbase tour, 2021; Isaacson, Elon Musk, 2023)",
+     "url": ""
+    }
+   ]
+  },
+  {
+   "id": "design",
+   "name": "Design thinking",
+   "by": "Stanford d.school's five modes, and the UK Design Council's Double Diamond.",
+   "summary": "Start from the people who have the problem, not from the solution. Understand them, name the real problem, open up many ideas, make cheap prototypes and test them with real people, then go back as often as the tests say. Open up, then narrow down: once for the problem, once for the solution.",
+   "bands": [
+    {
+     "name": "Problem",
+     "steps": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Solution",
+     "steps": [
+      3,
+      4,
+      5
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "n": 1,
+     "name": "Empathize",
+     "writes": "what people do, say and need"
+    },
+    {
+     "n": 2,
+     "name": "Define",
+     "writes": "one problem statement"
+    },
+    {
+     "n": 3,
+     "name": "Ideate",
+     "writes": "many ideas, judged later"
+    },
+    {
+     "n": 4,
+     "name": "Prototype",
+     "writes": "cheap things to try"
+    },
+    {
+     "n": 5,
+     "name": "Test",
+     "writes": "what real people did with it"
+    }
+   ],
+   "gates": [],
+   "loops": [
+    {
+     "from": 5,
+     "to": 3,
+     "when": "the idea fails"
+    },
+    {
+     "from": 5,
+     "to": 2,
+     "when": "the problem was wrong"
+    },
+    {
+     "from": 5,
+     "to": 1,
+     "when": "we don't understand them yet"
+    }
+   ],
+   "ideas": [
+    "Human-centred: the experience of the person decides, not the builder's opinion.",
+    "Diverge, then converge: many options before choosing; once for the problem and once for the solution (the Double Diamond).",
+    "Build to think: a prototype is a question made tangible, as cheap as possible.",
+    "Test with real people, and watch what they do rather than what they say.",
+    "Not linear: any test may send you back to any earlier mode."
+   ],
+   "took": [
+    [
+     "Start from who is affected and what they experience",
+     "Understand"
+    ],
+    [
+     "One problem statement",
+     "Understand"
+    ],
+    [
+     "Open up, then narrow down, for the problem and for the solution",
+     "Understand, Shape"
+    ],
+    [
+     "Cheap prototypes: the slides and the mockup",
+     "Shape, Prove"
+    ],
+    [
+     "Person tests, and testing in reality",
+     "Prove, Learn"
+    ],
+    [
+     "Going back is normal",
+     "Going back"
+    ]
+   ],
+   "sources": [
+    {
+     "label": "Stanford d.school: the five modes of design thinking",
+     "url": ""
+    },
+    {
+     "label": "UK Design Council: the Double Diamond (2005)",
+     "url": ""
+    }
+   ]
+  },
+  {
+   "id": "claude",
+   "name": "Claude Code team",
+   "by": "Anthropic's Claude Code team, as retold in an AI Labs video. The original article was not read here; the numbers are the video's.",
+   "summary": "Agents build fast and call work done too early, so work is checked by evidence, not by the builder's word. Evals are written and approved before building; a fresh verifier and a fresh reviewer check every change, more deeply where a mistake would hurt more; repeated mistakes become rules; and after release, daily use, a first-time-user agent and fast undo catch what slipped through.",
+   "steps": [
+    {
+     "n": 1,
+     "name": "Evals",
+     "writes": "requirements, evals, a mockup"
+    },
+    {
+     "n": 2,
+     "name": "Build",
+     "writes": "code, checked while building"
+    },
+    {
+     "n": 3,
+     "name": "Verify",
+     "writes": "every eval passed or failed"
+    },
+    {
+     "n": 4,
+     "name": "Review",
+     "writes": "what the evals missed"
+    },
+    {
+     "n": 5,
+     "name": "Ship",
+     "writes": "release, undo in minutes"
+    },
+    {
+     "n": 6,
+     "name": "Use",
+     "writes": "daily use, a first-time user"
+    }
+   ],
+   "gates": [
+    {
+     "id": "A",
+     "after": 1,
+     "what": "A person approves the evals and the mockup; nothing is built before."
+    },
+    {
+     "id": "✓",
+     "after": 4,
+     "what": "Done only when every eval passes and the review finds nothing new; a hook blocks it otherwise."
+    }
+   ],
+   "loops": [
+    {
+     "from": 3,
+     "to": 2,
+     "when": "an eval fails"
+    },
+    {
+     "from": 4,
+     "to": 2,
+     "when": "findings, 3 rounds max"
+    },
+    {
+     "from": 6,
+     "to": 1,
+     "when": "a missed bug becomes a rule"
+    }
+   ],
+   "ideas": [
+    "Ask \"what could go wrong with this change, and how would we catch it?\" instead of \"did someone read the code?\".",
+    "Checks run while building, so a person only sees work that was already checked once.",
+    "Proof, not a claim: run something that proves it works and show the result.",
+    "Evals are fixed checks strict enough that bad work fails them, written and approved before building.",
+    "The reviewer is never the builder: a fresh agent with written review rules.",
+    "Risk decides depth: looks wrong, breaks, or can't be undone (money, lockout, someone else's data).",
+    "Stopping rules: after three rounds, rethink the approach; after round one, review only what changed; every finding names its kind.",
+    "A mistake that keeps coming back becomes a one-line rule, approved by a person.",
+    "After release: use it daily, send a first-time-user agent that can't read the code, and undo in minutes.",
+    "Reported: more than twice the changes shipped, about 40% fewer undone; changes to review grew from 2,500 to 30,000 a day in four months."
+   ],
+   "took": [
+    [
+     "Evals approved before any work",
+     "Shape: claims, Gate A"
+    ],
+    [
+     "Proof shown, never stated",
+     "Prove, Principles"
+    ],
+    [
+     "A fresh verifier and a fresh reviewer",
+     "Prove, Build"
+    ],
+    [
+     "Risk decides depth",
+     "Risk decides depth"
+    ],
+    [
+     "Stopping rules",
+     "Rules in every step"
+    ],
+    [
+     "Repeated mistakes become rules",
+     "Learn"
+    ],
+    [
+     "Daily use, a first-time user, fast undo",
+     "Ship, Learn"
+    ]
+   ],
+   "sources": [
+    {
+     "label": "Claude Code team's review process, as retold in an AI Labs video (original article not read)",
+     "url": ""
+    }
+   ]
+  },
+  {
+   "id": "helix",
+   "name": "Shopify Helix",
+   "by": "Shopify's Helix, used to rebuild their mobile app (about 300 screens) with agents, as retold in an AI Labs video. The original post was not read here.",
+   "summary": "A big job is split into small checkpoints, smallest first. A person approves the plan; then each checkpoint must pass enforced gates (behaviour, screen, adversarial review) before the next one starts, and a person reviews the end result. Feedback becomes new checkpoints that pass the same gates. An attempt is allowed to be wrong; it is not allowed to ship until it isn't.",
+   "bands": [
+    {
+     "name": "Plan",
+     "steps": [
+      1
+     ]
+    },
+    {
+     "name": "Each checkpoint",
+     "steps": [
+      2,
+      3,
+      4
+     ]
+    },
+    {
+     "name": "End",
+     "steps": [
+      5,
+      6
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "n": 1,
+     "name": "Plan",
+     "writes": "checkpoints and a test plan"
+    },
+    {
+     "n": 2,
+     "name": "Behavior",
+     "writes": "tests first, then the code"
+    },
+    {
+     "n": 3,
+     "name": "Screen",
+     "writes": "looks and behaves like the design"
+    },
+    {
+     "n": 4,
+     "name": "Adversarial",
+     "writes": "critic and fixer until approved"
+    },
+    {
+     "n": 5,
+     "name": "Your review",
+     "writes": "a person uses it"
+    },
+    {
+     "n": 6,
+     "name": "Ship",
+     "writes": "release"
+    }
+   ],
+   "gates": [
+    {
+     "id": "A",
+     "after": 1,
+     "what": "You approve the checkpoint plan, shown in a readable viewer."
+    },
+    {
+     "id": "C",
+     "after": 5,
+     "what": "You accept the result."
+    }
+   ],
+   "loops": [
+    {
+     "from": 4,
+     "to": 2,
+     "when": "the next checkpoint"
+    },
+    {
+     "from": 5,
+     "to": 2,
+     "when": "feedback becomes checkpoints"
+    }
+   ],
+   "ideas": [
+    "Checkpoints: small slices of a big feature, simplest first, each building on the one before, so a wrong early decision is caught while it is cheap.",
+    "The plan is JSON for the agents and a readable viewer, in plain language, for the person.",
+    "The tests are planned with the checkpoints, and written before the code, failing first.",
+    "A rule is advice, a gate is enforced: a stop hook keeps the agent working while a gate is open.",
+    "Behavior gate: everything that can be checked without a browser is checked by tests.",
+    "Screen gate: looks and behaviour compared with the design, in the same state, by reviewers who see only the design, never the project's instructions.",
+    "Adversarial gate: a critic assumes the code is wrong and checks it against a written standard; a fixer answers until the critic approves.",
+    "A person stops the work only twice: to approve the plan and to try the result.",
+    "Feedback becomes new checkpoints through the same gates, and a learnings file every agent reads first.",
+    "Every agent works in a fresh context; before starting, one checks that the app runs."
+   ],
+   "took": [
+    [
+     "Checkpoints, smallest first",
+     "Shape (plan), Build"
+    ],
+    [
+     "A readable view of the agents' JSON",
+     "This page, the board"
+    ],
+    [
+     "Gates are enforced, not advised",
+     "Rules in every step, Automate last"
+    ],
+    [
+     "Tests first, failing first",
+     "Build: Behavior gate"
+    ],
+    [
+     "Screen reviewers who see only the mockup",
+     "Build: Screen gate"
+    ],
+    [
+     "Critic and fixer",
+     "Build: Adversarial gate"
+    ],
+    [
+     "You stop the work only at the gates",
+     "Gates A, B, C"
+    ],
+    [
+     "Feedback becomes checkpoints and lessons",
+     "Ship, Learn"
+    ]
+   ],
+   "sources": [
+    {
+     "label": "Shopify's Helix workflow, as retold in an AI Labs video (original post not read)",
+     "url": ""
+    }
+   ]
+  },
+  {
+   "id": "harness",
+   "name": "Harness²",
+   "by": "Google Research: Harness², Recursive Agent Harnessing for an Open World (Xu et al., 2026). Read from its code and prompts; the paper itself was not read here.",
+   "summary": "Improve the system around the model (prompts, rules, memory, skills, tools), not the model. For each task, propose two kinds of change separately (how the agent works, and what a practitioner knows), run every candidate on the same task, and compose the result from how the runs differed, without an answer key. Then keep the adopted harness in full and at most one evidence-backed lesson for the next task.",
+   "bands": [
+    {
+     "name": "Each task",
+     "steps": [
+      1,
+      2,
+      3,
+      4,
+      5
+     ]
+    },
+    {
+     "name": "Across tasks",
+     "steps": [
+      6
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "n": 1,
+     "name": "Execute",
+     "writes": "runs with the current harness"
+    },
+    {
+     "n": 2,
+     "name": "Propose",
+     "writes": "edits: how it works, what it knows"
+    },
+    {
+     "n": 3,
+     "name": "Probe",
+     "writes": "each candidate run once"
+    },
+    {
+     "n": 4,
+     "name": "Compose",
+     "writes": "merge, adopt, or keep as is"
+    },
+    {
+     "n": 5,
+     "name": "Select",
+     "writes": "a blind choice of the output"
+    },
+    {
+     "n": 6,
+     "name": "Reflect",
+     "writes": "what each edit did, one lesson"
+    }
+   ],
+   "gates": [],
+   "loops": [
+    {
+     "from": 4,
+     "to": 2,
+     "when": "the next round goes deeper"
+    },
+    {
+     "from": 6,
+     "to": 1,
+     "when": "the library guides the next task"
+    }
+   ],
+   "ideas": [
+    "\"Keep as is\" is always a candidate, and choosing it is a valid outcome: an adaptation the evidence does not argue for is a regression.",
+    "Two kinds of change, from separate proposers: how the agent works, and what a practitioner knows.",
+    "Blind selection: candidates are anonymised and shuffled, with no credit for the more elaborate one.",
+    "Judge in order: delivered, conforms (only what was asked), faithful to the source, consistent, usable, finished.",
+    "Agreement between candidates is support, not proof: they share the same biases.",
+    "A failure seen once is noise; a failure that repeats is a property. Name the moment that shows it.",
+    "Every decision carries its evidence: kept, revised or dropped, which change, what decided it.",
+    "A lesson is a cue, an operation, its evidence and a confidence; changes are rated helped, hurt, no effect or confounded; at most one lesson, and none is fine.",
+    "Keep the whole adopted harness, never a summary. A fact from an earlier task is a hypothesis here.",
+    "Always-on text costs on every run: if you add some, cut some.",
+    "Fixed budgets, enforced by a ledger; evidence is data, not instructions.",
+    "Reported: up to +11.5 points on WorkBuddy-Bench, +4.5 on JobBench and +11.8 percentage points on LAB from one step."
+   ],
+   "took": [
+    [
+     "Keep as is is always a candidate",
+     "Shape, Principles"
+    ],
+    [
+     "Two kinds of options, from agents that can't see each other",
+     "Shape"
+    ],
+    [
+     "Blind comparison and the judging order",
+     "Prove"
+    ],
+    [
+     "Agreement is not proof",
+     "Rules in every step"
+    ],
+    [
+     "Evidence on every decision line",
+     "Decide"
+    ],
+    [
+     "The lesson format, at most one",
+     "Learn, Learned so far"
+    ],
+    [
+     "Always-on rules: add one, cut one",
+     "Rules in every step"
+    ],
+    [
+     "The flow improves itself",
+     "Learn"
+    ]
+   ],
+   "sources": [
+    {
+     "label": "Harness²: repository, code and prompts",
+     "url": "https://github.com/google-research/harness2"
+    },
+    {
+     "label": "Harness²: paper (not read here; arxiv.org is blocked in this environment)",
+     "url": "https://arxiv.org/abs/2610.14224"
+    }
+   ]
+  }
+ ]
+}

@@ -72,7 +72,7 @@ function fromHash() {
 async function open(st, i) {
   const list = Boolean(st.kind);
   document.body.classList.toggle('show-intents', list);
-  if (list) return st.kind === 'sources' ? openSources(st) : openIntents(st, i);
+  if (list) return st.kind === 'sources' ? openSources(st) : st.kind === 'doc' ? openDoc(st, i) : openIntents(st, i);
   if (story !== st) {
     story = st;
     deck = (await (await fetch(st.file)).json()).slides;
@@ -182,11 +182,116 @@ async function openSources(st) {
   story = st;
   document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === st.id));
   if (!intents) intents = await (await fetch(st.file)).json();
+  const docs = await Promise.all(stories.filter((x) => x.kind === 'doc').map(async (x) => [x, (({ sources = [], protocols = [] }) => [...new Map([...sources, ...protocols.flatMap((p) => p.sources)].map((y) => [y.label, y])).values()])(await (await fetch(x.file)).json())]));
+  const list = (xs) => `<ul class="dsrc srclist">${xs.map((s) => `<li>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a>` : esc(s.label)}</li>`).join('')}</ul>`;
   $('#intents').classList.remove('isboard');
-  $('#intents').innerHTML = `<header class="dhead"><h1>Sources</h1><p>Everything the intents were learned from: papers, specifications, design notes and code of the systems compared.</p></header>
-    <article class="dcard"><ul class="dsrc srclist">${intents.sources.map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a></li>`).join('')}</ul></article>`;
+  $('#intents').innerHTML = `<header class="dhead"><h1>Sources</h1><p>Everything the intents and the flow were learned from: papers, specifications, design notes and the code of the systems compared.</p></header>
+    <article class="dcard"><h2>Intents</h2>${list(intents.sources)}</article>
+    ${docs.map(([x, xs]) => `<article class="dcard"><h2>${esc(x.title)}</h2>${list(xs)}</article>`).join('')}`;
   $('#intents').scrollTo?.(0, 0);
   if (location.hash !== '#sources-0') history.replaceState(null, '', '#sources-0');
+}
+
+// Flow: how we work, as one draft document. The diagram is drawn from the same JSON as the text below it.
+function flowSvg(F) {
+  const n = F.steps.length, W = 1000, gap = 22, w = (W - 40 - gap * (n - 1)) / n, h = 74, y = F.bands?.length ? 58 : 16, chars = Math.floor((w - 16) / 6.3);
+  const x = (k) => 20 + (k - 1) * (w + gap), mid = (k) => x(k) + w / 2;
+  const loops = [...F.loops].sort((p, q) => Math.abs(p.from - p.to) - Math.abs(q.from - q.to) || p.from - q.from);
+  const depth = new Map(loops.map((l, k) => [l, 30 + 30 * k]));
+  const ends = {};
+  loops.forEach((l) => { (ends[l.from] ||= []).push(l); (ends[l.to] ||= []).push(l); });
+  const at = (node, l) => { const xs = ends[node].slice().sort((p, q) => (p === q ? 0 : (p.from === node ? p.to : p.from) - (q.from === node ? q.to : q.from))); return mid(node) + (xs.indexOf(l) - (xs.length - 1) / 2) * 16; };
+  const H = y + h + (loops.length ? Math.max(...depth.values()) * 0.75 + 30 : 16);
+  const words = (t, max) => t.split(' ').reduce((ls, wd) => { const l = ls[ls.length - 1]; if (l && (l + ' ' + wd).length <= max) ls[ls.length - 1] = l + ' ' + wd; else ls.push(wd); return ls; }, []);
+  const bands = (F.bands || []).map((b) => { const a = x(b.steps[0]), z = x(b.steps[b.steps.length - 1]) + w;
+    return `<rect class="fband" x="${a}" y="12" width="${z - a}" height="26" rx="6"/><text class="fbandt" x="${(a + z) / 2}" y="29">${esc(b.name)}</text>`; }).join('');
+  const nodes = F.steps.map((s) => `<g class="fnode" data-jump="step-${s.n}" tabindex="0" role="button" aria-label="${esc(s.name)}">
+    <rect x="${x(s.n)}" y="${y}" width="${w}" height="${h}" rx="8"/>
+    <text class="fnum" x="${x(s.n) + 10}" y="${y + 20}">${s.n}</text><text class="fname" x="${x(s.n) + 24}" y="${y + 20}">${esc(s.name)}</text>
+    ${words(s.writes, chars).slice(0, 3).map((l, k) => `<text class="fwrite" x="${x(s.n) + 10}" y="${y + 40 + k * 13}">${esc(l)}</text>`).join('')}</g>`).join('');
+  const arrows = F.steps.slice(0, -1).map((s) => `<line class="fline" x1="${x(s.n) + w}" y1="${y + h / 2}" x2="${x(s.n + 1) - 2}" y2="${y + h / 2}" marker-end="url(#fhead)"/>`).join('');
+  const gates = (F.gates || []).filter((g) => g.after < n).map((g) => { const cx = x(g.after) + w + gap / 2, cy = y + h / 2;
+    return `<g class="fgate"><title>${esc(g.what)}</title><path d="M${cx} ${cy - 11} L${cx + 11} ${cy} L${cx} ${cy + 11} L${cx - 11} ${cy} Z"/><text x="${cx}" y="${cy + 4}">${g.id}</text></g>`; }).join('');
+  const back = loops.map((l) => { const d = depth.get(l), fx = at(l.from, l), tx = at(l.to, l), by = y + h;
+    return `<path class="floop" d="M${fx} ${by} C${fx} ${by + d} ${tx} ${by + d} ${tx} ${by + 3}" marker-end="url(#fback)"/>
+      <text class="floopt" x="${(fx + tx) / 2}" y="${by + d * 0.75 + 4}">${esc(l.when)}</text>`; }).join('');
+  return `<svg class="flowsvg" viewBox="0 0 ${W} ${Math.ceil(H)}" role="img" aria-label="The flow: ${F.steps.map((s) => s.name).join(', ')}">
+    <defs><marker id="fhead" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="fheadp" d="M0 0 L8 4 L0 8 Z"/></marker>
+    <marker id="fback" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="fbackp" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+    ${bands}${arrows}${back}${nodes}${gates}</svg>`;
+}
+
+async function openDoc(st, i = 0) {
+  story = st;
+  document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === st.id));
+  const F = await (await fetch(st.file)).json();
+  const tabs = `<nav class="dtabs" aria-label="Flows">${[F.title, ...F.protocols.map((p) => p.name)].map((t, k) => `<a href="#${st.id}-${k}" class="${k === i ? 'on' : ''}">${k ? esc(t) : 'Ours: ' + esc(t)}</a>`).join('')}</nav>`;
+  const src = (xs) => `<ul class="dsrc">${xs.map((x) => `<li>${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a>` : esc(x.label)}</li>`).join('')}</ul>`;
+  const sec = (h, body, note = '') => `<section class="dsec"><h2>${h}</h2>${note ? `<p class="dnote">${note}</p>` : ''}${body}</section>`;
+  const P = i > 0 && F.protocols[i - 1];
+  $('#intents').classList.remove('isboard');
+  const hash = `#${st.id}-${P ? i : 0}`;
+  if (P) {
+    $('#intents').innerHTML = `${tabs}<article class="doc">
+      <header class="dochead"><div class="dtop"><span class="chipx srcchip">source</span></div>
+        <h1>${esc(P.name)}</h1><p class="dby">${esc(P.by)}</p><p class="dlead">${esc(P.summary)}</p></header>
+      <div class="dsvg">${flowSvg(P)}</div>
+      ${P.gates.length || P.loops.length ? `<p class="dnote">${P.gates.length ? 'Diamonds are gates (hover for what they check). ' : ''}${P.loops.length ? 'Dashed lines go back.' : ''}</p>` : ''}
+      ${sec('The steps', `<ol class="psteps">${P.steps.map((x) => `<li><b>${esc(x.name)}</b> ${esc(x.writes)}</li>`).join('')}</ol>`)}
+      ${P.gates.length ? sec('Gates', `<ul>${P.gates.map((g) => `<li><b>${esc(g.id)}</b> after ${esc(P.steps[g.after - 1].name)}: ${esc(g.what)}</li>`).join('')}</ul>`) : ''}
+      ${sec('Key ideas', `<ul>${P.ideas.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>`)}
+      ${sec('What we took', `<table class="dtable"><thead><tr><th>Idea</th><th>Where it lives in our flow</th></tr></thead><tbody>${P.took.map(([a, b]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</tbody></table>`)}
+      ${sec('Sources', src(P.sources))}
+    </article>`;
+    $('#intents').scrollTo?.(0, 0);
+    if (location.hash !== hash) history.replaceState(null, '', hash);
+    return;
+  }
+  const gateAt = Object.fromEntries(F.gates.map((g) => [g.after, g]));
+  const ol = (xs) => `<ol>${xs.map((v) => `<li>${linkify(v)}</li>`).join('')}</ol>`;
+  const steps = F.steps.map((s) => `<section class="dstep" id="step-${s.n}">
+      <span class="dsn">${s.n}</span>
+      <div class="dsb"><h3>${esc(s.name)}${gateAt[s.n] ? ` <span class="chipx gatechip">Gate ${gateAt[s.n].id}</span>` : ''}</h3>
+        <p class="dsq">${esc(s.question)}</p>
+        <ul class="dsdo">${s.do.map((v) => `<li>${linkify(v)}</li>`).join('')}</ul>
+        <dl class="dsdl"><dt>Writes</dt><dd>${esc(s.output)}</dd><dt>Gate</dt><dd>${esc(s.gate)}</dd><dt>Who</dt><dd>${esc(s.who)}</dd><dt>From</dt><dd>${s.from.map((f) => `<span class="dfrom">${esc(f)}</span>`).join('')}</dd></dl></div></section>`).join('');
+  const roles = `<table class="dtable roles"><thead><tr><th>Who</th>${F.steps.map((s) => `<th title="${esc(s.name)}"><span class="rn">${s.n}</span><span class="rt">${esc(s.name)}</span></th>`).join('')}<th>Does</th></tr></thead>
+    <tbody>${F.roles.map((r) => `<tr><td>${esc(r.role)}</td>${F.steps.map((s) => `<td class="dot">${r.steps.includes(s.n) ? '●' : ''}</td>`).join('')}<td>${esc(r.does)}</td></tr>`).join('')}</tbody></table>`;
+  const risk = `<table class="dtable"><thead><tr><th>Risk</th><th>Means</th><th>Evidence</th><th>Gates</th><th>Build</th></tr></thead>
+    <tbody>${F.risk.map((r) => `<tr><td><b>${esc(r.level)}</b></td><td>${esc(r.means)}</td><td>${esc(r.evidence)}</td><td>${esc(r.gates)}</td><td>${esc(r.build)}</td></tr>`).join('')}</tbody></table>`;
+  const stage = `<table class="dtable"><thead><tr><th>First output still missing</th><th>The intent stands at</th></tr></thead>
+    <tbody>${F.stage.map(([o, t]) => `<tr><td>${esc(o)}</td><td><b>${esc(t)}</b></td></tr>`).join('')}</tbody></table>`;
+  const loops = `<table class="dtable"><thead><tr><th>From</th><th>Back to</th><th>When</th></tr></thead>
+    <tbody>${F.loops.map((l) => `<tr><td>${esc(F.steps[l.from - 1].name)}</td><td>${esc(F.steps[l.to - 1].name)}</td><td>${esc(l.when)}</td></tr>`).join('')}</tbody></table>`;
+  const gates = `<table class="dtable"><thead><tr><th>Gate</th><th>After</th><th>What</th></tr></thead>
+    <tbody>${F.gates.map((g) => `<tr><td><b>${g.id}</b></td><td>${esc(F.steps[g.after - 1].name)}</td><td>${esc(g.what)}</td></tr>`).join('')}</tbody></table>`;
+  const lessons = `<table class="dtable"><thead><tr><th>Cue</th><th>Lesson</th><th>Evidence</th><th>Confidence</th></tr></thead>
+    <tbody>${F.lessons.map((l) => `<tr><td>${esc(l.cue)}</td><td>${esc(l.lesson)}</td><td>${linkify(l.evidence)}</td><td>${esc(l.confidence)}</td></tr>`).join('')}</tbody></table>`;
+  const record = `<pre class="drec">${Object.entries(F.record).map(([k, v]) => `<b>${esc(k.padEnd(9))}</b>${esc(v)}`).join('\n')}</pre>`;
+  const cps = `<ul>${F.checkpoints.rules.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>
+    <div class="cpflow">${F.checkpoints.gates.map((g) => `<span>${esc(g.name)}</span>`).join('<i>→</i>')}<i>→</i><span class="cpnext">next checkpoint</span></div>
+    <table class="dtable"><thead><tr><th>Gate</th><th>Checks</th><th>Who</th><th>When</th></tr></thead><tbody>${F.checkpoints.gates.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td>${esc(g.checks)}</td><td>${esc(g.who)}</td><td>${esc(g.when)}</td></tr>`).join('')}</tbody></table>`;
+  $('#intents').innerHTML = `${tabs}<article class="doc">
+    <header class="dochead"><div class="dtop"><span class="chipx draftchip">${esc(F.status)}</span><span class="ddate">${esc(F.date)}</span></div>
+      <h1>${esc(F.title)}</h1><p class="dlead">${esc(F.summary)}</p></header>
+    <div class="dsvg">${flowSvg(F)}</div>
+    <p class="dnote">Click a step for its detail. Diamonds are your gates (hover for what they check); dashed lines go back.</p>
+    ${sec('Principles', ol(F.principles))}
+    ${sec('The steps', steps)}
+    ${sec('Gates', gates, 'Your gates. Inside Build, every checkpoint also passes its own gates (below).')}
+    ${sec('Checkpoints and their gates', cps, 'A rule is advice; a gate is enforced. An attempt may be wrong; it may not ship until it isn\'t.')}
+    ${sec('Going back', loops, 'Going back is normal: it is how a wrong idea dies cheaply.')}
+    ${sec('Where an intent stands', stage, 'Computed, never set by hand.')}
+    ${sec('Who does what', roles)}
+    ${sec('Risk decides depth', risk, 'The question: what happens to a person if this is wrong?')}
+    ${sec('Rules in every step', ol(F.rules))}
+    ${sec('The record', record, 'One per intent. Everything else is derived from it.')}
+    ${sec('Learned so far', lessons, 'In the lesson format: the shape of situation it fires on, the operation, the evidence, the confidence.')}
+    ${sec('Automate last', `<div class="agrid"><div><b>By hand now</b><ul>${F.automate.now.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div><div><b>After three runs by hand</b><ul>${F.automate.later.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div></div>`)}
+    ${sec('Sources', src(F.sources))}
+  </article>`;
+  $('#intents').scrollTo?.(0, 0);
+  if (location.hash !== hash) history.replaceState(null, '', hash);
 }
 
 async function start() {
@@ -196,6 +301,7 @@ async function start() {
     ? `<button type="button" class="navdec" data-story="${x.id}">${esc(x.title)}</button>`
     : `<button type="button" data-story="${x.id}"><span class="nn">${String(i + 1).padStart(2, '0')}</span><span class="nt">${esc(x.title)}</span><span class="nc">${counts[i]}</span></button>`).join('');
   $('#stories').addEventListener('click', (e) => { const b = e.target.closest('[data-story]'); if (b) open(stories.find((x) => x.id === b.dataset.story), 0); });
+  $('#intents').addEventListener('click', (e) => { const j = e.target.closest('[data-jump]'); if (j) document.getElementById(j.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   $('#intents').addEventListener('click', (e) => { const b = e.target.closest('[data-itab]'); if (b) { tab = b.dataset.itab; openIntents(story, num(location.hash)); } });
   $('#track').addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) go(Number(b.dataset.go)); });
   $('#spectab').addEventListener('click', () => { specOpen = true; renderSpec(); });
