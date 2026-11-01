@@ -125,7 +125,7 @@
       "text": "A new manifest keeps every old root version readable through lenses; old records are never rewritten."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-50",
      "AIP-66",
      "AIP-67",
@@ -350,7 +350,7 @@
       "text": "Links to the old data resolve forward through the chain of successors."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-54",
      "AIP-62",
      "AIP-66",

@@ -97,7 +97,7 @@
       "text": "An ending never grants anything; it can only remove."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-59",
      "AIP-60",
      "AIP-62",

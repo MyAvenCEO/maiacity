@@ -101,7 +101,7 @@
       "text": "A predecessor counts only together with the old data's forward link naming this data (successor.mutual)."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-5",
      "AIP-50",
      "AIP-64",
@@ -135,7 +135,7 @@
       "text": "The owner never changes; a successor keeps the same owner (AIP-54, AIP-71)."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-5",
      "AIP-30",
      "AIP-54",
@@ -231,7 +231,7 @@
       "text": "Every Value gets a fresh random key; there is no convergent encryption, so equal files sealed twice get different names."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-21",
      "AIP-72"
     ]

@@ -71,8 +71,8 @@ function fromHash() {
 }
 async function open(st, i) {
   const list = Boolean(st.kind);
-  document.body.classList.toggle('show-decisions', list);
-  if (list) return openIntents(st, i);
+  document.body.classList.toggle('show-intents', list);
+  if (list) return st.kind === 'sources' ? openSources(st) : openIntents(st, i);
   if (story !== st) {
     story = st;
     deck = (await (await fetch(st.file)).json()).slides;
@@ -94,7 +94,7 @@ function renderSpec() {
   $('#spectab').setAttribute('aria-expanded', String(specOpen));
   $('#spec').hidden = !specOpen;
   if (!specOpen) return;
-  const ids = [...new Set([...(sp?.decisions || []), ...(intents?.intents || []).filter((d) => d.slides.includes(ref)).map((d) => d.id)])]
+  const ids = [...new Set([...(sp?.intents || []), ...(intents?.intents || []).filter((d) => d.slides.includes(ref)).map((d) => d.id)])]
     .sort((x, y) => num(x) - num(y));
   $('#spec').innerHTML = `<header><b>Architecture</b><button type="button" class="sclose" aria-label="Close">×</button></header>
     <h2>${esc(s.title)}</h2>` + (sp ? `${sp.summary ? `<p>${esc(sp.summary)}</p>` : ''}` +
@@ -105,7 +105,7 @@ function renderSpec() {
     (ids.length ? `<h3>Intents</h3><div class="arefs">${aipLinks(ids)}</div>` : '');
 }
 
-// theINTENTS: every architecture intent as one card through three stages: learn (a finding), propose (a drafted
+// Intents: every architecture intent as one card through three stages: learn (a finding), propose (a drafted
 // answer) and decided (accepted, rejected or superseded). The board shows the stages as columns; a card opens in full,
 // with each stage it has passed through as a tab. One record per intent, so nothing drifts. #intents-<n>, 0 = board.
 const num = (id) => Number(String(id).replace(/^\D+/, ''));
@@ -130,12 +130,11 @@ async function openIntents(st, i) {
   if (!x) {
     const col = (stage) => all.filter((y) => y.stage === stage).sort((p, q) => stage === 'decided' ? q.n - p.n
       : (rank[p.learn?.severity] ?? 4) - (rank[q.learn?.severity] ?? 4) || p.n - q.n);
-    $('#decisions').innerHTML = `<header class="dhead"><h1>${esc(intents.title)}</h1><p>${esc(intents.note)}</p></header>
+    $('#intents').innerHTML = `<header class="dhead"><h1>${esc(intents.title)}</h1><p>${esc(intents.note)}</p></header>
       <div class="board">${intents.stages.map((s) => { const ys = col(s.id); return `<section class="col"><h2>${esc(s.title)} <span>${ys.length}</span></h2>${ys.length ? ys.map((y) =>
         `<a class="mini ${stateOf(y)}" href="#intents-${y.n}"><span class="mtop"><b>${y.id}</b>${y.learn?.severity ? chip('sev ' + y.learn.severity, y.learn.severity) : ''}${y.stage === 'decided' ? chip(y.outcome, y.outcome) : ''}</span><span class="mt">${esc(y.title)}</span>${y.learn ? `<span class="mc">${esc(chap[y.learn.chapter]?.title || '')}</span>` : ''}</a>`).join('')
-        : '<p class="mnone">Nothing here.</p>'}</section>`; }).join('')}</div>
-      <article class="dcard"><h2>Sources read</h2><ul class="dsrc">${intents.sources.map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a></li>`).join('')}</ul></article>`;
-    $('#decisions').scrollTo?.(0, 0);
+        : '<p class="mnone">Nothing here.</p>'}</section>`; }).join('')}</div>`;
+    $('#intents').scrollTo?.(0, 0);
     if (location.hash !== '#intents-0') history.replaceState(null, '', '#intents-0');
     return;
   }
@@ -164,7 +163,7 @@ async function openIntents(st, i) {
         return `<li><a href="#${r}">${esc(titles[sid] || sid)} ${n}: ${esc(s?.title || '')}</a>${s?.spec ? ` <a class="specl" href="#${r}-spec">Architecture · ${(s.spec.rules || []).length} rules</a>` : ''}</li>`; }).join('')}</ul>` : ''}`;
   }
   const sources = (current === 'decided' ? x.decision?.sources : current === 'propose' ? x.proposal?.sources : null) || [];
-  $('#decisions').innerHTML = `<a class="iback" href="#intents-0">← theINTENTS</a>
+  $('#intents').innerHTML = `<a class="iback" href="#intents-0">← Intents</a>
     <article class="dcard intent ${stateOf(x)}">
       <div class="dtop"><span class="did">${x.id}</span>${chip('phase', x.stage)}${x.outcome ? chip(x.outcome, x.outcome) : ''}${x.learn?.severity ? chip('sev ' + x.learn.severity, x.learn.severity) : ''}${x.learn ? `<a class="achap" href="#${x.learn.chapter}-1">${esc(chap[x.learn.chapter]?.title || '')}</a>` : ''}<span class="ddate">${esc(x.date)}</span></div>
       <h2>${esc(x.title)}</h2>
@@ -172,9 +171,20 @@ async function openIntents(st, i) {
       ${body}
       ${sources.length ? `<ul class="dsrc">${sources.map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a></li>`).join('')}</ul>` : ''}
     </article>`;
-  $('#decisions').scrollTo?.(0, 0);
+  $('#intents').scrollTo?.(0, 0);
   const h = `#intents-${x.n}`;
   if (location.hash !== h) history.replaceState(null, '', h);
+}
+
+// Sources: every source the intents were learned from, one list.
+async function openSources(st) {
+  story = st;
+  document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === st.id));
+  if (!intents) intents = await (await fetch(st.file)).json();
+  $('#intents').innerHTML = `<header class="dhead"><h1>Sources</h1><p>Everything the intents were learned from: papers, specifications, design notes and code of the systems compared.</p></header>
+    <article class="dcard"><ul class="dsrc srclist">${intents.sources.map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a></li>`).join('')}</ul></article>`;
+  $('#intents').scrollTo?.(0, 0);
+  if (location.hash !== '#sources-0') history.replaceState(null, '', '#sources-0');
 }
 
 async function start() {
@@ -184,7 +194,7 @@ async function start() {
     ? `<button type="button" class="navdec" data-story="${x.id}">${esc(x.title)}</button>`
     : `<button type="button" data-story="${x.id}"><span class="nn">${String(i + 1).padStart(2, '0')}</span><span class="nt">${esc(x.title)}</span><span class="nc">${counts[i]}</span></button>`).join('');
   $('#stories').addEventListener('click', (e) => { const b = e.target.closest('[data-story]'); if (b) open(stories.find((x) => x.id === b.dataset.story), 0); });
-  $('#decisions').addEventListener('click', (e) => { const b = e.target.closest('[data-itab]'); if (b) { tab = b.dataset.itab; openIntents(story, num(location.hash)); } });
+  $('#intents').addEventListener('click', (e) => { const b = e.target.closest('[data-itab]'); if (b) { tab = b.dataset.itab; openIntents(story, num(location.hash)); } });
   $('#track').addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) go(Number(b.dataset.go)); });
   $('#spectab').addEventListener('click', () => { specOpen = true; renderSpec(); });
   $('#spec').addEventListener('click', (e) => { if (e.target.closest('.sclose')) { specOpen = false; renderSpec(); } });

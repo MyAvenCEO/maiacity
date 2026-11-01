@@ -72,7 +72,7 @@
       "text": "The code names no device and no address of a device, so a photographed code reveals only the identity ID and a relay."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-32",
      "AIP-69"
     ]

@@ -67,9 +67,15 @@
   },
   {
    "id": "intents",
-   "title": "theINTENTS",
-   "file": "theINTENTS.json",
+   "title": "Intents",
+   "file": "intents.json",
    "kind": "intents"
+  },
+  {
+   "id": "sources",
+   "title": "Sources",
+   "file": "intents.json",
+   "kind": "sources"
   }
  ]
 }

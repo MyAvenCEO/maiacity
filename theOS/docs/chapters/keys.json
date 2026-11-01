@@ -68,7 +68,7 @@
       "text": "All symmetric encryption is XChaCha20-Poly1305 (24-byte nonces), so no nonce state has to be shared between devices."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-57",
      "AIP-72",
      "AIP-91"

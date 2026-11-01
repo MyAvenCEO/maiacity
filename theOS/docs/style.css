@@ -123,29 +123,20 @@ body {
 .table td:not(:first-child) { color: var(--ink-soft); }
 
 /* theDECISIONS */
-.decisions { display: none; gap: 14px; }
-.show-decisions .decisions { display: grid; }
-.show-decisions .cardwrap, .show-decisions .card, .show-decisions .terms, .show-decisions .nav, .show-decisions .track { display: none; }
-.dhead h1 { margin: 6px 0 4px; font: 500 clamp(26px, 4vw, 40px)/1.1 var(--display); color: var(--paper); }
+.intents { display: none; gap: 14px; }
+.show-intents .intents { display: grid; }
+.show-intents .cardwrap, .show-intents .card, .show-intents .terms, .show-intents .nav, .show-intents .track { display: none; }
+.dhead h1 { margin: 6px 0 4px; font: 500 clamp(26px, 4vw, 40px)/1.1 var(--display); color: var(--stage-ink); }
 .dhead p { margin: 0 0 12px; color: var(--stage-soft); }
-.dfilter { display: flex; gap: 8px; flex-wrap: wrap; }
-.dfilter button { font: 500 13px var(--display); color: var(--stage-soft); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
-.dfilter button.on { color: var(--ink); background: var(--paper); border-color: var(--paper); }
 .dcard { background: var(--paper); color: var(--ink); border-radius: 6px; padding: clamp(18px, 3vw, 28px); display: grid; gap: 8px; scroll-margin-top: 16px; }
 .dtop { display: flex; align-items: center; gap: 10px; font: 500 12px var(--mono); }
 .did { background: var(--ink); color: var(--paper); border-radius: 4px; padding: 3px 8px; }
-.dstatus { border-radius: 999px; padding: 3px 10px; }
-.dstatus.decided { background: #a9b79a; }
-.dstatus.proposed { background: var(--ochre); }
-.dstatus.superseded { background: #ddd2bf; color: var(--ink-soft); text-decoration: line-through; }
 .dcard:has(.superseded) { opacity: .75; }
 .ddate { color: var(--ink-soft); margin-left: auto; }
 .dcard h2 { margin: 2px 0 0; font: 500 clamp(19px, 2.2vw, 24px)/1.2 var(--display); }
 .ddec { margin: 0; font-size: 16px; line-height: 1.55; }
 .dwhy { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink-soft); }
 .dwhy b { font-weight: 500; color: var(--ink); margin-right: 4px; }
-.dslides { display: flex; flex-wrap: wrap; gap: 6px; }
-.dslides a { font: 500 12px var(--mono); color: var(--ink); background: #ece2cf; border-radius: 4px; padding: 4px 8px; text-decoration: none; }
 .dsrc { margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-soft); }
 .dsrc a { color: var(--ink); }
 
@@ -161,8 +152,8 @@ body {
   .stage > .main { height: 100%; grid-template-rows: minmax(0, 1fr) auto; gap: 14px; }
   .stories { max-height: 100%; overflow-y: auto; }
   .card { min-height: 0; overflow-y: auto; }
-  .show-decisions .stage > .main { grid-template-rows: minmax(0, 1fr); }
-  .decisions { min-height: 0; overflow-y: auto; align-content: start; padding-right: 4px; }
+  .show-intents .stage > .main { grid-template-rows: minmax(0, 1fr); }
+  .intents { min-height: 0; overflow-y: auto; align-content: start; padding-right: 4px; }
 }
 .card { position: relative; }
 .card .terms { position: absolute; top: 18px; right: 22px; max-width: 55%; justify-content: flex-end; min-height: 0; z-index: 1; }
@@ -193,17 +184,7 @@ body {
 /* Long JSON lines wrap instead of running off the panel, at any window width. */
 .code { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
 
-/* theAUDIT: one table per chapter (concept, strengths, weaknesses, elsewhere, proposal), most severe first. */
 .achap { color: var(--ink); font: 500 15px var(--display); text-decoration: none; }
-.atop { margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.5; display: grid; gap: 4px; }
-.atop a { color: var(--ink); }
-.atable { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.45; }
-.atable th { text-align: left; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); padding: 6px 8px; border-bottom: 1px solid #d9ccb4; }
-.atable td { vertical-align: top; padding: 10px 8px; border-top: 1px solid #e6dbc7; }
-.atable td:first-child { width: 15%; }
-.atable td > b { display: block; font-weight: 500; font-size: 14px; }
-.atable ul { margin: 0; padding-left: 16px; }
-.atable li + li { margin-top: 5px; }
 .sev, .verdict { display: inline-block; font: 500 10.5px var(--mono); letter-spacing: .04em; border-radius: 999px; padding: 1px 8px; margin: 6px 6px 0 0; }
 .sev.critical, .verdict.breaks { background: #9e3f2b; color: var(--paper); }
 .sev.high { background: var(--clay); color: var(--ink); }
@@ -212,19 +193,6 @@ body {
 .arefs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .arefs a { font: 500 11px var(--mono); color: var(--ink); background: #ece2cf; border-radius: 4px; padding: 2px 6px; text-decoration: none; }
 .arefs a.prop { background: var(--ochre); }
-@media (max-width: 900px) {
-  .atable thead { display: none; }
-  .atable tr, .atable td { display: block; width: auto !important; }
-  .atable td { border-top: 0; padding: 4px 0; }
-  .atable tr { border-top: 1px solid #d9ccb4; padding: 10px 0; }
-  .atable td:not(:first-child)::before { display: block; font: 500 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin: 6px 0 2px; }
-  .concepts td:nth-child(2)::before { content: "Strengths"; }
-  .concepts td:nth-child(3)::before { content: "Weaknesses"; }
-  .concepts td:nth-child(4)::before { content: "Elsewhere"; }
-  .concepts td:nth-child(5)::before { content: "Proposal"; }
-  .ends td:nth-child(3)::before { content: "Why"; }
-  .ends td:nth-child(4)::before { content: "Fix"; }
-}
 
 /* Short windows: type and spacing follow the window's height as well as its width, so every slide fits above the
    bottom bar without scrolling. */
@@ -268,19 +236,13 @@ body {
 .snone { font-style: italic; }
 @media (max-width: 900px) { .spec { position: fixed; inset: 0; width: auto; border-radius: 0; z-index: 20; } }
 
-/* theAUDIT items: status computed from the linked decisions. */
-.astate { font: 500 10.5px var(--mono); border-radius: 999px; padding: 1px 8px; margin: 6px 6px 0 0; display: inline-block; }
-.astate.open { background: var(--ink); color: var(--paper); }
-.astate.resolved { background: #a9b79a; color: var(--ink); }
-.aitem.resolved { opacity: .78; }
-.aitem .dtop .achap { margin-left: auto; font-size: 13px; }
-.aitem .ddec b, .agrid b, .arefs b { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin-right: 6px; }
+.agrid b, .arefs b { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin-right: 6px; }
 .agrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; font-size: 13.5px; line-height: 1.45; color: var(--ink-soft); }
 .agrid ul { margin: 4px 0 0; padding-left: 16px; } .agrid li + li { margin-top: 4px; }
 .arefs { align-items: center; }
 @media (max-width: 760px) { .agrid { grid-template-columns: 1fr; } }
 
-/* theINTENTS: a board of stage columns; each intent opens in full with its stages as tabs. */
+/* Intents: a board of stage columns; each intent opens in full with its stages as tabs. */
 .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .col { background: var(--chip); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
 .col h2 { margin: 2px 4px 4px; font: 500 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--stage-ink); display: flex; justify-content: space-between; }
@@ -318,3 +280,11 @@ body {
 .sgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 8px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); }
 .sgrid p { margin: 0; } .sgrid a { color: var(--ink); }
 @media (max-width: 760px) { .sgrid { grid-template-columns: 1fr; gap: 8px; } }
+/* Intents and Sources are light: the same tokens, a paper ground. */
+body.show-intents { --stage: #ece3d2; --stage-ink: #15242f; --stage-soft: #5b666b; --chip: #e1d6c1; --line: #cbbda3; color-scheme: light; }
+.show-intents .dcard, .show-intents .mini { background: #fbf7ee; }
+.show-intents .mini { box-shadow: 0 1px 0 rgba(21, 36, 47, .08); }
+.show-intents .stories button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+@media (min-width: 901px) { .stories .navdec + .navdec { margin-top: 6px; } }
+.srclist { columns: 2 280px; column-gap: 32px; font-size: 14px; }
+.srclist li { break-inside: avoid; margin-bottom: 5px; }

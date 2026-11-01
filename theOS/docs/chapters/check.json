@@ -108,7 +108,7 @@
       "text": "r fits the exact schema version it names; its type is a root schema ref (AIP-66, AIP-90)."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-56",
      "AIP-58",
      "AIP-60",

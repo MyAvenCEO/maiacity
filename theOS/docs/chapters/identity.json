@@ -117,7 +117,7 @@
       "text": "The agent's Loro peer ID for a piece of data is the first 8 bytes of b3(\"theos/loro-peer\" ‖ agent ID ‖ epoch ‖ data ID), so a restore never reuses an op ID (AIP-63)."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-31",
      "AIP-58",
      "AIP-61",
@@ -211,7 +211,7 @@
       "text": "Every guardian act is signed by a human's guardian key at the end of the chain (for a coop guarded by you: your guardian key)."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-31",
      "AIP-59",
      "AIP-91"
@@ -314,7 +314,7 @@
       "text": "sig is by the guardian named in the record; agent_sig is by agent.signer; both cover the record without signatures."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-50",
      "AIP-58",
      "AIP-69",
@@ -417,7 +417,7 @@
       "text": "No policy can change or remove a guardian; own covers roles, agents' policies and data policies, never the guardian (AIP-91)."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-56",
      "AIP-58",
      "AIP-59",
@@ -558,7 +558,7 @@
       "text": "The one-time secret never travels over theOS; only the device that scanned or typed it can sign invite_sig."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-56",
      "AIP-58",
      "AIP-60",
@@ -674,7 +674,7 @@
       "text": "Below the guardian, concurrent removals both stand, and the guardian repairs (AIP-59)."
      }
     ],
-    "decisions": [
+    "intents": [
      "AIP-49",
      "AIP-51",
      "AIP-59",
