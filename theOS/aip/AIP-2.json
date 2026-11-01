@@ -484,6 +484,55 @@
    "writes": [],
    "reads": [],
    "task": "t6"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "Checkpoint 3: theOS/sandbox/run.sh (starts dockerd, runs a command in the image with theOS/ mounted), cloud-setup.sh (pull only), environment-setup.sh (to paste at Gate B) and environment-setup.previous.sh (the undo).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c4's test: the environment's script exits 0 with a planted failure, with a planted hang (cut at its limit, 3 s in the test) and with no setup file. A first trial of run.sh fell back to avenDB's old latest image (14 GB) and filled the session's disk; run.sh no longer falls back to any other image: it stops and says the image is not published yet.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:00Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2 on run 41295117407: the image theos-4d9bc364ffc5f836 built from theOS/sandbox/box for amd64 and arm64 (every tool layer reused from the registry's cache, about 5 s each), joined into one, and the smoke step passed: every tool answered, wasm32 is installed, versitygw runs, Playwright 1.64.1 launched Chromium.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:00Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 2 built and its smoke step green; the undo tried (0.13 s). Its Review gate runs in AIP-2's thread.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T10:00Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "This intent runs in its own thread; avenMAIA orchestrates.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-44"
+   ],
+   "reads": []
   }
  ],
  "reviews": [

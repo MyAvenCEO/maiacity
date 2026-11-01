@@ -39,20 +39,21 @@
   "avenCEO/gates/review"
  ],
  "types": [
-  "avenCEO/types/intent",
-  "avenCEO/types/review",
-  "avenCEO/types/decision",
-  "avenCEO/types/session",
-  "avenCEO/types/reference",
-  "avenCEO/types/step",
-  "avenCEO/types/gate",
-  "avenCEO/types/type",
-  "avenCEO/types/checker",
+  "avenCEO/types/author",
   "avenCEO/types/check",
-  "avenCEO/types/metric",
+  "avenCEO/types/checker",
+  "avenCEO/types/decision",
+  "avenCEO/types/gate",
+  "avenCEO/types/intent",
   "avenCEO/types/lesson",
+  "avenCEO/types/metric",
+  "avenCEO/types/reference",
+  "avenCEO/types/research",
+  "avenCEO/types/review",
+  "avenCEO/types/session",
+  "avenCEO/types/step",
   "avenCEO/types/term",
-  "avenCEO/types/author"
+  "avenCEO/types/type"
  ],
  "checkers": [
   "avenCEO/checkers/paraphrase",
@@ -126,7 +127,8 @@
   "brain's reflection runs on every new decision and every new term: it is checked against every one that still holds, and what it supersedes or merges, in whole or in part, is written on the new one. Old ones are never edited; what still holds is computed.",
   "Nothing is written to brain outside an intent's lifecycle: every write is an event of the intent it serves, with how it was done and what it wrote. A direct ask is traced the same way, in the intent it changes, as done ahead of that intent's gates.",
   "Every agent session writes in brain as avenMAIA, and every human word as Samuel Andert; an event's how says which session and role.",
-  "Your words are kept polished: clear, close to what you meant, true to what you said and well written. Only the polished words are stored."
+  "Your words are kept polished: clear, close to what you meant, true to what you said and well written. Only the polished words are stored.",
+  "One thread per intent: a thread writes only its own AIP's record and the files its work needs; decisions, the session and shared lists are written by avenMAIA, which merges each thread's branch."
  ],
  "roles": [
   {
@@ -138,14 +140,24 @@
    "does": "Gate A (what must be true), Gate B (try it). Nothing else waits for you."
   },
   {
-   "role": "avenMAIA, the orchestrator",
+   "role": "avenMAIA, the orchestrator (the master session)",
    "steps": [
     1,
     2,
     3,
     4
    ],
-   "does": "Reads the record and starts the next action. Today the main session; later a program."
+   "does": "The one session you talk to: records your decisions, starts one thread per intent, steers them, relays their questions to you and merges their work (D-43)."
+  },
+  {
+   "role": "An intent's thread",
+   "steps": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "does": "One Claude Code thread per AIP: it owns the AIP's record and its branch, runs its steps, starts its own workers and checkers, and asks you through avenMAIA."
   },
   {
    "role": "avenMAIA's workers (fresh per task)",

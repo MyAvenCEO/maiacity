@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-46",
+ "n": 46,
+ "title": "The brain command is the only door, from the start",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "memory",
+  "interface"
+ ],
+ "quote": "Yes: the brain command is the only door from the start.",
+ "means": "From brain's first checkpoint, the check fails any commit that changed a doc without the brain command.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-41"
+ ],
+ "reflection": {
+  "checked": "every decision before D-46 that held",
+  "result": "supersedes nothing"
+ }
+}

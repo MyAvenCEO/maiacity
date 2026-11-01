@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "D-42",
+ "n": 42,
+ "title": "Research first: AIP-3 and AIP-4 back to Understand",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "memory",
+  "research",
+  "intents"
+ ],
+ "quote": "Go back to Understand for AIP-3 and research in depth, on the web, the best practice, reference architectures and patterns of existing memory harnesses we can adopt, such as gbrain, supermemory, Hindsight and MemPalace. Keep it simple: pull out the best working insights, not a first-principles protocol. Do the same for AIP-4's Understand, in a thread of its own.",
+ "means": "AIP-3 goes back to Understand: a research thread studies existing agent memory systems and Claude Code's extension points (for AIP-4), and writes the sources and the patterns worth adopting. AIP-3's spec is revised from what it finds.",
+ "intents": [
+  "aip/AIP-3",
+  "aip/AIP-4"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-41"
+ ],
+ "reflection": {
+  "checked": "every decision before D-42 that held",
+  "result": "supersedes nothing"
+ }
+}

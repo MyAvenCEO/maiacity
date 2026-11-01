@@ -37,6 +37,38 @@
     "Change: tell me what",
     "Send it back"
    ]
+  },
+  {
+   "q": "Decision ids: with many threads at once, keep D-n numbers, or switch to hash ids with D-n as a label?",
+   "options": [
+    "Keep D-n: only avenMAIA writes decisions, so they never collide (recommended)",
+    "Hash ids, D-n as a label"
+   ],
+   "answered": "decisions/D-45"
+  },
+  {
+   "q": "Should brain's command be the only door from the start (the check fails any commit that changed a doc without it), or advisory for one checkpoint first?",
+   "options": [
+    "The only door from the start (recommended)",
+    "Advisory for one checkpoint first"
+   ],
+   "answered": "decisions/D-46"
+  },
+  {
+   "q": "Should brain's verbs also be served over MCP, so AIP-4's mod, the apps and other sessions use the same door, or stay a command and a skill for now?",
+   "options": [
+    "A command and a skill now; MCP with AIP-4 (recommended)",
+    "MCP from the start"
+   ],
+   "answered": "decisions/D-47"
+  },
+  {
+   "q": "Is withdraw (a doc stops holding with no successor, with its reason kept) a verb you want, or must every doc that stops holding be superseded by a newer one?",
+   "options": [
+    "Withdraw, with its reason, only from an AIP's event (recommended)",
+    "Only supersede"
+   ],
+   "answered": "decisions/D-48"
   }
  ],
  "problem": {
@@ -782,6 +814,161 @@
    "writes": [],
    "reads": [],
    "task": "t12"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "One clean, standard interface to brain, a command and a skill.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-41"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Back to Understand: research existing memory systems first.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-42"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "sent back",
+   "text": "Sent back to Understand (D-42): its spec stands as revision 4 until the research is in.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "A research thread (session_01E9zxn6mwBXcKRHezNQyoSB) studies gbrain, supermemory, Hindsight, MemPalace, mem0, Letta, Zep and Graphiti, Cognee, LangMem, Basic Memory, Beads and Claude's own memory; it writes the sources and aip/AIP-3/research on the branch claude/theos-research.",
+   "how": "a fresh thread of avenMAIA, started by the orchestrator",
+   "writes": [],
+   "reads": [],
+   "task": "t15"
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "read",
+   "text": "Read for brain's research: docs only.",
+   "how": "the research thread (session_01E9zxn6mwBXcKRHezNQyoSB); details per source in aip/AIP-3/research",
+   "writes": [],
+   "reads": [
+    "sources/gbrain",
+    "sources/supermemory",
+    "sources/hindsight",
+    "sources/mempalace",
+    "sources/basic-memory",
+    "sources/beads"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "read",
+   "text": "Read for brain's research: read in full.",
+   "how": "the research thread (session_01E9zxn6mwBXcKRHezNQyoSB); details per source in aip/AIP-3/research",
+   "writes": [],
+   "reads": [
+    "sources/mem0",
+    "sources/letta",
+    "sources/graphiti",
+    "sources/cognee",
+    "sources/langmem",
+    "sources/anthropic-memory-tool",
+    "sources/claude-code-memory"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The research written: 13 sources, 16 patterns (10 now, 4 later, 2 no), a recommendation for brain's one command and 4 open questions.",
+   "how": "the research thread, merged by avenMAIA",
+   "writes": [
+    "aip/AIP-3/research",
+    "sources/gbrain",
+    "sources/supermemory",
+    "sources/hindsight",
+    "sources/mempalace",
+    "sources/mem0",
+    "sources/letta",
+    "sources/graphiti",
+    "sources/cognee",
+    "sources/langmem",
+    "sources/basic-memory",
+    "sources/beads",
+    "sources/anthropic-memory-tool",
+    "sources/claude-code-memory"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Research in (aip/AIP-3/research).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t15"
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "understood",
+   "text": "Understood again with the research: brain's problem stands; its interface is one command, brain, the only door, with a skill that teaches its verbs (aip/AIP-3/research).",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Your four answers on brain: hash ids; the only door from the start; MCP too; no withdraw, superseding through the reflection, links as a maintained graph.",
+   "how": "in the AIP-3 thread, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-45",
+    "decisions/D-46",
+    "decisions/D-47",
+    "decisions/D-48"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "authors/avenmaia",
+   "what": "read",
+   "text": "Read in full for brain's research: the mem0, Zep, MemGPT, Hindsight and sleep-time compute papers; five docs sites re-read.",
+   "how": "the AIP-3 thread (session_01E9zxn6mwBXcKRHezNQyoSB)",
+   "writes": [],
+   "reads": [
+    "sources/hindsight-paper",
+    "sources/mem0-paper",
+    "sources/memgpt-paper",
+    "sources/sleep-time-compute-paper",
+    "sources/zep-paper"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The AIP-3 thread now owns this record (D-43): it writes revision 5 from the research and your answers, and runs its spec review.",
+   "how": "by avenMAIA, handing over",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
@@ -801,6 +988,18 @@
   "ref": "decisions/D-12"
  },
  "tasks": [
+  {
+   "id": "t15",
+   "what": "Understand again: what existing memory systems do well (research thread)",
+   "step": 1,
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t16",
+   "what": "One standard interface to brain, a command and a skill (D-41), in the spec",
+   "step": 2,
+   "who": "authors/avenmaia"
+  },
   {
    "id": "t1",
    "what": "Answer spec review round 1",
