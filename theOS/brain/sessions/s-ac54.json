@@ -157,7 +157,8 @@
   "d-690b",
   "d-47c5",
   "d-f1a0",
-  "d-6628"
+  "d-6628",
+  "d-b916"
  ],
  "corrections": [
   {
@@ -220,10 +221,6 @@
   "aip-c455"
  ],
  "parked": [
-  {
-   "intent": "aip-836d",
-   "next": "Tasks t28 to t30 (names left from the migration, brain's app title, nested ids in titles), then the rest of checkpoint 2, then checkpoints 3 and 4 (the MCP server)."
-  },
   {
    "intent": "aip-f4e2",
    "next": "Back to Specify with round 6's findings; not started."
