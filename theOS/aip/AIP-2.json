@@ -918,6 +918,15 @@
     "aip/AIP-2/c4-review"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T12:19Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "Run 41304760197 (push of 8a971d3) red, as a gate should be: the arm64 smoke step answered every tool, then stopped at 'PIN: unbound variable' (round 1's fix set PIN in the runner's shell without exporting it, so docker run -e PIN passed nothing); the digest was not kept, so no tag was made. Fixed by exporting PIN. Tried here: the whole new smoke script, offline (--network none), in a scratch image with Playwright 1.64.1 on NODE_PATH: green, Chromium 156 launched; with theOS/package.json changed to 1.64.2 it fails ('Playwright 1.64.1 in the box, theOS/package.json pins 1.64.2').",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [

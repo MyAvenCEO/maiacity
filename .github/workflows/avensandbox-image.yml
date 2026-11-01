@@ -106,7 +106,7 @@ jobs:
           IMAGE: ${{ needs.plan.outputs.name }}@${{ steps.push.outputs.digest }}
           WANT: ${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}
         run: |
-          PIN=$(jq -r .devDependencies.playwright theOS/package.json)
+          export PIN; PIN=$(jq -r .devDependencies.playwright theOS/package.json)
           # pipefail, and no "test && echo": under -e a failing test before && does not stop the script.
           docker run --rm -e WANT -e PIN "$IMAGE" bash -euo pipefail -c '
             [ "$(uname -m)" = "$WANT" ] || { echo "wrong platform: $(uname -m), want $WANT"; exit 1; }; echo "platform $WANT"
