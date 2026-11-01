@@ -11,7 +11,7 @@ import { docsCheck } from './docs-check.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SIZES = [{ width: 390, height: 844 }, { width: 1280, height: 720 }];
-const WORKERS = 3; // pages per size, sharing one queue
+const WORKERS = 6; // pages per size, sharing one queue
 const MOST = 5000; // states per size: more means a route shows new text each time (a clock), and the crawl would not end
 
 function args(argv) {
@@ -112,12 +112,12 @@ async function actions(page, origin) {
 const keyOf = async (page) => `${page.url()}\n${await page.evaluate(() => document.body?.innerText ?? '')}`;
 
 // Bring the page to a state: its URL, then its buttons pressed again. Returns the key it reached, or null when a button
-// is gone. When the page is on that document and untouched by a button since it was loaded, only the hash changes,
-// which is much faster; an app can still keep something open across a hash change, so when that doesn't reach the
-// expected state, the URL is loaded afresh.
+// is gone. When the page is on that document, only the hash changes, which is much faster; an app can keep something
+// open across a hash change, so this is tried only when the state to reach is known (and then checked against it) or
+// no button was pressed since the page was loaded; otherwise, or when it misses, the URL is loaded afresh.
 async function reach(page, { url, clicks }, expect) {
   const now = page.url();
-  if (page.clean && !clicks.length && new URL(url).hash && now !== url && now.split('#')[0] === url.split('#')[0]) {
+  if ((page.clean || expect) && !clicks.length && new URL(url).hash && now !== url && now.split('#')[0] === url.split('#')[0]) {
     await page.evaluate((h) => { location.hash = h; }, new URL(url).hash);
     await settle(page);
     const key = await keyOf(page);
@@ -144,15 +144,13 @@ async function press(page, b) {
 }
 
 // Every state a person can reach from the entry page at one size, by following links and pressing buttons; the docs
-// check runs on each state when it is first reached. A button is pressed once per route it shows on; a button that
-// leads to another route is taken to lead there from every route of its page, and is pressed once per page.
+// check runs on each state when it is first reached. Every button is pressed once in every state it shows in.
 async function crawl(browser, size, start, origin) {
   const context = await browser.newContext({ viewport: size });
   await context.addInitScript(countFetches);
   await context.addInitScript(pageButtons);
   context.on('page', async (p) => { if (await p.opener()) await p.close(); }); // a link or button that opens a new tab
-  const states = [], keys = new Map(), pressed = new Set(), queue = [], loaded = new Set();
-  const doc = (url) => url.split('#')[0];
+  const states = [], keys = new Map(), queue = [], loaded = new Set();
   // A new state is checked, kept and queued to be opened; with layoutOnly, a known one is checked again and kept only
   // when it fails, never opened (its key already is).
   const found = async (page, recipe, layoutOnly = false) => {
@@ -194,14 +192,10 @@ async function crawl(browser, size, start, origin) {
         const here = origin + '/' + state.url;
         let moved = false;
         for (const b of buttons) {
-          const sig = `${here}\n${b.html}`, pageSig = `${doc(here)}\n${b.html}`;
-          if (pressed.has(sig) || pressed.has(pageSig)) continue;
-          pressed.add(sig);
           if (moved && (await reach(page, state.recipe, state.key)) !== state.key) break;
           moved = false;
           if (!(await press(page, b))) continue;
           const route = page.url() !== here;
-          if (route) pressed.add(pageSig);
           const recipe = route ? { url: page.url(), clicks: [] } : { ...state.recipe, clicks: [...state.recipe.clicks, b] };
           const key = await found(page, recipe);
           // A button can change only the layout (the same text): that view is checked too, and kept when it fails.

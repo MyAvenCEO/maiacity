@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture: identical buttons</title>
+<!-- The docs check must fail here (AIP-1, D-77): three identical "Show more" buttons on one route; only the third
+     card's content is cut off, so a crawl that presses identical buttons once never sees it. -->
+<style>
+  body { margin: 0; padding: 16px; font: 16px/1.5 sans-serif; }
+  .card { border: 1px solid #ccc; margin-bottom: 12px; padding: 8px; }
+  .more { height: 60px; overflow: hidden; }
+  .more p { margin: 0; }
+  .card:nth-child(3) .more p { height: 400px; }
+</style>
+</head>
+<body>
+<div class="card"><b>One</b><div class="more" hidden><p>Short.</p></div><button type="button">Show more</button></div>
+<div class="card"><b>Two</b><div class="more" hidden><p>Short.</p></div><button type="button">Show more</button></div>
+<div class="card"><b>Three</b><div class="more" hidden><p>Tall, and cut off.</p></div><button type="button">Show more</button></div>
+<script>
+  document.body.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) b.parentElement.querySelector('.more').hidden = false;
+  });
+</script>
+</body>
+</html>
