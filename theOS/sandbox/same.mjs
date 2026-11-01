@@ -24,7 +24,8 @@ function report(path) {
     const k = `${s.size} ${s.url} ${JSON.stringify(s.clicks ?? [])}`;
     m.set(k, [...(m.get(k) ?? []), (s.fails ?? []).map((f) => `${f.rule} ${f.where}`).sort().join('; ')]);
   }
-  for (const [k, v] of m) m.set(k, v.sort().join(' | '));
+  // A key reached more than once (sampling can reach it once in one run, twice in the other): its distinct results.
+  for (const [k, v] of m) m.set(k, [...new Set(v)].sort().join(' | '));
   return { m, n: r.results.length, failed: r.failed };
 }
 function folder(dir) {
