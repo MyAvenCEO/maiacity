@@ -1,0 +1,47 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/cognee",
+ "title": "Cognee: knowledge-graph memory for agents",
+ "about": [
+  "agent memory",
+  "knowledge graph",
+  "consolidation",
+  "provenance"
+ ],
+ "url": "https://github.com/topoteretes/cognee",
+ "by": "Topoteretes' open-source Python library. Read: the README, the package's public exports (cognee/__init__.py), the improve() orchestrator and its docstring, and the conflict models, via raw.githubusercontent.com. blocked: docs.cognee.ai (the host does not resolve in this session).",
+ "summary": "Cognee turns text, code and conversations into a knowledge graph plus vector index that agents search. Its old pipeline was add (ingest), cognify (extract entities and relations), memify (enrich) and search; the newer API is remember, recall, improve and forget, and memify is deprecated. improve() is a fixed list of gated stages that bridges session lessons into permanent memory and reviews conflicting dated facts.",
+ "ideas": [
+  "Four verbs carry the whole surface: remember, recall, improve, forget (older: add, cognify, memify, search).",
+  "Session memory and permanent memory are separate; improve() moves accepted session lessons, traces and feedback into the permanent graph.",
+  "improve() is a registry of stages run in a fixed order; each stage first gates (declines work it cannot do, with a recorded reason such as no_session_ids or disabled_by_config) before it runs.",
+  "Fail open except where loss is real: every stage failure is recorded and the next stage runs, but a failure to persist session Q&A stops the run, because that would lose data.",
+  "Conflicts are first-class records: a ConflictDetail names what it is about, the attribute, whether it is time_varying or fixed, the competing facts with their sources, and who resolved it, when, why, and which fact was selected (by review or by the user).",
+  "One lock per dataset: improve, cognify, add and forget on the same dataset run one after another.",
+  "Each run writes an operation row whose outcome must be honest: failed if a stage errored, noop if nothing ran.",
+  "Provenance can be viewed: get_memory_provenance_graph shows where a memory came from."
+ ],
+ "took": [
+  {
+   "idea": "A conflict record with kind time_varying or fixed, the candidate facts, the chosen one and who chose it and why",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Separate a session's scratch notes from brain, and move only accepted lessons over in one explicit step",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "Fixed, gated stages that report skipped with a reason, never silently",
+   "where": "the check"
+  },
+  {
+   "idea": "An honest outcome per write run: failed, noop or done",
+   "where": "the intent's event trace"
+  },
+  {
+   "idea": "One writer at a time per area",
+   "where": "brain's write command"
+  }
+ ]
+}
