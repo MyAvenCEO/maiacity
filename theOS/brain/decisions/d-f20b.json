@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-f20b",
+ "title": "avenSANDBOX ships without the Mac test for now",
+ "subtype": "gate-B",
+ "by": "a-4c7a",
+ "at": "2026-11-01T13:05Z",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "sandbox"
+ ],
+ "quote": "Option (a): pass checkpoint 4 on that proof. And don't test on the Mac for now.",
+ "means": "aip-6fb1's checkpoint 4 passes its review gate on the proof that theOS's check gives the same result on GitHub's runner, inside the box in a cloud session and outside it, after three rounds whose findings are all fixed. Gate B passes for GitHub and the cloud. Running the box on Samuel's Mac (OrbStack, arm64) is deferred until he tries it, and pasting environment-setup.sh into the cloud environment waits until theOS is on main; both are written in aip-6fb1's deferred list. aip-6fb1 then does Learn.",
+ "intents": [
+  "aip-6fb1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-93eb"
+ ],
+ "reflection": {
+  "checked": "every decision before d-f20b that held",
+  "result": "supersedes nothing"
+ }
+}
