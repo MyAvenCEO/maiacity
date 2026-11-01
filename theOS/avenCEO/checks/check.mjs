@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import { createRequire, Module } from 'node:module';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { docsCheck } from './docs-check.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -271,11 +271,22 @@ async function main() {
       process.exitCode = wrong ? 1 : 0;
       return;
     }
+    // brain check (aip-836d): the commits since main through brain's door, and the docs as they are. A range that does
+    // not resolve here (a shallow clone) is reported, not failed; the pre-push hook checks it where history is.
+    let brainBad = 0;
+    const brainDoor = join(o.root, 'brain', 'door.mjs');
+    if (existsSync(brainDoor)) {
+      const b = (await import(pathToFileURL(brainDoor).href)).check(o.root);
+      const real = b.fails.filter((f) => f.commit !== '-');
+      for (const f of b.fails) for (const x of f.fails) console.log(`${f.commit === '-' ? 'NOTE' : 'FAIL'} brain ${f.commit}: ${x}`);
+      brainBad = real.length;
+      console.log(`${brainBad ? 'red' : 'green'}: brain check, ${b.commits} commits (${b.range}), ${brainBad} failing`);
+    }
     const r = await run(browser, origin, o.root, o.entry, o.out);
     r.seconds = Math.round((Date.now() - t0) / 1000);
     if (r.seconds >= LIMIT) console.log(`FAIL the check took ${r.seconds} s, at or over its limit of ${LIMIT} s (c4)`);
     console.log(`${r.failed ? 'red' : 'green'}: ${r.reached} states checked (${r.views} view types), ${r.failed} failed, in ${r.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
-    process.exitCode = r.failed || r.seconds >= LIMIT ? 1 : 0;
+    process.exitCode = r.failed || brainBad || r.seconds >= LIMIT ? 1 : 0;
   } finally {
     await browser.close();
     server.close();

@@ -1799,6 +1799,16 @@
    "writes": [],
    "reads": [],
    "task": "t9"
+  },
+  {
+   "at": "2026-11-01T14:34Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "theOS's check command now runs brain check before its crawl, as the protocol says (a module AIP-1's check command runs): the commits since main through the door, and the docs as they are; it fails the check when brain check fails. Where the range does not resolve (a shallow clone in CI), that part is a note, not a failure.",
+   "how": "theOS/avenCEO/checks/check.mjs",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
   }
  ],
  "reviews": [
