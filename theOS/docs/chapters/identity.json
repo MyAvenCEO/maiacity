@@ -127,14 +127,107 @@
    }
   },
   {
+   "title": "Your passkey is your guardian.",
+   "text": "Behind every identity stands exactly one {guardian}: its root of trust. Yours is a key your passkey derives, the same on every device where you unlock it. It can hand day-to-day management, like adding devices, to your agents through policies. Only one thing stays its own: nobody but your guardian can ever change who your guardian is.",
+   "code": {
+    "guardian key": "PRF(passkey, \"theos/guardian\") → ed25519:Gd7…",
+    "phone's signer": "PRF(passkey, phone's salt) → ed25519:Fp2…",
+    "laptop's signer": "PRF(passkey, laptop's salt) → ed25519:Lp4…"
+   },
+   "deep": "A passkey's PRF extension returns the same secret for the same input on every device it syncs to, so the guardian key exists only while you unlock the passkey. Guardians are checked by the core verifier, like birth records, not by the operations engine: no policy, condition or plugin can reach them (D91).",
+   "spec": {
+    "summary": "The root of trust of every identity: one key or one identity, outside the policy engine, changed only by its own succession.",
+    "records": [
+     {
+      "name": "guardian (of a human)",
+      "about": "Named in the human's birth record.",
+      "fields": [
+       [
+        "guardian",
+        "ed25519 public key",
+        "derived from the passkey: PRF(passkey, \"theos/guardian\")"
+       ],
+       [
+        "agent signers",
+        "ed25519 public keys",
+        "PRF(passkey, per-device salt), one per device (D31)"
+       ]
+      ]
+     },
+     {
+      "name": "guardian record (of a coop)",
+      "about": "In the coop's own history; the first one is in its birth record.",
+      "fields": [
+       [
+        "of",
+        "coop ID",
+        "the coop"
+       ],
+       [
+        "guardian",
+        "human or coop ID",
+        "exactly one identity"
+       ],
+       [
+        "after",
+        "heads",
+        "must include the previous guardian record"
+       ],
+       [
+        "sig",
+        "signature",
+        "by the current guardian's guardian key, at the end of its chain"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "guardian.one",
+      "text": "Every human and coop has exactly one guardian; agents have none, their owner's guardian stands behind them."
+     },
+     {
+      "id": "guardian.root",
+      "text": "Every policy on an identity is valid only if it traces back to that identity's guardian: signed by the guardian, or along a chain of own that the guardian gave."
+     },
+     {
+      "id": "guardian.key_from_passkey",
+      "text": "A human's guardian is the ed25519 key from PRF(passkey, \"theos/guardian\"); it is never stored, only derived after the passkey is unlocked."
+     },
+     {
+      "id": "guardian.only_act",
+      "text": "Changing the guardian is the one act reserved to the guardian; own can delegate everything else (roles, agents' policies, data policies)."
+     },
+     {
+      "id": "guardian.succession",
+      "text": "A coop's guardian changes only by a guardian record signed by the current guardian, listing the previous record as seen; two concurrent guardian records both fail until one sees the other."
+     },
+     {
+      "id": "guardian.core",
+      "text": "Guardian records are checked by the core verifier, not by the operations engine; no policy or plugin can widen, change or remove a guardian."
+     },
+     {
+      "id": "guardian.signed_by_key",
+      "text": "Every guardian act is signed by a human's guardian key at the end of the chain (for a coop guarded by you: your guardian key)."
+     }
+    ],
+    "decisions": [
+     "D31",
+     "D59",
+     "D91"
+    ]
+   }
+  },
+  {
    "title": "You and your first agent are born together.",
-   "text": "When you start, your phone's agent makes its signer and signs one record: your birth, its own birth, and its first {policy}, a signed statement of what an agent may do: “this agent may act for you.” From then on, you exist, and you own it. Nothing has to come first.",
+   "text": "When you start, your guardian signs one record: your birth, your phone agent's birth, and its first {policy}, a signed statement of what an agent may do: “this agent may act for you.” Your phone signs it too, proving it holds its own key. From then on, you exist, and you own it. Nothing has to come first.",
    "code": {
     "type": "data:b3:Rfe…@b3:105…#genesis",
     "creates": [
      "human",
      "agent"
     ],
+    "guardian": "ed25519:Gd7…",
     "agent": {
      "signer": "ed25519:Fp2…",
      "next": "b3:9xk…"
@@ -144,11 +237,15 @@
      "on": "this human",
      "operations": {
       "act": {},
-      "own": {},
-      "govern": {}
+      "own": {}
      }
     },
     "sig": {
+     "by": "guardian of human:b3:q4x7…#you",
+     "key": "ed25519:Gd7…",
+     "value": "…"
+    },
+    "agent_sig": {
      "by": "agent:b3:f2p…#your-phone",
      "key": "ed25519:Fp2…",
      "value": "…"
@@ -156,7 +253,7 @@
    },
    "deep": "One genesis record creates the human and its first agent together: no chicken-and-egg. It commits to the agent's next key in advance (KERI-style pre-rotation). Both IDs are its hash, typed once as human and once as agent (D50); a record can't contain its own hash, so inside it the two are “this human” and “this agent”.",
    "spec": {
-    "summary": "One record creates a human (or coop) and its first agent, and gives that agent its first policy.",
+    "summary": "One record creates a human (or coop) and its first agent, names the guardian, and gives the agent its first policy.",
     "records": [
      {
       "name": "genesis record (identity)",
@@ -167,14 +264,14 @@
         "[\"human\", \"agent\"] or [\"coop\", \"agent\"]"
        ],
        [
+        "guardian",
+        "key or identity",
+        "a human's guardian key; for a coop, one identity (D91)"
+       ],
+       [
         "agent.signer",
         "ed25519 public key",
         "the first agent's signer, rev 0"
-       ],
-       [
-        "agent.lock",
-        "x25519 public key",
-        "the first agent's lock"
        ],
        [
         "agent.next",
@@ -184,12 +281,17 @@
        [
         "policy",
         "policy body",
-        "to “this agent”, on “this human”; operations act, own, govern"
+        "to “this agent”, on “this human”: act and own"
        ],
        [
         "sig",
         "signature",
-        "by the new agent; key = agent.signer"
+        "by the guardian"
+       ],
+       [
+        "agent_sig",
+        "signature",
+        "by the new agent's signer, proving it holds its key"
        ]
       ]
      }
@@ -204,18 +306,19 @@
       "text": "Inside a birth record, “this human” and “this agent” name what the record creates; a record never contains its own hash."
      },
      {
-      "id": "genesis.signed_by_created",
-      "text": "sig.by is the created agent's ID and sig.key equals agent.signer."
-     },
-     {
       "id": "genesis.first_state",
       "text": "The first agent starts at rev 0, epoch 1, seq 1; the birth record is its seq 1."
+     },
+     {
+      "id": "genesis.signatures",
+      "text": "sig is by the guardian named in the record; agent_sig is by agent.signer; both cover the record without signatures."
      }
     ],
     "decisions": [
      "D50",
      "D58",
-     "D69"
+     "D69",
+     "D91"
     ]
    }
   },
@@ -248,7 +351,7 @@
      "value": "…"
     }
    },
-   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only policies from the identity it acts for, written by that identity's guardian (for you: you). Acting for a coop adds hops: your phone → you → home. Ownership alone gives nothing (D57, D58, D70).",
+   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only policies on the identity it acts for, traced back to that identity's guardian. Acting for a coop adds hops: your phone → you → home. Ownership alone gives nothing (D57, D58, D91).",
    "spec": {
     "summary": "Every further agent gets one policy from the identity it acts for, with conditions on act.",
     "records": [
@@ -268,7 +371,7 @@
        [
         "operations",
         "Operations (D56)",
-        "keyed by name: act, own, govern"
+        "keyed by name: act, own"
        ],
        [
         "operations.act.data",
@@ -291,7 +394,7 @@
     "rules": [
      {
       "id": "policy.agent.issuer",
-      "text": "A policy on an identity is valid only if signed along a chain that carries govern on it: for a human, one of its own agents with govern; for a coop, an agent acting for the coop's guardian (D70)."
+      "text": "A policy on an identity is valid only if signed by its guardian, or along a chain that carries own on it, within that own (D91)."
      },
      {
       "id": "policy.chain",
@@ -310,8 +413,8 @@
       "text": "act without data covers all of the owner's data; act with data covers only the listed data, and for each only its Operations object, checked exactly like a data policy's (D56)."
      },
      {
-      "id": "policy.agent.no_govern_for_coop_agents",
-      "text": "An agent owned by a coop never holds govern on it; only the coop's guardian governs."
+      "id": "policy.no_guardian_change",
+      "text": "No policy can change or remove a guardian; own covers roles, agents' policies and data policies, never the guardian (D91)."
      }
     ],
     "decisions": [
@@ -332,8 +435,7 @@
     "expires": "2026-11-01T10:10:00Z",
     "grants": {
      "act": {},
-     "own": {},
-     "govern": {}
+     "own": {}
     },
     "proof": [
      "human:b3:q4x7…#you"
@@ -350,7 +452,7 @@
     "records": [
      {
       "name": "invite record",
-      "about": "Written into the identity's history by an agent with govern.",
+      "about": "Written into the identity's history by its guardian or an agent with own.",
       "fields": [
        [
         "on",
@@ -380,7 +482,7 @@
        [
         "sig",
         "signature",
-        "by an agent of on with govern"
+        "by the guardian of on, or an agent with own on it"
        ]
       ]
      },
@@ -433,7 +535,7 @@
     "rules": [
      {
       "id": "invite.issuer",
-      "text": "An invite is valid only if signed by an agent whose policy on invite.on includes govern, and its grants are within that agent's own operations and conditions."
+      "text": "An invite is valid only if signed by the guardian of invite.on, or by an agent with own on it whose own covers the grants (D91)."
      },
      {
       "id": "invite.join",
@@ -484,35 +586,57 @@
    }
   },
   {
-   "title": "A coop decides by its own policies.",
-   "text": "A policy on the coop says what its “members” role may do for it: act, ordinary changes for the coop, and own, writing and ending the policies on the coop's data. The third kind, govern, changing the coop's own roles and policies, belongs to its {guardian}: a role with exactly one identity, for now you. One top, so nobody can remove each other at the same moment. Before you step down, you name the next guardian.",
+   "title": "A coop has one guardian too.",
+   "text": "A policy on the coop says what its “members” role may do for it: act, ordinary changes, and, if the guardian allows, own: managing the coop's roles, policies and data. The coop's guardian is one identity, for now you. Only you, as guardian, can name another guardian, and nobody below can remove you, so whatever happens below, you can always repair it.",
    "code": {
-    "type": "data:b3:R9f…@b3:00f…#policy",
-    "to": "role:b3:h9g…#home/guardian",
-    "on": "coop:b3:c7n2…#home",
-    "operations": {
-     "govern": {}
-    },
-    "proof": [
+    "type": "data:b3:R80…@b3:60a…#guardian",
+    "of": "coop:b3:c7n2…#home",
+    "guardian": "human:b3:q4x7…#you",
+    "after": [
      "coop:b3:c7n2…#home"
     ],
     "sig": {
-     "by": "agent:b3:f2p…#your-phone",
-     "key": "ed25519:Fp2…",
+     "by": "guardian of human:b3:q4x7…#you",
+     "key": "ed25519:Gd7…",
      "value": "…"
     }
    },
-   "deep": "Same shape as every policy. The members role gets act and own, one signature each (1 of 1, D49). Govern goes only to the guardian role, which always holds exactly one identity (D59, D70). Below the guardian, if two members undo each other at the same moment, both stand and the guardian repairs. Several guardians acting by majority may come later.",
+   "deep": "Members' act and own need one signature each (D49). Two holders of own who undo each other at the same moment both stand, and the guardian repairs (D59). Succession: the guardian signs a new guardian record naming its successor; it can't leave without one (D91).",
    "spec": {
-    "summary": "Every identity has exactly one guardian, the one top of its authority. A human is its own; a coop's is its guardian role, changed only by succession.",
+    "summary": "A coop's guardian is one identity, its root of trust; members get act and, if the guardian gives it, own.",
     "records": [
      {
-      "name": "policy record (govern, on a coop)",
+      "name": "guardian record (of a coop)",
+      "fields": [
+       [
+        "of",
+        "coop ID",
+        "the coop"
+       ],
+       [
+        "guardian",
+        "human or coop ID",
+        "exactly one identity"
+       ],
+       [
+        "after",
+        "heads",
+        "must include the previous guardian record"
+       ],
+       [
+        "sig",
+        "signature",
+        "by the guardian's guardian key at the end of its chain"
+       ]
+      ]
+     },
+     {
+      "name": "policy record (on a coop)",
       "fields": [
        [
         "to",
         "role ID",
-        "the coop's guardian role"
+        "usually the members role"
        ],
        [
         "on",
@@ -522,88 +646,45 @@
        [
         "operations",
         "Operations (D56)",
-        "{\"govern\": {}}"
+        "act; own if the guardian delegates management"
        ],
        [
         "proof",
         "record IDs",
-        "from the coop's birth record"
-       ]
-      ]
-     },
-     {
-      "name": "role record (the guardian role)",
-      "about": "A succession is simply a new version of this record, signed by the current guardian.",
-      "fields": [
-       [
-        "id",
-        "role ID",
-        "role:b3:…#home/guardian"
-       ],
-       [
-        "of",
-        "coop ID",
-        "the coop"
-       ],
-       [
-        "identities",
-        "list of one",
-        "exactly one human or coop"
-       ],
-       [
-        "after",
-        "heads",
-        "must include the previous guardian role record"
-       ],
-       [
-        "sig",
-        "signature",
-        "by an agent of the current guardian with govern on it"
+        "back to the coop's guardian"
        ]
       ]
      }
     ],
     "rules": [
      {
-      "id": "guardian.one",
-      "text": "Every human and coop has exactly one guardian: a human is its own; a coop's guardian role holds exactly one identity at all times, and a guardian role record with zero or several identities is invalid. Agents have none; their owner governs them."
-     },
-     {
-      "id": "guardian.govern_only",
-      "text": "Only the guardian holds govern on the coop: changing the coop's roles and identity policies, including the members role."
-     },
-     {
-      "id": "guardian.succession",
-      "text": "Only the current guardian may write a new guardian role record, and it must list the previous one as seen; the new record names its successor."
-     },
-     {
-      "id": "guardian.concurrent",
-      "text": "If two guardian role records are concurrent (the guardian's own agents disagreed), neither takes effect: the previous guardian stays until a record sees both."
+      "id": "guardian.coop",
+      "text": "A coop's guardian is exactly one human or coop, named in its birth record and changed only by succession."
      },
      {
       "id": "guardian.no_exit_without_successor",
       "text": "A guardian can't leave or be removed; it can only be replaced by a successor it names."
      },
      {
-      "id": "guardian.below",
-      "text": "Below the guardian, concurrent removals both stand and the guardian repairs (D59)."
+      "id": "own.on_identity",
+      "text": "own on a coop lets its holder change the coop's roles, its agents' policies and its data's policies, within its own; never the guardian."
      },
      {
-      "id": "guardian.signs_through_chain",
-      "text": "The guardian exercises govern through its own chain: for a coop guarded by you, your phone → you → the coop as guardian. The coop's own agents (servers) get act and own at most."
+      "id": "guardian.below",
+      "text": "Below the guardian, concurrent removals both stand, and the guardian repairs (D59)."
      }
     ],
     "decisions": [
      "D49",
      "D51",
      "D59",
-     "D70"
+     "D91"
     ]
    }
   },
   {
    "title": "Coops can hold coops.",
-   "text": "Your street is a coop of homes, and a home is a coop of people. The street's “members” role holds the home coops, and a policy on the street says what they may do for it: here, act, but not own or govern. A home acts through its own members' agents. Coops can sit inside coops as deep as you like, never in a circle.",
+   "text": "Your street is a coop of homes, and a home is a coop of people. The street's “members” role holds the home coops, and a policy on the street says what they may do for it: here act, but not own. A home acts through its own members' agents. Coops can sit inside coops as deep as you like, never in a circle.",
    "code": {
     "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "role:b3:s9m…#street/members",
@@ -620,7 +701,7 @@
      "value": "…"
     }
    },
-   "deep": "The street's members role lists home coops; this policy gives that role act on the street, and the street's guardian keeps govern. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for its members role, the street's policy for its members role. Roles are checked whenever they change; loops of coops are settled when the view is built (D63)."
+   "deep": "The street's members role lists home coops; this policy gives that role act on the street, and the street's guardian stays its root. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for its members role, the street's policy for its members role. Roles are checked whenever they change; loops of coops are settled when the view is built (D63)."
   },
   {
    "title": "Losing your phone.",
@@ -638,8 +719,8 @@
     "Humans and coops are identities that own and decide.",
     "Agents act for exactly one owner, each with its own signer, and only by its policies.",
     "A role is a named set of identities; a coop's members are its “members” role.",
-    "Every identity has one guardian: a human is its own; a coop names one, changed only by succession.",
-    "Policies say what a role or an agent may do for an identity: act, own, govern."
+    "Every identity has one guardian, its root of trust: yours is your passkey; a coop's is one identity, changed only by succession.",
+    "Policies say what a role or an agent may do for an identity: act, own."
    ],
    "deep": "Three identity types: human, coop, agent. Ownership points from humans and coops to agents and data; authority to act flows back only through policies."
   }

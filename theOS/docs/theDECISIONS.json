@@ -51,9 +51,9 @@
    ],
    "slides": [
     "identity-1",
-    "identity-6",
-    "identity-8",
-    "identity-7"
+    "identity-7",
+    "identity-9",
+    "identity-8"
    ],
    "date": "2026-10-31"
   },
@@ -152,7 +152,7 @@
    "id": "D8",
    "title": "A policy: role, data, operations, conditions, expiry, proof",
    "status": "decided",
-   "decision": "A policy is a signed certificate with: the role it is given to; the data it applies to; its operations, keyed by name (D56) (create, read, update, delete, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the owner's agent; and the proof chain back to the data's birth record. Identity policies use the same shape with act, own and govern (D48). Writing policies is not an operation: it belongs to the owner (D30).",
+   "decision": "A policy is a signed certificate with: the role it is given to; the data it applies to; its operations, keyed by name (D56) (create, read, update, delete, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the owner's agent; and the proof chain back to the data's birth record. Identity policies use the same shape with act and own (D48). Writing policies is not an operation: it belongs to the owner (D30).",
    "why": "One small vocabulary for content, carrying and the policies themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
    "sources": [
     {
@@ -635,7 +635,7 @@
     "policies-8",
     "policies-9",
     "time-4",
-    "identity-7"
+    "identity-8"
    ],
    "date": "2026-10-31"
   },
@@ -902,11 +902,11 @@
    "id": "D44",
    "title": "An identity's policies and data policies never overlap",
    "status": "decided",
-   "decision": "An identity's own policies answer who speaks for it: policies on the identity, given to its members role or its own agents, with act, own and govern; conditions may name which data an agent acts on. A piece of data's policies answer what an identity may do with it: policies on the data, given to roles, with data operations. Signature counts appear only on identity policies (D48, D49). A change is valid only if both hold. A coop is like a small DAO: members, governance, assets, nesting.",
+   "decision": "An identity's own policies answer who speaks for it: policies on the identity, given to its members role or its own agents, with act and own; conditions may name which data an agent acts on. A piece of data's policies answer what an identity may do with it: policies on the data, given to roles, with data operations. Signature counts appear only on identity policies (D48, D49). A change is valid only if both hold. A coop is like a small DAO: members, governance, assets, nesting.",
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
    "slides": [
-    "identity-7",
+    "identity-8",
     "check-2"
    ],
    "date": "2026-10-31"
@@ -969,13 +969,13 @@
    "title": "One policy shape, one plugin system",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every policy has one shape: who, on what, operations, conditions, expiry. An identity's policies have its members role or its own agents as who and the identity itself as target, with operations act, own and govern. A piece of data's policies have a role as who and the data as target. Operations and conditions (at, where, limit …; later signature counts, D49) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so signature conditions stay on identities (D44).",
+   "decision": "Every policy has one shape: who, on what, operations, conditions, expiry. An identity's policies have its members role or its own agents as who and the identity itself as target, with operations act and own. A piece of data's policies have a role as who and the data as target. Operations and conditions (at, where, limit …; later signature counts, D49) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so signature conditions stay on identities (D44).",
    "why": "One language and one engine for all policies, with the separation between agency and access kept by the target.",
    "supersedes": "D38",
    "sources": [],
    "slides": [
-    "identity-4",
-    "identity-7",
+    "identity-5",
+    "identity-8",
     "policies-4",
     "ops-8"
    ]
@@ -985,11 +985,11 @@
    "title": "One signature by default; counts come later as plugins",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "For now, every act, own and govern of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of a member (1 of 1). Govern goes to the coop's one guardian (D59). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (D48), and devices that do not know them treat them as not satisfied.",
+   "decision": "For now, every act and own of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of a member (1 of 1). Behind them stands the identity's one guardian (D91). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (D48), and devices that do not know them treat them as not satisfied.",
    "why": "Keeps the first version simple while the plugin system leaves room to grow.",
    "sources": [],
    "slides": [
-    "identity-7",
+    "identity-8",
     "ops-8"
    ]
   },
@@ -998,7 +998,7 @@
    "title": "Record conventions",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every stored or sent thing is a record: {\"type\": <schema ref of its kind>, …fields, \"after\", \"seq\", \"sig\"} (D90) in canonical CBOR (shown as JSON), decoded strictly; examples omit after and seq except where they matter (D61). IDs are typed: human:, coop:, agent:, data:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record without its signature; value: b3: is the hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). A birth record (genesis) holds a random nonce or the keys it creates, so no two share an ID. A record cannot contain its own hash, so inside a birth record the identities it creates are named by kind (“this human”, “this agent”); their IDs are b3(kind ‖ record). One genesis record can create a human or coop and its first agent. A schema is pinned as its data ID, @ and the hash of the frozen version (D66): data:b3:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}; every record is signed by an agent. A proof is the ordered list of record IDs from a birth record to the acting agent; examples always show a policy's proof. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation, lens, migration. Lenses and migrations have lens: and migration: IDs. Identity policies do not expire unless they say so.",
+   "decision": "Every stored or sent thing is a record: {\"type\": <schema ref of its kind>, …fields, \"after\", \"seq\", \"sig\"} (D90) in canonical CBOR (shown as JSON), decoded strictly; examples omit after and seq except where they matter (D61). IDs are typed: human:, coop:, agent:, data:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record without its signature; value: b3: is the hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). A birth record (genesis) holds a random nonce or the keys it creates, so no two share an ID. A record cannot contain its own hash, so inside a birth record the identities it creates are named by kind (“this human”, “this agent”); their IDs are b3(kind ‖ record). One genesis record can create a human or coop and its first agent. A schema is pinned as its data ID, @ and the hash of the frozen version (D66): data:b3:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}; every record is signed by an agent, except guardian acts, which are signed by a guardian key (D91). A proof is the ordered list of record IDs from a birth record to the acting agent; examples always show a policy's proof. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation, lens, migration. Lenses and migrations have lens: and migration: IDs. Identity policies do not expire unless they say so.",
    "why": "Slides and code use the same shapes and names, so the examples are drafts of the real schema, not illustrations.",
    "sources": [
     {
@@ -1016,14 +1016,14 @@
    "id": "D51",
    "title": "Only roles and policies",
    "status": "decided",
-   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role; policies on the coop say what that role may do, act and own for a home's members, only act for the homes of a street; govern goes to the coop's one guardian (D59).",
+   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role; policies on the coop say what that role may do, act and own for a home's members, only act for the homes of a street; the coop's guardian is its root (D91), and may give own to a role so its holders manage roles and policies.",
    "why": "One mechanism for everything: who is in which group (roles) and what that group may do (policies).",
    "supersedes": "membership as its own record kind",
    "sources": [],
    "slides": [
-    "identity-6",
-    "identity-8",
-    "identity-7"
+    "identity-7",
+    "identity-9",
+    "identity-8"
    ],
    "date": "2026-10-31"
   },
@@ -1154,7 +1154,7 @@
     "keys-8",
     "keys-9",
     "keys-11",
-    "identity-4",
+    "identity-5",
     "carry-3"
    ],
    "status": "decided",
@@ -1163,7 +1163,7 @@
   {
    "id": "D58",
    "title": "An agent has two parts: who it is, and what it may do",
-   "decision": "An agent is its own identity, owned by exactly one human or coop, with its own signer; on phones the signer is derived from the passkey, which is the single source of truth for now (stolen devices and recovery are out of scope). Owning an agent gives it nothing. What it may do comes only from policies on the identity it acts for, given by that identity: your phone gets act, own and govern on you; a coop's always-on server gets act on the coop only to carry one list. Act's one condition is data: a map from data ID to an ordinary Operations object (D56), conditions included: {\"act\": {\"data\": {\"data:b3:7Hq…#house-list\": {\"want\": {}, \"keep\": {}}}}}. Without data, act covers all of the owner's data. Agents are never in roles and never get data policies; data policies go to roles of humans and coops (D6, D44). A change or a read is allowed only if both layers allow it. A policy belongs to the identity that gave it, not to the agent that signed it; it ends only by that identity's ending or its expiry. The owner and its first agent are born together in one record. Acting for an identity is a chain of policies, one per hop: an agent acts for its owner; an identity acts for a coop through the coop's policy to a role that lists it; the chain is as long as needed (phone → you → home → street; home's server → home). Agent policies on an identity are written by that identity's guardian (D70).",
+   "decision": "An agent is its own identity, owned by exactly one human or coop, with its own signer; on phones the signer is derived from the passkey, which is the single source of truth for now (stolen devices and recovery are out of scope). Owning an agent gives it nothing. What it may do comes only from policies on the identity it acts for, given by that identity: your phone gets act and own on you; a coop's always-on server gets act on the coop only to carry one list. Act's one condition is data: a map from data ID to an ordinary Operations object (D56), conditions included: {\"act\": {\"data\": {\"data:b3:7Hq…#house-list\": {\"want\": {}, \"keep\": {}}}}}. Without data, act covers all of the owner's data. Agents are never in roles and never get data policies; data policies go to roles of humans and coops (D6, D44). A change or a read is allowed only if both layers allow it. A policy belongs to the identity that gave it, not to the agent that signed it; it ends only by that identity's ending or its expiry. The owner and its first agent are born together in one record. Acting for an identity is a chain of policies, one per hop: an agent acts for its owner; an identity acts for a coop through the coop's policy to a role that lists it; the chain is as long as needed (phone → you → home → street; home's server → home). Agent policies on an identity are written by that identity's guardian (D70).",
    "why": "Two clean layers: who speaks for an identity, and what an identity may do with data. The same two layers decide which keys an agent gets (D57).",
    "supersedes": "D46",
    "sources": [
@@ -1174,8 +1174,8 @@
    ],
    "slides": [
     "identity-2",
-    "identity-3",
     "identity-4",
+    "identity-5",
     "carry-3",
     "carry-4"
    ],
@@ -1185,7 +1185,7 @@
   {
    "id": "D59",
    "title": "One top: one owner per piece of data, one guardian per coop",
-   "decision": "Authority has exactly one top and flows only downward. A piece of data has one owner (D5). A coop has one guardian: its govern policy goes to a guardian role that holds exactly one identity; its members role gets act and own, one signature each (D49). Nobody can give more than it holds, and nobody can remove the one above it. When two holders below the top remove each other at the same moment, both removals stand and the top repairs, for example by adding one back; there is no seniority and no coin flip. The top cannot clash with itself because it is one. A guardian hands govern on before stepping down. Signature counts for govern come later as condition plugins.",
+   "decision": "Authority has exactly one top and flows only downward: a piece of data has one owner (D5), and every identity has one guardian (D91). Nobody can give more than it holds, and nobody below can touch the guardian. When two holders below the top remove each other at the same moment, both removals stand and the guardian repairs, for example by adding one back; there is no seniority and no coin flip. The top cannot clash with itself because it is one.",
    "why": "Without a total order, peers with equal power can remove each other at once and leave nobody, and with one signature any member could take a coop over. Keyhive's Keyline calls this mutual destruction in the root role; its mitigation is a single owner at the top, with every layer below repairable from above. Gnosis Safes avoid it with a blockchain's total order, which a local-first system does not have.",
    "sources": [
     {
@@ -1198,8 +1198,8 @@
     }
    ],
    "slides": [
-    "identity-7",
-    "identity-10",
+    "identity-8",
+    "identity-11",
     "check-7"
    ],
    "status": "decided",
@@ -1418,7 +1418,7 @@
    "title": "Joining by invite; agent epochs",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "A new agent joins by invite. An agent with govern writes an invite record into the identity's history: a one-time public key, a short expiry and exactly the operations the new agent gets, within its own. The one-time secret goes to the new device out of band (QR code or typed code). The new device makes its own signer and lock and signs its birth record, which names the invite and carries a second signature by the one-time key. That pair is the new agent's policy, exactly as granted: no other agent has to be online. An invite is single use: two births citing it are both invalid; the owner may end an unused invite. Every agent record carries rev (signer revision) and epoch (continuity epoch); a restored or reinstalled device writes an epoch record and starts a new epoch, so it never reuses a running number or a CRDT op ID.",
+   "decision": "A new agent joins by invite. The guardian, or an agent with own, writes an invite record into the identity's history: a one-time public key, a short expiry and exactly the operations the new agent gets, within its own. The one-time secret goes to the new device out of band (QR code or typed code). The new device makes its own signer and lock and signs its birth record, which names the invite and carries a second signature by the one-time key. That pair is the new agent's policy, exactly as granted: no other agent has to be online. An invite is single use: two births citing it are both invalid; the owner may end an unused invite. Every agent record carries rev (signer revision) and epoch (continuity epoch); a restored or reinstalled device writes an epoch record and starts a new epoch, so it never reuses a running number or a CRDT op ID.",
    "why": "Pairing needs no second device online and can't be widened by the new device; a copied code is worthless after one use or its expiry. An honest restore no longer looks like a lying signer.",
    "sources": [
     {
@@ -1436,16 +1436,16 @@
    ],
    "slides": [
     "identity-2",
-    "identity-3",
     "identity-4",
     "identity-5",
+    "identity-6",
     "net-3"
    ]
   },
   {
    "id": "D70",
    "title": "One guardian per identity, changed only by succession",
-   "status": "decided",
+   "status": "superseded",
    "date": "2026-10-31",
    "decision": "Every human and every coop has exactly one guardian, the one top of its authority, which alone holds govern on it. A human is its own guardian and acts as one through its own agents with govern (passkeys are the single source of truth for now). A coop's guardian is its guardian role, which always holds exactly one identity. A coop's guardian changes only by succession: the current guardian signs a new guardian role record naming its successor, which must list the previous one as seen. A guardian can't leave or be removed without naming a successor, so no coop ends up without one. If two guardian role records are concurrent (the guardian's own agents disagreed), neither takes effect until a record sees both. Agents have no guardian; their owner governs them. Below the guardian, concurrent removals both stand and the guardian repairs (D59). Several guardians acting by majority, with chained signatures, may come later. The guardian exercises govern through its own chain (your phone → you → the coop); a coop's own agents never hold govern on it.",
    "why": "Keeps one top, so no two equals can remove each other at once and a coop can never lock itself out, without signature counts or quorums yet. The word guardian says what the role is for: keeping the coop whole.",
@@ -1455,10 +1455,8 @@
      "url": "https://github.com/nextgraph-org/nextgraph-rs/blob/main/engine/repo/src/types.rs"
     }
    ],
-   "slides": [
-    "identity-7",
-    "identity-10"
-   ]
+   "slides": [],
+   "superseded_by": "D91"
   },
   {
    "id": "D71",
@@ -1594,7 +1592,7 @@
    "slides": [
     "policies-2",
     "end-2",
-    "identity-6"
+    "identity-7"
    ]
   },
   {
@@ -1919,6 +1917,33 @@
    "slides": [
     "schema-2",
     "schema-3"
+   ]
+  },
+  {
+   "id": "D91",
+   "title": "The guardian: every identity's root of trust",
+   "status": "decided",
+   "date": "2026-11-01",
+   "decision": "Every human and coop has exactly one guardian, its root of trust, kept outside the policy engine. A human's guardian is the ed25519 key PRF(passkey, \"theos/guardian\"), the same on every device the passkey syncs to and never stored; its agents' signers come from the same passkey with per-device salts (D31). A coop's guardian is exactly one identity, named in its birth record. Every policy on an identity must trace back to its guardian: signed by the guardian, or along a chain of own the guardian gave. own on an identity covers managing its roles, its agents' policies and its data's policies, within the holder's own. The one act reserved to the guardian is changing the guardian: a coop's guardian changes only by a guardian record the current guardian signs, naming its successor and listing the previous record as seen; a guardian can't leave or be removed without a successor, and two concurrent guardian records both fail until one sees the other. Guardian records are checked by the core verifier, like birth records; no policy, condition or plugin can widen, change or remove a guardian. govern is no longer an operation. Agents have no guardian; their owner's guardian stands behind them.",
+   "why": "One fixed top per identity, so no clash at the top and no lockout, while own still lets the guardian hand all day-to-day management to others. Keeping the root outside the engine makes it small enough to prove things about.",
+   "supersedes": "D70",
+   "sources": [
+    {
+     "label": "WebAuthn: PRF extension",
+     "url": "https://w3c.github.io/webauthn/#prf-extension"
+    },
+    {
+     "label": "Keyhive design: Keyline",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline/README.md"
+    }
+   ],
+   "slides": [
+    "identity-3",
+    "identity-4",
+    "identity-5",
+    "identity-6",
+    "identity-8",
+    "identity-11"
    ]
   }
  ]

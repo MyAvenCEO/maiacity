@@ -31,7 +31,7 @@
      ],
      "proposal": [
       "Every agent record header names its signer revision and a continuity epoch; a restored or reinstalled device starts a new epoch, so it never reuses a running number or op ID.",
-      "Invite records for pairing: a one-time key, an expiry and the agent policy it will create, written into your history so any of your agents with govern can answer."
+      "Invite records for pairing: a one-time key, an expiry and the agent policy it will create, written into your history so any of your agents can answer."
      ],
      "proposals": [
       "D69"
@@ -59,7 +59,7 @@
       "Gnosis Safe: k of n owners, ordered by a chain."
      ],
      "proposal": [
-      "Keep one top object (the guardian role); when signature counts arrive (D49), govern becomes k of n inside it, so the rule stays “one top”.",
+      "Keep one top object (the guardian role); when signature counts arrive (D49), the guardian becomes k of n, so the rule stays “one top”.",
       "A signed succession record: the guardian names the next guardian before leaving."
      ],
      "proposals": [
