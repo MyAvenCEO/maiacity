@@ -227,7 +227,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T10:20Z",
+   "at": "2026-11-01T10:05Z",
    "by": "authors/avenmaia",
    "what": "understood",
    "text": "Problem, evidence, whys to the root, truths, assumptions, risk and reuse written: aven.maia.city is served by v1's Caddy from avenDB's parked deploy, production's required checks came from avenDB's parked workflow, and theOS has no release of its own. Five questions for Samuel.",
@@ -244,7 +244,7 @@
    "task": "t2"
   },
   {
-   "at": "2026-11-01T10:20Z",
+   "at": "2026-11-01T10:05Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Understand written; five questions wait for Samuel.",
@@ -254,7 +254,7 @@
    "task": "t2"
   },
   {
-   "at": "2026-11-01T10:35Z",
+   "at": "2026-11-01T10:21Z",
    "by": "authors/samuel-andert",
    "what": "answer",
    "text": "Keep the Aven Peer, its relay and the vault's passkey as they are, in parallel, for now; avenOS stays nowhere; green is theOS's check inside the box; yes to the ruleset swap, with a guide; production deploys automatically.",
@@ -265,7 +265,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T10:35Z",
+   "at": "2026-11-01T10:21Z",
    "by": "authors/avenmaia",
    "what": "changed",
    "text": "Answers written on the five questions; assumptions updated (peer kept in parallel, avenOS nowhere, green defined, the deploy automatic); task t3 for Samuel with the ruleset steps.",
@@ -276,7 +276,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T10:40Z",
+   "at": "2026-11-01T10:21Z",
    "by": "authors/samuel-andert",
    "what": "answer",
    "text": "The deploy starts the moment a change lands in production.",
@@ -287,7 +287,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T10:45Z",
+   "at": "2026-11-01T10:24Z",
    "by": "authors/samuel-andert",
    "what": "observed",
    "text": "Screenshots of production's ruleset: Active, no bypass, deletions restricted, pull request and status checks required, force pushes blocked.",
@@ -298,7 +298,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T10:55Z",
+   "at": "2026-11-01T10:25Z",
    "by": "authors/samuel-andert",
    "what": "observed",
    "text": "Screenshot of the environment production: no reviewers, no wait timer, no branch restriction; secrets AVEN_PEER_GUARDIAN and MAIA_CITY_GUARDIAN_SECRET.",
@@ -309,7 +309,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T11:00Z",
+   "at": "2026-11-01T10:26Z",
    "by": "authors/samuel-andert",
    "what": "observed",
    "text": "Screenshots of the ruleset's required checks (Only from main, avenSANDBOX, from GitHub Actions), 0 approvals and merge commits only.",
@@ -320,7 +320,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T11:00Z",
+   "at": "2026-11-01T10:26Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Your reading part of t3 is done: production's ruleset and the environment are recorded. The edits wait for Gate B.",
@@ -330,7 +330,7 @@
    "task": "t3"
   },
   {
-   "at": "2026-11-01T11:05Z",
+   "at": "2026-11-01T10:33Z",
    "by": "authors/samuel-andert",
    "what": "changed",
    "text": "Limited the environment production to the branch production; added the required check 'theOS' to production's ruleset (any source). MaiaCityGuardian is legacy: leave it.",
@@ -339,7 +339,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T11:20Z",
+   "at": "2026-11-01T10:43Z",
    "by": "authors/avenmaia",
    "what": "answer",
    "text": "Questions 1 to 6 linked to D-56 to D-61 (merged from claude/avendb-architect at b979bafd6); D-60's 'by hand' differs from Samuel's words here, asked of avenMAIA.",
@@ -357,7 +357,7 @@
    ]
   },
   {
-   "at": "2026-11-01T11:20Z",
+   "at": "2026-11-01T10:43Z",
    "by": "authors/avenmaia",
    "what": "specified",
    "text": "Four options (one chosen: check, tag, switch the served folder), claims c1 to c5, the outcome, three checkpoints, four deferred, the mockup.",
@@ -368,7 +368,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T11:20Z",
+   "at": "2026-11-01T10:43Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Spec written.",
@@ -378,7 +378,7 @@
    "task": "t4"
   },
   {
-   "at": "2026-11-01T11:25Z",
+   "at": "2026-11-01T10:44Z",
    "by": "authors/avenmaia",
    "what": "answer",
    "text": "Question 5 now points at D-62 (the deploy starts by itself, superseding D-60 in part); c5 cites D-63 (the environment's branch rule and the ruleset's theOS check).",
@@ -392,7 +392,7 @@
    ]
   },
   {
-   "at": "2026-11-01T11:45Z",
+   "at": "2026-11-01T10:46Z",
    "by": "authors/avenmaia",
    "what": "review",
    "text": "Round 1 on 7d453502b: r1-paraphrase (1 Blocker, 7 Major, 4 Nit); r1-zoom-out (3 Major, 3 Nit). Not clean.",
@@ -405,7 +405,7 @@
    "task": "t5"
   },
   {
-   "at": "2026-11-01T11:45Z",
+   "at": "2026-11-01T10:46Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Round 1 run.",
@@ -415,7 +415,7 @@
    "task": "t5"
   },
   {
-   "at": "2026-11-01T11:55Z",
+   "at": "2026-11-01T10:46Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 2: all 18 findings fixed. Tags, release notes and the versioning checkpoint deleted (a build is named by its commit); the health step compares bytes; the check runs again on the push; the deploy secrets move into the environment; Samuel's swap ends checkpoint 1; nothing is pruned; the service worker's premise corrected; terms defined; the outcome has a window.",
@@ -429,7 +429,7 @@
    ]
   },
   {
-   "at": "2026-11-01T11:55Z",
+   "at": "2026-11-01T10:46Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Every finding answered; revision 2 written.",
@@ -439,7 +439,7 @@
    "task": "t12"
   },
   {
-   "at": "2026-11-01T11:55Z",
+   "at": "2026-11-01T10:46Z",
    "by": "authors/avenmaia",
    "what": "asked",
    "text": "Gate A: are the claims, assumptions, checkpoints, outcome and mockup what must be true?",
@@ -448,7 +448,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T12:05Z",
+   "at": "2026-11-01T10:50Z",
    "by": "authors/samuel-andert",
    "what": "answer",
    "text": "Keep avenSANDBOX: we still want it built and checked. Keep DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS where they are.",
@@ -459,7 +459,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T12:05Z",
+   "at": "2026-11-01T10:50Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 3: theOS's workflow reports 'avenSANDBOX' too (this commit's box published and working), so the ruleset keeps all three checks and only 'theOS' is pinned; the deploy secrets stay repository secrets, the risk written down; c5 is about the deploy job only.",
@@ -470,7 +470,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T12:10Z",
+   "at": "2026-11-01T10:52Z",
    "by": "authors/samuel-andert",
    "what": "changed",
    "text": "Set the source of 'theOS' in production's ruleset to GitHub Actions.",
@@ -479,7 +479,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T12:10Z",
+   "at": "2026-11-01T10:52Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Samuel's settings for AIP-5 are all in: the ruleset requires three checks from GitHub Actions; nothing is left for him in GitHub's settings.",
@@ -489,7 +489,7 @@
    "task": "t13"
   },
   {
-   "at": "2026-11-01T12:15Z",
+   "at": "2026-11-01T10:53Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Two stale assumptions deleted (two checks with avenSANDBOX leaving; Samuel's swap and secret move), the deploy's trigger assumption aligned with D-62, c3 needs both checks.",
@@ -565,7 +565,7 @@
       "text": "The optional tag pattern ??.??.??* does not match the tags actually made (@aven/os@26.10.31v6), so as written it would protect none of them."
      },
      {
-      "text": "Seen in Samuel's screenshots (1 Nov 10:45Z): a ruleset named production, Active, bypass list empty, targeting the branch production, with Restrict deletions, Require a pull request before merging, Require status checks to pass and Block force pushes on; everything else off. Not yet seen: the required checks' names and the pull request's approvals and merge methods (both under 'Show additional settings'), and the environment production."
+      "text": "Seen in Samuel's screenshots (1 Nov 10:24Z): a ruleset named production, Active, bypass list empty, targeting the branch production, with Restrict deletions, Require a pull request before merging, Require status checks to pass and Block force pushes on; everything else off. Not yet seen: the required checks' names and the pull request's approvals and merge methods (both under 'Show additional settings'), and the environment production."
      },
      {
       "text": "Seen in Samuel's screenshot of the environment production (1 Nov): no required reviewers, no wait timer, administrators may bypass, Deployment branches and tags 'No restriction'. Its environment secrets are AVEN_PEER_GUARDIAN and MAIA_CITY_GUARDIAN_SECRET, both updated two days ago; the Hetzner and deploy secrets are not among them, so they are repository secrets."
@@ -577,7 +577,7 @@
       "text": "Seen in Samuel's screenshots of the additional settings (1 Nov): required status checks 'Only from main' and 'avenSANDBOX', both from GitHub Actions; branches need not be up to date; 0 required approvals; allowed merge method Merge only. production's ruleset is set as aven/DB2/SANDBOX.md wrote it, so no pull request to production can merge until a workflow reports those two checks again."
      },
      {
-      "text": "Changed by Samuel (1 Nov ~11:05Z): the environment production now allows deployments from the branch production only (1 branch, 0 tags); production's ruleset now also requires a check named 'theOS', from any source, beside 'Only from main' and 'avenSANDBOX'. Until workflows report all three, nothing merges into production."
+      "text": "Changed by Samuel (1 Nov 10:33Z): the environment production now allows deployments from the branch production only (1 branch, 0 tags); production's ruleset now also requires a check named 'theOS', from any source, beside 'Only from main' and 'avenSANDBOX'. Until workflows report all three, nothing merges into production."
      }
     ]
    },
@@ -629,7 +629,7 @@
    "Terms: v1 is maiaCITY's earlier app, which runs on the Hetzner server maia-city with the Caddy container maia-city-caddy; that Caddy serves /opt/maia-city/site on the server as /srv/site, so site/aven/current means /opt/maia-city/site/aven/current. The goal pull request is the repository's one pull request per goal into main (the repository's CLAUDE.md).",
    "avenSANDBOX stays a required check on production (Samuel, 1 Nov): theOS's workflow reports it, as the proof that the box of the commit released is built and works. The box itself is built and published by AIP-2's image workflow, on every push that changes theOS/sandbox/box, whatever production does.",
    "DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS stay repository secrets (Samuel, 1 Nov). Accepted: a workflow pushed on any branch by someone with write access could read them; the environment's branch rule guards theOS's deploy job, not those secrets.",
-   "production's ruleset is final for AIP-5 (Samuel, 1 Nov ~12:10Z): it requires 'Only from main', 'avenSANDBOX' and 'theOS', all three from GitHub Actions; theOS's workflow must report jobs with exactly these names."
+   "production's ruleset is final for AIP-5 (Samuel, 1 Nov 10:52Z): it requires 'Only from main', 'avenSANDBOX' and 'theOS', all three from GitHub Actions; theOS's workflow must report jobs with exactly these names."
   ],
   "risk": "Can be undone, as long as the release touches only the served folder: every build stays on the server beside avenOS 26.10.31v6, and the undo switches site/aven/current back (c3). The undo is tried before it counts. Anything that touches the Aven Peer's key, its bucket, the passkeys' RP ID or the browsers' storage can't be undone and stays out of this intent (D-56)."
  },
