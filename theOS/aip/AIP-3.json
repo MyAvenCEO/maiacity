@@ -112,6 +112,15 @@
     "Keep it as AIP-3's checkpoint 4"
    ],
    "answered": "decisions/D-55"
+  },
+  {
+   "q": "AIP-3's spec review ran three rounds (r3, r4, r5) without a clean one; round 5 left 8 Major findings, each with a proposed answer in r5-paraphrase and r5-zoom-out. One of them moves 'the only door' (D-46) from checkpoint 1 to checkpoint 2, so the first slice is the read verbs (brain prime, holds, get) and needs nothing from AIP-1. What next?",
+   "options": [
+    "Apply the proposed answers, the door from checkpoint 2, and run one more round (recommended: most are wording and order, one changes the merge rule)",
+    "Apply them and go to Gate A without another round",
+    "Build with them open",
+    "Back to Understand"
+   ]
   }
  ],
  "problem": {
@@ -1239,6 +1248,29 @@
     "decisions/D-54",
     "decisions/D-55"
    ]
+  },
+  {
+   "at": "2026-11-01T12:00Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Round 5 on revision 8: r5-paraphrase (6 Major, 5 Nit); r5-zoom-out (3 Major, 3 Nit). Not clean; the third round of this thread, so patching stops: every finding has a proposed answer, and you get question 14.",
+   "how": "fresh subagents with the prompts avenCEO/checkers/paraphrase and avenCEO/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-3/r5-paraphrase",
+    "aip/AIP-3/r5-zoom-out"
+   ],
+   "reads": [],
+   "task": "t22"
+  },
+  {
+   "at": "2026-11-01T12:00Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Round 5 run and recorded; the stop question asked.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t22"
   }
  ],
  "reviews": [
@@ -1249,7 +1281,9 @@
   "aip/AIP-3/r3-paraphrase",
   "aip/AIP-3/r3-zoom-out",
   "aip/AIP-3/r4-paraphrase",
-  "aip/AIP-3/r4-zoom-out"
+  "aip/AIP-3/r4-zoom-out",
+  "aip/AIP-3/r5-paraphrase",
+  "aip/AIP-3/r5-zoom-out"
  ],
  "source": {
   "type": "idea",
@@ -1384,6 +1418,12 @@
    "what": "Spec review round 5",
    "step": 2,
    "who": "authors/avenmaia"
+  },
+  {
+   "id": "t23",
+   "what": "Answer: after three rounds without a clean one, what next (question 14)",
+   "step": 2,
+   "who": "authors/samuel-andert"
   }
  ],
  "protocol": {
