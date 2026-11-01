@@ -5,10 +5,10 @@
  "from": "2026-10-31",
  "to": "2026-11-01",
  "commits": {
-  "theOS": 68,
-  "note": "commits touching theOS/ when this doc was written"
+  "theOS": 189,
+  "note": "commits touching theOS/ from 31 October to the end of this session, the intents' threads included"
  },
- "summary": "The theOS explainer (13 chapters with Architecture panels), the security audits and research that became the 91 current intents, then avenCEO: from a flow definition to aip-31df, built with its own steps.",
+ "summary": "The theOS explainer (13 chapters with Architecture panels), the security audits and research that became the 91 current intents, then avenCEO: from a flow definition to aip-31df, built with its own steps. On 1 November each intent got its own Claude Code thread, with avenMAIA orchestrating: aip-31df built theOS's check (a crawl of every page state, green on 1,266 states); aip-6fb1 brought avenSANDBOX into theOS and ran the check inside its image; aip-836d gave brain its read verbs and moved every doc into brain/ under a flat hash id, shown by id and title; aip-59ad specified theOS's release and passed Gate A; aip-a195 was dropped. A clean cut was set (d-8912), then Samuel chose to finish aip-31df and aip-6fb1 in this session (d-93eb); aip-836d and aip-59ad stay parked.",
  "asks": [
   {
    "about": "theOS explainer",
@@ -49,6 +49,26 @@
    "about": "memory",
    "quote": "We document everything there as our memory, each thing in its own doc.",
    "did": "This: one JSON doc per thing in theOS/."
+  },
+  {
+   "about": "threads",
+   "quote": "Each intent becomes its own Claude Code thread, and this session, avenMAIA, orchestrates between them.",
+   "did": "Five intent threads; avenMAIA records decisions, relays questions and merges their branches."
+  },
+  {
+   "about": "brain",
+   "quote": "brain is the single source of truth: one folder, one door, every doc referenced by its hash and its title.",
+   "did": "aip-836d's checkpoint 1 and its migration: 332 docs under flat hash ids in brain/."
+  },
+  {
+   "about": "checks",
+   "quote": "Start simpler: check the page layout states, one per view type; we can fine-tune later.",
+   "did": "theOS's check: every reachable state at phone and laptop size, buttons pressed once per view type, about a minute."
+  },
+  {
+   "about": "wrap up",
+   "quote": "What is the biggest blocker now, and can we wrap it up?",
+   "did": "A clean cut: checkpoint 1 of aip-31df landed, the migration ran, every open intent parked."
   }
  ],
  "decisions": [
@@ -130,7 +150,9 @@
   "d-4e7c",
   "d-19fb",
   "d-8912",
-  "d-5afb"
+  "d-5afb",
+  "d-a1af",
+  "d-93eb"
  ],
  "corrections": [
   {
@@ -191,5 +213,23 @@
   "aip-6219",
   "aip-55e6",
   "aip-c455"
+ ],
+ "parked": [
+  {
+   "intent": "aip-836d",
+   "next": "Tasks t28 to t30 (names left from the migration, brain's app title, nested ids in titles), then the rest of checkpoint 2, then checkpoints 3 and 4 (the MCP server)."
+  },
+  {
+   "intent": "aip-59ad",
+   "next": "Checkpoint 1 (the release workflow's checks), once aip-31df's checkpoint 1, aip-6fb1's checkpoint 4 and the goal pull request to main are in."
+  },
+  {
+   "intent": "aip-f4e2",
+   "next": "Back to Specify with round 6's findings; not started."
+  },
+  {
+   "intent": "aip-f663 · aip-6219 · aip-55e6 · aip-c455",
+   "next": "Not started; aip-6219 (events stamped by a machine) first, built into brain's write verbs."
+  }
  ]
 }
