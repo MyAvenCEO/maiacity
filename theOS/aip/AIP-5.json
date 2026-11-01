@@ -72,8 +72,8 @@
     "By hand as before, from any branch"
    ],
    "answer": "production starts the deploy automatically, the moment a change is merged into production and its release is green.",
-   "note": "The record shows avenDEPLOY started by hand each time (workflow_dispatch by Samuel; run 20 began 38 s after the release). Read as: every green release from production deploys by itself, which is a change from avendeploy.yml. Samuel's own words in this thread (\"production automatically starts the deploy as today\"; \"the moment it's triggered into prod\") say the deploy starts by itself; D-60 says \"by hand, as before\". avenMAIA was asked (1 Nov 10:50Z) for a decision that settles it; this spec follows Samuel's words: automatic, only from production.",
-   "answered": "decisions/D-60"
+   "note": "Answered first as D-60 (by hand); D-62 supersedes it in part: the deploy starts by itself the moment a change lands in production and its release is green, only from production.",
+   "answered": "decisions/D-62"
   },
   {
    "q": "The environment production holds a secret MAIA_CITY_GUARDIAN_SECRET, which no file in the repository uses, while PRODUCTION.md says MaiaCityGuardian's secret stays offline with its holder. What is it, and should it stay there once production deploys by itself?",
@@ -359,6 +359,20 @@
    "writes": [],
    "reads": [],
    "task": "t4"
+  },
+  {
+   "at": "2026-11-01T11:25Z",
+   "by": "authors/avenmaia",
+   "what": "answer",
+   "text": "Question 5 now points at D-62 (the deploy starts by itself, superseding D-60 in part); c5 cites D-63 (the environment's branch rule and the ruleset's theOS check).",
+   "how": "by hand, AIP-5's thread, after merging claude/avendb-architect",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": [
+    "decisions/D-62",
+    "decisions/D-63"
+   ]
   }
  ],
  "problem": {
@@ -582,7 +596,7 @@
    "id": "c5",
    "promise": "The deploy starts only after a push to production whose release is green, runs in the environment production, which allows only the branch production, and reads only DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS; it prints no secret.",
    "fails": "A push to another branch deploys, a red release deploys, or the job reads a secret it does not need (MAIA_CITY_GUARDIAN_SECRET, D-61; the Hetzner keys).",
-   "check": "Read off the workflow file by a script in theOS's check: the deploy job's trigger, its 'needs' on the release and the check, its environment, and the secrets it names (a list compared exactly). The environment's branch rule was set by Samuel on 1 Nov.",
+   "check": "Read off the workflow file by a script in theOS's check: the deploy job's trigger, its 'needs' on the release and the check, its environment, and the secrets it names (a list compared exactly). The environment's branch rule and the ruleset's 'theOS' check were set by Samuel on 1 Nov (D-63); the trigger follows D-62.",
    "kind": "mechanical",
    "result": "open"
   }
