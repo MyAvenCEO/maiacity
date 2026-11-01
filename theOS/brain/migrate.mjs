@@ -6,8 +6,8 @@
 // reference, paths and old names in text alike, is rewritten as the id; review docs' prompts stay verbatim and
 // OLD-AIP-n is legacy and kept. It writes brain/ids.json (id to file, the definition's id, each folder's index) and
 // brain/renames.json (each old name and path to its id; the migration commit's SHA is added after committing), moves
-// the Sources app to brain/ and points the dashboard at it. Decisions and intents keep n, so the apps and brain still
-// show them as D-n and AIP-n (D-75). Only JSON docs and those two app files are touched.
+// the Sources app to brain/ and points the dashboard at it.
+// Every doc is shown by its id and its title (D-76): ui/wiki.js does that for the apps and brain. Only JSON docs and those two app files are touched.
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, relative, dirname, resolve } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
@@ -42,7 +42,8 @@ export function migrate(root, { seed } = {}) {
   if (docs.some((x) => /^[a-z]+-[0-9a-f]{4,}$/.test(x.path.split('/').pop()))) throw new Error('already migrated: a doc is already named by a hash id');
 
   // 1. ids
-  const next = hexer(seed), taken = new Set();
+  // an id never takes a string that already looks like one somewhere in the docs (an example in a text, say)
+  const next = hexer(seed), taken = new Set(docs.flatMap((x) => JSON.stringify(x.doc).match(/(?<![\w/-])[a-z]+-[0-9a-f]{4,}(?![\w-])/g) || []));
   for (const x of docs) {
     const prefix = PREFIX[x.doc.type] || String(x.doc.type || 'doc').slice(0, 3).toLowerCase();
     let id, h = next(), len = 4;
@@ -85,9 +86,6 @@ export function migrate(root, { seed } = {}) {
     const dest = BRAIN[folder] || BRAIN[top] || (top === 'aip' ? 'aip' : folder);
     const doc = rewrite(x.doc);
     doc.id = x.id;
-    // decisions keep n; an intent gets n from AIP-n, so both are still named D-n and AIP-n (D-75)
-    const m = /^AIP-(\d+)$/.exec(x.doc.id || '');
-    if (x.doc.type === 'intent' && m && doc.n == null) doc.n = +m[1];
     ids[x.id] = `${dest}/${x.id}`;
     if (x.doc.type === 'index') index[folder] = x.id;
     if (x.path === 'avenCEO/avenCEO') rootId = x.id;
@@ -107,7 +105,7 @@ export function migrate(root, { seed } = {}) {
   // 5. the maps brain and the apps read
   mkdirSync(join(root, 'brain'), { recursive: true });
   writeFileSync(join(root, 'brain', 'ids.json'), `${JSON.stringify({ root: rootId, index, ids }, null, 1)}\n`);
-  writeFileSync(join(root, 'brain', 'renames.json'), `${JSON.stringify({ what: 'Every old name and path of a doc, and the hash id it was renamed to (AIP-3, c12). commit is the migration commit: the one commit allowed to rewrite history (c2).', commit: null, names }, null, 1)}\n`);
+  writeFileSync(join(root, 'brain', 'renames.json'), `${JSON.stringify({ what: 'Every old name and path of a doc, and the hash id it was renamed to (the brain migration, c12). commit is the migration commit: the one commit allowed to rewrite history (c2).', commit: null, names }, null, 1)}\n`);
 
   // 6. the Sources app becomes brain's app; the dashboard points at it and reads the indexes through ids.json
   for (const f of ['index.html', 'app.js']) if (existsSync(join(root, 'sources', f))) renameSync(join(root, 'sources', f), join(root, 'brain', f));

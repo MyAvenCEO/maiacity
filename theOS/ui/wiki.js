@@ -32,23 +32,30 @@ const W = {
   srcApp() { return this.map ? 'brain' : 'sources'; },
   appOf(ref) { const f = this.file(ref); return f.startsWith('sources/') || f.startsWith('brain/sources/') ? this.srcApp() : 'avenCEO'; },
   href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/index.html#${path}`; },
-  // What people see is a name, never a hash id (D-75): a decision is D-n, an intent AIP-n, any other doc its title, with
-  // every id inside it named too. Links and stored text keep the id.
+  // What people see (D-76): a doc reads as its id and its title, "aip-69af · brain: theOS's memory", and so does an id
+  // inside text. Inside a title, a second level of ids is shown by title alone, so names stay readable. Links and
+  // stored text keep the bare id. Before the migration the id is today's (D-12, AIP-3, the last part of a path).
   all: null, // the docs of the last crawl, to name ids inside text
+  idOf(d, ref) { return this.isId(ref) ? ref : d?.id && !String(d.id).includes('/') ? d.id : String(ref ?? d?.id ?? '').split('/').pop(); },
+  title(d, depth = 0) {
+    if (!d) return '';
+    // docs without a title are titled after what they belong to
+    const of = (r) => this.title(this.all?.get(r), depth + 1) || r;
+    if (d.type === 'review' && d.intent && !d.title) return `${d.checkpoint ? `checkpoint ${d.checkpoint}` : `round ${d.round}`} ${d.lens || 'review'} of ${of(d.intent)}`;
+    if (d.type === 'research' && d.intent && !d.title) return `research for ${of(d.intent)}`;
+    if (d.type === 'session' && !d.title && d.from) return `session ${d.from}${d.to && d.to !== d.from ? ` to ${d.to}` : ''}`;
+    return this.named(d.title || (d.type === 'decision' ? d.means : '') || d.name || d.word || d.cue || '', depth + 1);
+  },
   name(d, ref, depth = 0) {
-    if (!d) return String(ref ?? '').split('/').pop();
-    if (d.type === 'decision' && d.n != null) return `D-${d.n}`;
-    if (d.type === 'intent') return d.n != null ? `AIP-${d.n}` : d.id;
-    // docs without a title are named after what they belong to
-    const of = (r) => this.name(this.all?.get(r), r, depth + 1);
-    if (d.type === 'review' && d.intent && !d.title) return `${of(d.intent)} ${d.checkpoint ? `checkpoint ${d.checkpoint}` : `round ${d.round}`} ${d.lens || 'review'}`;
-    if (d.type === 'research' && d.intent && !d.title) return `${of(d.intent)} research`;
-    if (d.type === 'session' && !d.title && d.from) return `Session ${d.from}${d.to && d.to !== d.from ? ` to ${d.to}` : ''}`;
-    return this.named(d.title || d.name || d.word || d.cue || d.id, depth);
+    const id = this.idOf(d, ref), t = this.title(d, depth);
+    return t && t !== id ? `${id} · ${t}` : id;
   },
   named(t, depth = 0) {
-    // depth stops a title that names a doc whose title names it back
-    return String(t ?? '').replace(/(?<![\w/-])[a-z]+-[0-9a-f]{4,}(?![\w-])/g, (m) => (this.isId(m) && depth < 3 ? this.name(this.all?.get(m), m, depth + 1) : m));
+    return String(t ?? '').replace(/(?<![\w/-])[a-z]+-[0-9a-f]{4,}(?![\w-])/g, (m) => {
+      if (!this.isId(m) || depth > 4) return m;
+      const d = this.all?.get(m);
+      return depth < 2 ? this.name(d, m, depth + 1) : this.title(d, depth + 1) || m;
+    });
   },
   label(d, path) { return this.name(d, path); },
   // all docs reachable from the starting paths, and who points at whom

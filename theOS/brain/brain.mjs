@@ -49,19 +49,19 @@ const Wof = (docs) => docs.W || wiki(THEOS);
 // Values made inside ui/wiki.js belong to its own JavaScript realm; answers are copied out as plain data.
 const plain = (x) => JSON.parse(JSON.stringify(x));
 const typesIn = (docs) => [...new Set([...docs.values()].map((d) => d.type))].sort();
-// What people see (D-75): a decision as D-n, an intent as AIP-n, every id inside text by its name.
-const titleOf = (docs, d) => Wof(docs).named(d.title || d.word || d.name || d.cue || d.id);
+// What people see (D-76): a doc as its id and its title, and every id inside text the same way (ui/wiki.js).
+const titleOf = (docs, d) => Wof(docs).title(d);
 
 function holdsOf(docs, path) { return Wof(docs).holds(docs, path); }
 
-// brain holds <type>: the docs of a type that hold now, wholly or in part. Decisions newest first, the rest by title.
+// brain holds <type>: the docs of a type that hold now, wholly or in part. Newest first (by at, then n), the rest by title.
 export function holds(docs, type) {
   const types = typesIn(docs);
   if (!types.includes(type) || type === 'index') throw new BrainError('unknown_type', `a type is one of: ${types.filter((t) => t !== 'index').join(', ')}`);
   const xs = [...docs].filter(([, d]) => d.type === type)
-    .map(([p, d]) => ({ id: p, name: Wof(docs).name(d, p), title: titleOf(docs, d), holds: holdsOf(docs, p), n: d.n }))
+    .map(([p, d]) => ({ id: p, name: Wof(docs).name(d, p), title: titleOf(docs, d), holds: holdsOf(docs, p), n: d.n, at: d.at || '' }))
     .filter((x) => x.holds !== 'superseded')
-    .sort((a, b) => (b.n ?? 0) - (a.n ?? 0) || a.title.localeCompare(b.title));
+    .sort((a, b) => b.at.localeCompare(a.at) || (b.n ?? 0) - (a.n ?? 0) || a.title.localeCompare(b.title));
   return plain(xs.map(({ id, name, title, holds: h }) => ({ id, name, title, holds: h })));
 }
 
@@ -111,7 +111,7 @@ export function get(docs, ref) {
 
 // The command line: brain <verb> [args] [--json] [--root <theOS folder>].
 function text(verb, out) {
-  const line = (x) => `- ${x.name === x.title ? x.title : `${x.name} · ${x.title}`}${x.holds === 'holds in part' ? ' (holds in part)' : ''}`;
+  const line = (x) => `- ${x.name}${x.holds === 'holds in part' ? ' (holds in part)' : ''}`;
   if (verb === 'prime') {
     const w = out.waits;
     return [

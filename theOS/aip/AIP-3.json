@@ -1556,6 +1556,20 @@
     "decisions/D-75"
    ],
    "task": "t7"
+  },
+  {
+   "at": "2026-11-01T11:36Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "After Gate A, D-76 (superseding D-75): every doc is shown as its hash id and its title, decisions and intents included; no D-n or AIP-n numbers. W.name gives 'id · title', an id inside text reads the same way (inside a title, a second level by title alone); docs without a title are titled after what they belong to; brain's answers carry name and title and sort by time; the migration no longer keeps n and never mints an id that already appears in a text. Scratch run on the real tree: 326 docs, no old name; one dangling id, the made-up example in D-76's own text. In the apps after the migration: no bare id and no D-n or AIP-n in the visible text of 16 pages (OLD-AIP-n, legacy, kept), no console error. 11 of 11 tests.",
+   "how": "by the AIP-3 thread, from D-76; the scratch run and the apps in Chromium",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [
+    "decisions/D-76"
+   ],
+   "task": "t7"
   }
  ],
  "reviews": [
@@ -1787,6 +1801,6 @@
    "No commits by brain, and no version guard on edit yet: each thread writes its own branch, so clashes show at merge."
   ],
   "layout": "brain/ holds brain's program (brain.mjs, test/), ids.json, renames.json, its app (index.html, app.js: today's Sources app, renamed brain) and every doc brain keeps, in folders by type: brain/sources, brain/decisions, brain/sessions, brain/terms, brain/lessons, brain/metrics, brain/authors. aip/ (the intents) and avenCEO/ (the harness) keep their folders; their docs get ids too. Folders are only where files sit; no link names one.",
-  "ids": "Every doc, intents and avenCEO's docs included, is referenced by its id alone, flat, never by a path: a type prefix and random hex (d- and 4 hex characters for a decision, aip- for an intent, src- for a source), unique across theOS. A link is any string that is an id. brain index writes theOS/brain/ids.json, the map from id to file, which brain and the static apps read, so a doc can move between folders without any link changing. What people see is a name, never the hash (D-75): a decision is D-n and an intent AIP-n (both keep n; avenMAIA gives the next n to a new one), any other doc its title, or for a review, research or session what it belongs to; every id inside text is shown by its name. ui/wiki.js names them (W.name, W.named), for the apps and for brain."
+  "ids": "Every doc, intents and avenCEO's docs included, is referenced by its id alone, flat, never by a path: a type prefix and random hex (d- and 4 hex characters for a decision, aip- for an intent, src- for a source), unique across theOS. A link is any string that is an id. brain index writes theOS/brain/ids.json, the map from id to file, which brain and the static apps read, so a doc can move between folders without any link changing. Wherever a doc is shown, in the apps, in brain's answers and in text, it reads as its id and its title, \"aip-<hex> · brain: theOS's memory\" (D-76); no D-n or AIP-n numbers. New decisions and intents get hash ids like every other doc and are ordered by time. ui/wiki.js does the naming (W.name, W.title, W.named), for the apps and for brain."
  }
 }
