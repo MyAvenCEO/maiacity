@@ -3,7 +3,7 @@
  "id": "AIP-4",
  "title": "A Claude Code mod as theOS's and avenCEO's interface",
  "kind": "avenCEO",
- "note": "Understood: Claude Code has thread state and a mod that can draw, but only locally; nothing joins intents and threads today. Next: Samuel chooses where avenMAIA lives (local with the mod, cloud, or Projects), then Specify.",
+ "note": "Dropped after Understand (Samuel, 1 Nov 2026): no mod for now. The research stays in aip/AIP-4/research for a later intent.",
  "problem": {
   "who": [
    "Samuel, the one person who decides: he gives meaning at Gate A and judges experience at Gate B, from the Mac and from the phone.",
@@ -190,6 +190,28 @@
    "writes": [],
    "reads": [],
    "task": "t1"
+  },
+  {
+   "at": "2026-11-01T10:15Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Drop the mod for now, and close AIP-4.",
+   "how": "in chat in AIP-4's thread, your words polished; the decision doc is avenMAIA's to write",
+   "writes": [],
+   "reads": [
+    "aip/AIP-4/research"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:15Z",
+   "by": "authors/avenmaia",
+   "what": "dropped",
+   "text": "Closed after Understand, as the Understand step allows (\"otherwise dropped, with the reason\"). Reason: Samuel drops the mod for now. Nothing was specified or built.",
+   "how": "AIP-4's thread (session_01E9zxn5CaDAnqcnQumYAeLK), a cloud session of avenMAIA; by hand",
+   "writes": [],
+   "reads": [
+    "avenCEO/steps/1-understand"
+   ]
   }
  ],
  "reviews": [],
