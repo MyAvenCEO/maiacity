@@ -66,16 +66,10 @@
    "file": "chapters/carry.json"
   },
   {
-   "id": "decisions",
-   "title": "theDECISIONS",
-   "file": "theDECISIONS.json",
-   "kind": "decisions"
-  },
-  {
-   "id": "audit",
-   "title": "theAUDIT",
-   "file": "theAUDIT.json",
-   "kind": "audit"
+   "id": "intents",
+   "title": "theINTENTS",
+   "file": "theINTENTS.json",
+   "kind": "intents"
   }
  ]
 }

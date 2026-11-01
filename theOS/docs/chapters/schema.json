@@ -66,7 +66,7 @@
      }
     }
    },
-   "deep": "Schemas are written in JSON Schema and edited as a Loro Doc like any other data, so they sync, merge and carry policies. Each published version is frozen: its canonical CBOR is hashed, and that frozen version travels with every piece of data that pins it (D66)."
+   "deep": "Schemas are written in JSON Schema and edited as a Loro Doc like any other data, so they sync, merge and carry policies. Each published version is frozen: its canonical CBOR is hashed, and that frozen version travels with every piece of data that pins it (AIP-66)."
   },
   {
    "title": "Even records follow schemas.",
@@ -81,7 +81,7 @@
      "…": "…"
     }
    },
-   "deep": "The engine carries one root manifest: the meta-schema and every record schema, each as data ID @ version. It trusts exactly those hashes, never a name. A new engine release ships a new manifest, with lenses from the old record versions (D67, D90).",
+   "deep": "The engine carries one root manifest: the meta-schema and every record schema, each as data ID @ version. It trusts exactly those hashes, never a name. A new engine release ships a new manifest, with lenses from the old record versions (AIP-67, AIP-90).",
    "spec": {
     "summary": "The bootstrap: what checks the first schema. A fixed manifest of root schema versions, with the meta-schema validating itself.",
     "records": [
@@ -126,10 +126,10 @@
      }
     ],
     "decisions": [
-     "D50",
-     "D66",
-     "D67",
-     "D90"
+     "AIP-50",
+     "AIP-66",
+     "AIP-67",
+     "AIP-90"
     ]
    }
   },
@@ -141,7 +141,7 @@
     "@": "b3:1f0…: BLAKE3 of this version as canonical CBOR",
     "carried": "value:b3:1f0…#todo-list-v1"
    },
-   "deep": "A version is the BLAKE3 hash of the schema's canonical CBOR, not of the Loro Doc's state, which has no content hash. The frozen version is a Value carried with the data (D66)."
+   "deep": "A version is the BLAKE3 hash of the schema's canonical CBOR, not of the Loro Doc's state, which has no content hash. The frozen version is a Value carried with the data (AIP-66)."
   },
   {
    "title": "Every change must fit.",
@@ -155,7 +155,7 @@
     "schema_says": "boolean",
     "result": "dropped"
    },
-   "deep": "Validation is deterministic, so every peer reaches the same verdict. Each change is checked on its own against the version it names (D63); rules that span the merged list are settled when the view is built. A change naming a version or a lens a device doesn't have yet waits until it arrives."
+   "deep": "Validation is deterministic, so every peer reaches the same verdict. Each change is checked on its own against the version it names (AIP-63); rules that span the merged list are settled when the view is built. A change naming a version or a lens a device doesn't have yet waits until it arrives."
   },
   {
    "title": "A new version comes with a lens.",
@@ -185,7 +185,7 @@
      }
     ]
    },
-   "deep": "Operations: rename, add (with a default), remove (with a value for old readers), copy, convert, wrap, hoist. Every lens runs both ways, is named by its hash, and is refused if ambiguous (D67). After Ink & Switch's Cambria and Jazz's lenses."
+   "deep": "Operations: rename, add (with a default), remove (with a value for old readers), copy, convert, wrap, hoist. Every lens runs both ways, is named by its hash, and is refused if ambiguous (AIP-67). After Ink & Switch's Cambria and Jazz's lenses."
   },
   {
    "title": "Moving on rewrites nothing.",
@@ -207,7 +207,7 @@
      "value": "…"
     }
    },
-   "deep": "Moving the pin is an ownership act, like writing policies (D30). The list then accepts changes in every version along its lenses; the owner can retire an old version later, like ending a policy. If two of the owner's agents migrate at once, both stand and the list stays readable in both versions until the owner writes one version with a lens from each (D67)."
+   "deep": "Moving the pin is an ownership act, like writing policies (AIP-30). The list then accepts changes in every version along its lenses; the owner can retire an old version later, like ending a policy. If two of the owner's agents migrate at once, both stand and the list stays readable in both versions until the owner writes one version with a lens from each (AIP-67)."
   },
   {
    "title": "Old and new phones write together.",
@@ -229,7 +229,7 @@
      "priority": 2
     }
    },
-   "deep": "Each version maps its paths to stored keys: a rename keeps the key, an added field gets a new one, a removed field's key stays, so old phones never erase new fields. Merging happens first; then each device projects the merged state along the lens path (the shortest, ties to the smaller lens ID), so every device sees the same thing in the same version (D67)."
+   "deep": "Each version maps its paths to stored keys: a rename keeps the key, an added field gets a new one, a removed field's key stays, so old phones never erase new fields. Merging happens first; then each device projects the merged state along the lens path (the shortest, ties to the smaller lens ID), so every device sees the same thing in the same version (AIP-67)."
   },
   {
    "title": "Breaking changes go through a branch.",
@@ -240,7 +240,7 @@
     "merge back as one change",
     "every device repeats and compares"
    ],
-   "deep": "On Loro: fork_at(F) at the frontier F of the valid view, apply the lens, take the diff; then on the main Doc check out F, edit detached under the derived peer ID (D63), apply the diff and commit one change that depends on F. Ops made on the fork are never signed. Peers verify by repeating the rewrite at F and dropping a mismatch. Old-version changes that never saw it are re-applied by their authors (D62, D68). A total break starts a successor instead (next slide)."
+   "deep": "On Loro: fork_at(F) at the frontier F of the valid view, apply the lens, take the diff; then on the main Doc check out F, edit detached under the derived peer ID (AIP-63), apply the diff and commit one change that depends on F. Ops made on the fork are never signed. Peers verify by repeating the rewrite at F and dropping a mismatch. Old-version changes that never saw it are re-applied by their authors (AIP-62, AIP-68). A total break starts a successor instead (next slide)."
   },
   {
    "title": "When nothing fits, the list gets a successor.",
@@ -259,7 +259,7 @@
      "value": "…"
     }
    },
-   "deep": "Both sides must agree: the new birth record names the predecessor and frontier, and the owner's link on the old data names the successor. Same owner for now (no hand-over, D54). Every peer checks that the new data starts from the old valid view at that frontier, through the lens if the schema changed (D71).",
+   "deep": "Both sides must agree: the new birth record names the predecessor and frontier, and the owner's link on the old data names the successor. Same owner for now (no hand-over, AIP-54). Every peer checks that the new data starts from the old valid view at that frontier, through the lens if the schema changed (AIP-71).",
    "spec": {
     "summary": "A two-way link that lets data continue as new data, verifiable by every peer, without moving ownership.",
     "records": [
@@ -327,7 +327,7 @@
      },
      {
       "id": "successor.same_owner",
-      "text": "Old and new data have the same owner; succession never moves ownership (D54)."
+      "text": "Old and new data have the same owner; succession never moves ownership (AIP-54)."
      },
      {
       "id": "successor.unique",
@@ -343,7 +343,7 @@
      },
      {
       "id": "successor.late_writes",
-      "text": "Changes on the old data that didn't list the successor record go back to their authors as a conflict view, to be applied again on the successor (D62)."
+      "text": "Changes on the old data that didn't list the successor record go back to their authors as a conflict view, to be applied again on the successor (AIP-62)."
      },
      {
       "id": "successor.forward",
@@ -351,12 +351,12 @@
      }
     ],
     "decisions": [
-     "D54",
-     "D62",
-     "D66",
-     "D67",
-     "D68",
-     "D71"
+     "AIP-54",
+     "AIP-62",
+     "AIP-66",
+     "AIP-67",
+     "AIP-68",
+     "AIP-71"
     ]
    }
   },
@@ -380,7 +380,7 @@
     "/items/*/done": "every item's done flag",
     "/title": "the list's title"
    },
-   "deep": "Paths are JSON Pointers into the schema's shape; a * matches any list index or map key. Policies (at) and operations (at) use them. A policy names the version its paths use, and the data is projected into that version for checking, so policies never need translating (D67)."
+   "deep": "Paths are JSON Pointers into the schema's shape; a * matches any list index or map key. Policies (at) and operations (at) use them. A policy names the version its paths use, and the data is projected into that version for checking, so policies never need translating (AIP-67)."
   },
   {
    "title": "Schemas, in short.",

@@ -14,7 +14,7 @@
     "Role key: a lock for the agents that read for the identities in a role.",
     "Data key: the key the data itself is encrypted with."
    ],
-   "deep": "Ed25519 for signing (signers and guardian keys). X25519, later hybrid X-Wing with ML-KEM, for locks. Data keys are 256-bit symmetric keys used with an AEAD (XChaCha20-Poly1305). Wrapping follows HPKE (RFC 9180). A guardian key only signs: it is never a lock. There is no identity-wide decryption key (D57, D91).",
+   "deep": "Ed25519 for signing (signers and guardian keys). X25519, later hybrid X-Wing with ML-KEM, for locks. Data keys are 256-bit symmetric keys used with an AEAD (XChaCha20-Poly1305). Wrapping follows HPKE (RFC 9180). A guardian key only signs: it is never a lock. There is no identity-wide decryption key (AIP-57, AIP-91).",
    "spec": {
     "summary": "Every key in theOS, what it does, and what it never does.",
     "records": [
@@ -24,7 +24,7 @@
        [
         "guardian key",
         "ed25519",
-        "signs guardian acts; derived from the passkey, never stored, never a lock (D91)"
+        "signs guardian acts; derived from the passkey, never stored, never a lock (AIP-91)"
        ],
        [
         "agent signer",
@@ -34,7 +34,7 @@
        [
         "agent lock",
         "x25519 (later X-Wing)",
-        "the agent's own; envelopes are sealed to it (D57)"
+        "the agent's own; envelopes are sealed to it (AIP-57)"
        ],
        [
         "role key",
@@ -49,7 +49,7 @@
        [
         "Value key",
         "256-bit symmetric",
-        "encrypts one Value's segments; never turns (D72)"
+        "encrypts one Value's segments; never turns (AIP-72)"
        ]
       ]
      }
@@ -61,7 +61,7 @@
      },
      {
       "id": "keys.no_identity_lock",
-      "text": "No key is shared by all of an identity's agents; envelopes go to agent locks and role keys only (D57)."
+      "text": "No key is shared by all of an identity's agents; envelopes go to agent locks and role keys only (AIP-57)."
      },
      {
       "id": "keys.aead",
@@ -69,9 +69,9 @@
      }
     ],
     "decisions": [
-     "D57",
-     "D72",
-     "D91"
+     "AIP-57",
+     "AIP-72",
+     "AIP-91"
     ]
    }
   },
@@ -84,7 +84,7 @@
     "data key",
     "the list"
    ],
-   "deep": "Envelopes follow both layers of policy: the data's policies decide which identities may read; each identity's policies decide which of its agents read for it (D57, D58). Each envelope is one key, encrypted with HPKE to another key's public half. The envelopes travel with the data (its keyring, below), so no server ever holds keys."
+   "deep": "Envelopes follow both layers of policy: the data's policies decide which identities may read; each identity's policies decide which of its agents read for it (AIP-57, AIP-58). Each envelope is one key, encrypted with HPKE to another key's public half. The envelopes travel with the data (its keyring, below), so no server ever holds keys."
   },
   {
    "title": "Envelopes only for keys you can trust.",
@@ -118,7 +118,7 @@
      "value": "…"
     }
    },
-   "deep": "One HPKE envelope of the current role key to each lock that Mia's own policies give read for this data (D57), signed by the owner's agent. A newcomer starts from a snapshot; back-links to older keys are given only if the owner opens history (Time chapter)."
+   "deep": "One HPKE envelope of the current role key to each lock that Mia's own policies give read for this data (AIP-57), signed by the owner's agent. A newcomer starts from a snapshot; back-links to older keys are given only if the owner opens history (Time chapter)."
   },
   {
    "title": "Giving a policy: read needs a key, everything else needs only a signature.",
@@ -173,7 +173,7 @@
      }
     }
    },
-   "deep": "Taking read from a role turns that data key immediately; the new key is sealed to the owner's reading agents and the remaining reading roles. Any current reader that has seen the ending may turn it (D57). Taking any other operation is only a signed policy change; no key turns."
+   "deep": "Taking read from a role turns that data key immediately; the new key is sealed to the owner's reading agents and the remaining reading roles. Any current reader that has seen the ending may turn it (AIP-57). Taking any other operation is only a signed policy change; no key turns."
   },
   {
    "title": "Where does the data key live?",
@@ -212,7 +212,7 @@
      }
     ]
    },
-   "deep": "An envelope is addressed either to a lock (an agent's lock or a role key) or to another data key (a Value bound to its Doc). Same record, two kinds of address. The Value key seals each 16 KiB segment with a nonce derived from its index (D72)."
+   "deep": "An envelope is addressed either to a lock (an agent's lock or a role key) or to another data key (a Value bound to its Doc). Same record, two kinds of address. The Value key seals each 16 KiB segment with a nonce derived from its index (AIP-72)."
   },
   {
    "title": "Which key turns when.",
@@ -269,7 +269,7 @@
      ]
     ]
    },
-   "deep": "Only read touches keys. If two key turns happen at once, the next key is sealed only to the readers both allowed, and no device encrypts under a generation older than an ending it knows (D57). Large roles may manage their role key with BeeKEM later (D20)."
+   "deep": "Only read touches keys. If two key turns happen at once, the next key is sealed only to the readers both allowed, and no device encrypts under a generation older than an ending it knows (AIP-57). Large roles may manage their role key with BeeKEM later (AIP-20)."
   },
   {
    "title": "The whole machine.",

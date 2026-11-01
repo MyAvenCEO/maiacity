@@ -10,7 +10,7 @@
     "update",
     "delete"
    ],
-   "deep": "A policy is a signed certificate: role, data, operations keyed by name, conditions, expiry, plus the proof chain back to the data's birth record. Only the owner writes them, through its own agents (D54). Conditions come later in this chapter, proofs in Checking, expiry in Endings."
+   "deep": "A policy is a signed certificate: role, data, operations keyed by name, conditions, expiry, plus the proof chain back to the data's birth record. Only the owner writes them, through its own agents (AIP-54). Conditions come later in this chapter, proofs in Checking, expiry in Endings."
   },
   {
    "title": "Mia, Alice and Bob get the list.",
@@ -20,7 +20,7 @@
   {
    "title": "The plumber gets one item.",
    "text": "“Fix the tap” is its own little piece of data, linked from the list. Born inside the list, it starts with the list's policies. You add one more: the role “plumber” may read and update this item, and nothing else.",
-   "deep": "Read opens a whole piece of data, because the data key does. So an item shared on its own is its own piece of data, with its own data key and its own schema (a to-do item), linked from the list. Data born inside the list follows the list's owner and policies by link (D64); the plumber's policy is added on top."
+   "deep": "Read opens a whole piece of data, because the data key does. So an item shared on its own is its own piece of data, with its own data key and its own schema (a to-do item), linked from the list. Data born inside the list follows the list's owner and policies by link (AIP-64); the plumber's policy is added on top."
   },
   {
    "title": "Every policy is one sentence.",
@@ -56,7 +56,7 @@
     "Each covers its engine operations: read covers get, find, search and the other ways of looking (Operations chapter).",
     "Writing and ending policies is not on the list: that is what owning means."
    ],
-   "deep": "The full list: create, read, update, delete, want, keep, sync. Each covers its specific engine operations (D53). Writing and ending policies is no operation anyone can be given; it belongs to the owner (D30, D54)."
+   "deep": "The full list: create, read, update, delete, want, keep, sync. Each covers its specific engine operations (AIP-53). Writing and ending policies is no operation anyone can be given; it belongs to the owner (AIP-30, AIP-54)."
   },
   {
    "title": "Every operation looks the same.",
@@ -90,7 +90,7 @@
      "additionalProperties": false
     }
    },
-   "deep": "One shape, one schema (D56): operations is an object keyed by operation name, so no operation appears twice; the names come from the plugin registry (D48). Each value holds its conditions: at (a JSON Pointer or a list, default \"\": all of it), where, limit, and for act on an identity, data: a map from data ID to this same Operations object. One recursive schema serves data policies, agent scopes and engine operations."
+   "deep": "One shape, one schema (AIP-56): operations is an object keyed by operation name, so no operation appears twice; the names come from the plugin registry (AIP-48). Each value holds its conditions: at (a JSON Pointer or a list, default \"\": all of it), where, limit, and for act on an identity, data: a map from data ID to this same Operations object. One recursive schema serves data policies, agent scopes and engine operations."
   },
   {
    "title": "Conditions make a policy narrower.",
@@ -124,7 +124,7 @@
      "value": "…"
     }
    },
-   "deep": "Every operation uses the same conditions: at (a JSON Pointer prefix), where (matching entries, for example author = $self), limit. Changes are checked by every verifying peer. Read is checked by the reader's own engine: the data key opens the whole piece of data, so anything that must stay unseen has to be its own data (D55). Like Meadowcap's areas, each condition can only narrow."
+   "deep": "Every operation uses the same conditions: at (a JSON Pointer prefix), where (matching entries, for example author = $self), limit. Changes are checked by every verifying peer. Read is checked by the reader's own engine: the data key opens the whole piece of data, so anything that must stay unseen has to be its own data (AIP-55). Like Meadowcap's areas, each condition can only narrow."
   },
   {
    "title": "Owning means writing the policies.",
@@ -136,29 +136,29 @@
     "agents with own",
     "policies for roles"
    ],
-   "deep": "Ownership acts belong to the owner alone (D30, D54): writing and ending policies, retain, erase and opening the archive. An agent performs them only through a chain of own that traces back to the owner's guardian (D91). Nobody else writes policies, and ownership is never handed over: whoever needs to work on the data gets a policy.",
+   "deep": "Ownership acts belong to the owner alone (AIP-30, AIP-54): writing and ending policies, retain, erase and opening the archive. An agent performs them only through a chain of own that traces back to the owner's guardian (AIP-91). Nobody else writes policies, and ownership is never handed over: whoever needs to work on the data gets a policy.",
    "spec": {
     "summary": "Who may write a data policy: only the owner, through a chain of own back to its guardian.",
     "rules": [
      {
       "id": "policy.data.issuer",
-      "text": "A policy on data is valid only if signed along a chain of own on the data's owner, back to the owner's guardian (D91)."
+      "text": "A policy on data is valid only if signed along a chain of own on the data's owner, back to the owner's guardian (AIP-91)."
      },
      {
       "id": "policy.data.to_role",
-      "text": "Data policies are given to roles, never to agents or single identities directly (D6)."
+      "text": "Data policies are given to roles, never to agents or single identities directly (AIP-6)."
      },
      {
       "id": "policy.data.no_widening",
-      "text": "A holder of own writes only within its own operations and conditions (D59)."
+      "text": "A holder of own writes only within its own operations and conditions (AIP-59)."
      }
     ],
     "decisions": [
-     "D6",
-     "D30",
-     "D54",
-     "D59",
-     "D91"
+     "AIP-6",
+     "AIP-30",
+     "AIP-54",
+     "AIP-59",
+     "AIP-91"
     ]
    }
   },

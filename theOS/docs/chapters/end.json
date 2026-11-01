@@ -19,7 +19,7 @@
      "value": "…"
     }
    },
-   "deep": "The default expiry is 30 days. Every change carries the time its author signed it and counts only if that time is before the expiry; devices reject times far ahead of their own clock. The owner's lapse makes it final (D60)."
+   "deep": "The default expiry is 30 days. Every change carries the time its author signed it and counts only if that time is before the expiry; devices reject times far ahead of their own clock. The owner's lapse makes it final (AIP-60)."
   },
   {
    "title": "Unchanged policies renew themselves.",
@@ -29,7 +29,7 @@
     "renew for 30 days",
     "else: let it run out"
    ],
-   "deep": "A renewal is a new certificate with the same content and a later expiry. It names the policy it renews, so ending one ends the whole chain. renew is its own operation, so a renewal agent can't write any other policy (D60)."
+   "deep": "A renewal is a new certificate with the same content and a later expiry. It names the policy it renews, so ending one ends the whole chain. renew is its own operation, so a renewal agent can't write any other policy (AIP-60)."
   },
   {
    "title": "The job is done.",
@@ -64,7 +64,7 @@
        [
         "ends",
         "policy ID",
-        "the policy it ends; renewals of it end too (D60)"
+        "the policy it ends; renewals of it end too (AIP-60)"
        ],
        [
         "after",
@@ -82,7 +82,7 @@
     "rules": [
      {
       "id": "ending.issuer",
-      "text": "An ending is valid only if signed along a chain of own on the owner of the ended policy's target, back to its guardian (D91)."
+      "text": "An ending is valid only if signed along a chain of own on the owner of the ended policy's target, back to its guardian (AIP-91)."
      },
      {
       "id": "ending.permanent",
@@ -90,7 +90,7 @@
      },
      {
       "id": "ending.scope",
-      "text": "It drops only the ended holder's own changes that it didn't list as seen (D60, D62)."
+      "text": "It drops only the ended holder's own changes that it didn't list as seen (AIP-60, AIP-62)."
      },
      {
       "id": "ending.no_grant",
@@ -98,10 +98,10 @@
      }
     ],
     "decisions": [
-     "D59",
-     "D60",
-     "D62",
-     "D91"
+     "AIP-59",
+     "AIP-60",
+     "AIP-62",
+     "AIP-91"
     ]
    }
   },
@@ -124,7 +124,7 @@
      "value": "…"
     }
    },
-   "deep": "Only the owner's agents write endings (D60). Other peers may stop handing out keys and chunks on their own once the date has passed by their clock: a local choice, never written into the history. A holder who signs a false early time is caught by the lapse: its changes the lapse didn't list as seen are dropped."
+   "deep": "Only the owner's agents write endings (AIP-60). Other peers may stop handing out keys and chunks on their own once the date has passed by their clock: a local choice, never written into the history. A holder who signs a false early time is caught by the lapse: its changes the lapse didn't list as seen are dropped."
   },
   {
    "title": "Revoke or lapse: one ending, same effect.",
@@ -151,7 +151,7 @@
      "wipe keys and copies"
     ]
    },
-   "deep": "One ending type, written only by the owner. The ended holder's changes it didn't list as seen leave what you see, but stay in the sealed history: what you see is the newest complete version of valid changes. Honest changes that built on a dropped one go back to their authors as a conflict view and are applied again (D62). The data key turns if the policy gave read; the delete trigger runs on honest devices."
+   "deep": "One ending type, written only by the owner. The ended holder's changes it didn't list as seen leave what you see, but stay in the sealed history: what you see is the newest complete version of valid changes. Honest changes that built on a dropped one go back to their authors as a conflict view and are applied again (AIP-62). The data key turns if the policy gave read; the delete trigger runs on honest devices."
   },
   {
    "title": "Bob loses update.",

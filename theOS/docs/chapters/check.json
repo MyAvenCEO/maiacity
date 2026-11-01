@@ -81,15 +81,15 @@
      },
      {
       "id": "verify.2_record_key",
-      "text": "r is the next record of its signer: its after includes the signer's previous record, and (agent, epoch, seq) is unique (D61, D69)."
+      "text": "r is the next record of its signer: its after includes the signer's previous record, and (agent, epoch, seq) is unique (AIP-61, AIP-69)."
      },
      {
       "id": "verify.3_agent",
-      "text": "The signing agent's policy on its owner is live and covers the act: act for data operations, own for policies and ownership acts (D58)."
+      "text": "The signing agent's policy on its owner is live and covers the act: act for data operations, own for policies and ownership acts (AIP-58)."
      },
      {
       "id": "verify.4_guardian",
-      "text": "That policy, and every policy in the chain, traces back to the owner's guardian (guardian.root, D91)."
+      "text": "That policy, and every policy in the chain, traces back to the owner's guardian (guardian.root, AIP-91)."
      },
      {
       "id": "verify.5_identity_chain",
@@ -97,26 +97,26 @@
      },
      {
       "id": "verify.6_data_policy",
-      "text": "A live policy on r's data, given to a role that holds X, covers r's operation, path and conditions (D56)."
+      "text": "A live policy on r's data, given to a role that holds X, covers r's operation, path and conditions (AIP-56)."
      },
      {
       "id": "verify.7_not_ended",
-      "text": "No ending of a policy in the chain is in r's causal past, and r's signed time is before every used policy's expiry (D60)."
+      "text": "No ending of a policy in the chain is in r's causal past, and r's signed time is before every used policy's expiry (AIP-60)."
      },
      {
       "id": "verify.8_schema",
-      "text": "r fits the exact schema version it names; its type is a root schema ref (D66, D90)."
+      "text": "r fits the exact schema version it names; its type is a root schema ref (AIP-66, AIP-90)."
      }
     ],
     "decisions": [
-     "D56",
-     "D58",
-     "D60",
-     "D61",
-     "D66",
-     "D69",
-     "D90",
-     "D91"
+     "AIP-56",
+     "AIP-58",
+     "AIP-60",
+     "AIP-61",
+     "AIP-66",
+     "AIP-69",
+     "AIP-90",
+     "AIP-91"
     ]
    }
   },
@@ -143,7 +143,7 @@
      "value": "…"
     }
    },
-   "deep": "Verification happens before merge: signature, signer registration, the agent's policy, the role and the covering policy, evaluated against the policies the change says it had seen. Each change is checked on its own on arrival; rules that span concurrent changes, like a limit of 20, are settled when the view is built, in one fixed order (D63). CRDT op IDs come from the signer, so nobody can write under someone else's."
+   "deep": "Verification happens before merge: signature, signer registration, the agent's policy, the role and the covering policy, evaluated against the policies the change says it had seen. Each change is checked on its own on arrival; rules that span concurrent changes, like a limit of 20, are settled when the view is built, in one fixed order (AIP-63). CRDT op IDs come from the signer, so nobody can write under someone else's."
   },
   {
    "title": "Every record says what it had seen.",
@@ -173,7 +173,7 @@
      "value": "…"
     }
    },
-   "deep": "“Saw it” means listed in after, directly or through what those records saw (D61). A list counts only for its author's own authority: nobody can make someone else's ending disappear by leaving it out. Two different records with the same signer and number prove the signer lied; both are invalid."
+   "deep": "“Saw it” means listed in after, directly or through what those records saw (AIP-61). A list counts only for its author's own authority: nobody can make someone else's ending disappear by leaving it out. Two different records with the same signer and number prove the signer lied; both are invalid."
   },
   {
    "title": "Two things at once.",
@@ -200,7 +200,7 @@
     },
     "result": "removal wins, c40b11:9 dropped"
    },
-   "deep": "Concurrency is resolved toward less authority (D14): a removal and a change that didn't list it as seen count as concurrent, and the removal wins over the removed identity's own changes, even if the change claims an older place in the history. Nothing wins by being latest. If two holders of own remove each other at once, both removals stand and the guardian repairs (D59)."
+   "deep": "Concurrency is resolved toward less authority (AIP-14): a removal and a change that didn't list it as seen count as concurrent, and the removal wins over the removed identity's own changes, even if the change claims an older place in the history. Nothing wins by being latest. If two holders of own remove each other at once, both removals stand and the guardian repairs (AIP-59)."
   },
   {
    "title": "Checking, in short.",

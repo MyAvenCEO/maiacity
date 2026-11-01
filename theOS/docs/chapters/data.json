@@ -9,7 +9,7 @@
   {
    "title": "The list starts from itself.",
    "text": "When data is born, your agent signs its {birth record}: which schema it follows, and its first policy, naming its owner. The data's ID is the hash of that record. So the list is named by its own birth: it doesn't come from any account, and nobody can make a second birth for the same ID.",
-   "deep": "The data ID is data:b3: and the BLAKE3 hash of this record without its signature (D50, D64). An agent acting for the owner with own signs it, and a random nonce keeps two births apart. A second birth record would simply be different data, so no key has to be kept secret or destroyed.",
+   "deep": "The data ID is data:b3: and the BLAKE3 hash of this record without its signature (AIP-50, AIP-64). An agent acting for the owner with own signs it, and a random nonce keeps two births apart. A second birth record would simply be different data, so no key has to be kept secret or destroyed.",
    "code": {
     "type": "data:b3:Rfe…@b3:105…#genesis",
     "nonce": "b3:4f1…",
@@ -44,7 +44,7 @@
        [
         "type",
         "schema ref",
-        "the root genesis schema (D90)"
+        "the root genesis schema (AIP-90)"
        ],
        [
         "nonce",
@@ -54,7 +54,7 @@
        [
         "schema",
         "schema ref",
-        "the exact version the data follows (D66)"
+        "the exact version the data follows (AIP-66)"
        ],
        [
         "policy",
@@ -64,7 +64,7 @@
        [
         "predecessor",
         "optional",
-        "{data: old data ID, frontier: hash of the old frontier} when this data continues another (D71)"
+        "{data: old data ID, frontier: hash of the old frontier} when this data continues another (AIP-71)"
        ],
        [
         "proof",
@@ -86,15 +86,15 @@
      },
      {
       "id": "data.signed_by_own",
-      "text": "The birth record is valid only if signed along a chain that carries own on the named owner (D91)."
+      "text": "The birth record is valid only if signed along a chain that carries own on the named owner (AIP-91)."
      },
      {
       "id": "data.owner_policy",
-      "text": "Its policy names exactly one owner, an identity, with own and no expiry (D5)."
+      "text": "Its policy names exactly one owner, an identity, with own and no expiry (AIP-5)."
      },
      {
       "id": "data.sub_birth",
-      "text": "Data born inside other data is born under the parent's create policy and follows the parent's owner and policies by link (D64)."
+      "text": "Data born inside other data is born under the parent's create policy and follows the parent's owner and policies by link (AIP-64)."
      },
      {
       "id": "data.predecessor",
@@ -102,19 +102,19 @@
      }
     ],
     "decisions": [
-     "D5",
-     "D50",
-     "D64",
-     "D66",
-     "D71",
-     "D91"
+     "AIP-5",
+     "AIP-50",
+     "AIP-64",
+     "AIP-66",
+     "AIP-71",
+     "AIP-91"
     ]
    }
   },
   {
    "title": "Its first policy makes you the owner.",
    "text": "The birth record names a single owner: you. The owner may do everything, for good, including writing the policies for everyone else. There is always exactly one owner: one identity, a person or a coop, never a list of people.",
-   "deep": "The owner is an identity ID inside the birth record. Every ownership act traces back to that identity's guardian (D91). Its authority never expires and never moves: there is no hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)",
+   "deep": "The owner is an identity ID inside the birth record. Every ownership act traces back to that identity's guardian (AIP-91). Its authority never expires and never moves: there is no hand-over. Ownership is never a set, so there is no removing someone from it. (AIP-5, AIP-30)",
    "spec": {
     "summary": "Exactly one owner per piece of data, an identity; everything the owner does traces back to its guardian.",
     "rules": [
@@ -124,23 +124,23 @@
      },
      {
       "id": "owner.acts",
-      "text": "Ownership acts: writing and ending policies, retain, erase, opening the archive, migrating the schema, starting a successor (D30, D67, D71)."
+      "text": "Ownership acts: writing and ending policies, retain, erase, opening the archive, migrating the schema, starting a successor (AIP-30, AIP-67, AIP-71)."
      },
      {
       "id": "owner.through_guardian",
-      "text": "An ownership act is valid only if signed along a chain of own that traces back to the owner's guardian (D91)."
+      "text": "An ownership act is valid only if signed along a chain of own that traces back to the owner's guardian (AIP-91)."
      },
      {
       "id": "owner.never_moves",
-      "text": "The owner never changes; a successor keeps the same owner (D54, D71)."
+      "text": "The owner never changes; a successor keeps the same owner (AIP-54, AIP-71)."
      }
     ],
     "decisions": [
-     "D5",
-     "D30",
-     "D54",
-     "D71",
-     "D91"
+     "AIP-5",
+     "AIP-30",
+     "AIP-54",
+     "AIP-71",
+     "AIP-91"
     ]
    }
   },
@@ -183,7 +183,7 @@
     "sealed": "XChaCha20-Poly1305, 16 KiB segments",
     "tree": "BLAKE3 over the sealed bytes"
    },
-   "deep": "The name hashes the sealed bytes, never the plaintext, so nobody can confirm that you hold a file they know; the plaintext's hash sits only inside the sealed metadata Doc. Each 16 KiB segment is sealed on its own, aligned to iroh-blobs' chunk groups, so any range can be fetched, verified and decrypted alone (D72).",
+   "deep": "The name hashes the sealed bytes, never the plaintext, so nobody can confirm that you hold a file they know; the plaintext's hash sits only inside the sealed metadata Doc. Each 16 KiB segment is sealed on its own, aligned to iroh-blobs' chunk groups, so any range can be fetched, verified and decrypted alone (AIP-72).",
    "spec": {
     "summary": "A Value is immutable sealed bytes, named by the BLAKE3 hash of exactly what carriers store.",
     "records": [
@@ -208,7 +208,7 @@
        [
         "key",
         "in its keyring",
-        "sealed to the metadata Doc's data key (D21)"
+        "sealed to the metadata Doc's data key (AIP-21)"
        ]
       ]
      }
@@ -232,8 +232,8 @@
      }
     ],
     "decisions": [
-     "D21",
-     "D72"
+     "AIP-21",
+     "AIP-72"
     ]
    }
   },

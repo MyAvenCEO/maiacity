@@ -32,7 +32,7 @@
     "identity": "human:b3:q4x7…#you",
     "relay": "https://relay.example.org"
    },
-   "deep": "The code is the invite key's secret plus your identity ID and a relay hint; nothing in it names your devices. The birth travels like any record; possession of the secret is proven by invite_sig, not by the connection (D69).",
+   "deep": "The code is the invite key's secret plus your identity ID and a relay hint; nothing in it names your devices. The birth travels like any record; possession of the secret is proven by invite_sig, not by the connection (AIP-69).",
    "spec": {
     "summary": "Delivery half of pairing: finding the identity's agents, or a carrier, without any device knowing the newcomer in advance.",
     "records": [
@@ -73,8 +73,8 @@
      }
     ],
     "decisions": [
-     "D32",
-     "D69"
+     "AIP-32",
+     "AIP-69"
     ]
    }
   },

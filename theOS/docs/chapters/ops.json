@@ -175,7 +175,7 @@
      ]
     ]
    },
-   "deep": "The broad kind is what a policy names; the engine resolves each specific operation to it (D53). Both write an operation with the same fields (D56)."
+   "deep": "The broad kind is what a policy names; the engine resolves each specific operation to it (AIP-53). Both write an operation with the same fields (AIP-56)."
   },
   {
    "title": "The engine, in short.",
