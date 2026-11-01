@@ -294,6 +294,7 @@ async function openDoc(st, i = 0) {
     ${sec('Risk decides depth', risk, 'One question: can it be undone?')}
     ${sec('Rules in every step', ol(F.rules))}
     ${sec('Assumptions that must hold', table(['Holds', 'If it breaks'], F.assumptions.map((a) => [a.holds, a.else])), 'The deletions below are safe only while these hold. If one breaks, we add back what it needs.')}
+    ${F.added ? sec('Added since, and what each replaces', table(['Added', 'Replaces', 'From'], F.added.map((a) => [a.what, a.replaces, a.from])), 'Every addition has to replace something weaker; otherwise it stays out.') : ''}
     ${sec('What we deleted, and why', table(['Deleted', 'Now', 'Why'], F.deleted.map((d) => [d.what, d.now, d.why])), 'From the first draft (in the git history), by asking of every part: what breaks if it goes?')}
     ${sec('The record', record, 'One per intent. Everything else is derived from it.')}
     ${sec('Learned so far', lessons, 'In the lesson format: the shape of situation it fires on, the operation, the evidence, the confidence.')}

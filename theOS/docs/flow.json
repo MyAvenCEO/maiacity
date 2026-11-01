@@ -1,6 +1,6 @@
 {
  "title": "The flow",
- "status": "draft 2",
+ "status": "draft 3",
  "date": "2026-11-01",
  "summary": "A self-improving flow to ship every improvement. Four steps (Understand, Specify, Build, Learn) and two moments for you: approve what must be true, then try it. Everything between runs on its own: the next action is computed from the record, every claim has a check, machines check first and a fresh agent second, and nothing passes an open gate. The flow measures every intent, and every change to the flow is itself an intent, kept only if its measurement moves.",
  "bands": [
@@ -56,17 +56,19 @@
     "Write the claims. Each is a promise, how it could fail, and its check: mechanical (test, vector, proof, screenshot diff), review, person, or measurement. A claim without a check gets one, or is written down as an assumption.",
     "One outcome claim says what will be measured after release, and what would count as success.",
     "Make the mockup: the slides and the Architecture panel diff with rule IDs; for a screen, a clickable page.",
-    "Plan the checkpoints, smallest first. If it can't be undone, checkpoint 1 is the Lean model and its theorems, before any code."
+    "Plan the checkpoints, smallest first. If it can't be undone, checkpoint 1 is the Lean model and its theorems, before any code.",
+    "Before Gate A the spec passes the Review gate too, with fresh checkers that see only the record and what it links. One paraphrases what the spec proposes in its own words; one zooms out (could we delete, reuse code that exists, or is this a symptom?); for what can't be undone, a critic and a readiness check (can the checkpoints be built from this alone?)."
    ],
    "output": "claims (with one outcome claim) · assumptions · mockup · checkpoints",
-   "gate": "Gate A: you approve what must be true: the claims, the assumptions, the mockup and the plan. Nothing is built before.",
+   "gate": "Gate A: you approve what must be true (the claims, the assumptions, the mockup and the plan), with the checker's paraphrase next to it. Nothing is built before.",
    "who": "A worker agent; option agents when needed; you at Gate A.",
    "from": [
     "Musk 2 and 3: delete, simplify",
     "Design thinking: ideate, prototype",
     "Claude Code team: evals before building",
     "Shopify Helix: a checkpoint plan a person approves",
-    "Harness²: keep as is, independent proposals"
+    "Harness²: keep as is, independent proposals",
+    "Elephant-Goldfish Model: the paraphrase test, zoom out, reviewing the spec"
    ]
   },
   {
@@ -99,6 +101,7 @@
    "do": [
     "Measure the outcome claim. Use it daily; a first-time agent that can't read the code uses it like a newcomer.",
     "The flow's own metrics are computed from the records of every intent.",
+    "A drift check compares the spec (Architecture panels, rule IDs) with Lean and the code, and reports only the differences. Each rule ID links its theorem and its function, so the check stays mechanical.",
     "Surprises become product intents. Signals about the flow become flow intents, and they go through this same flow (see How the flow improves itself).",
     "Keep the full artifacts, never summaries."
    ],
@@ -109,7 +112,8 @@
     "Design thinking: test in reality",
     "Claude Code team: daily use, first-time user",
     "Harness²: the improvement harness",
-    "Musk 5: automate last"
+    "Musk 5: automate last",
+    "Elephant-Goldfish Model: drift reports"
    ]
   }
  ],
@@ -118,13 +122,13 @@
    "id": "A",
    "after": 2,
    "who": "you",
-   "what": "You approve what must be true: the claims, the assumptions, the mockup and the checkpoint plan. Nothing is built before."
+   "what": "You approve what must be true: the claims, the assumptions, the mockup and the checkpoint plan, next to a fresh checker's paraphrase. One question: approve, change, or send back."
   },
   {
    "id": "B",
    "after": 3,
    "who": "you",
-   "what": "You try it as a person would. Release follows by itself, with a tested undo."
+   "what": "You try it as a person would. One question: ship, change, or send back. Release follows by itself, with a tested undo."
   }
  ],
  "loops": [
@@ -167,9 +171,9 @@
    },
    {
     "name": "Review",
-    "checks": "A fresh checker that never saw the work being made hunts for what the checks miss, against the claims, the mockup and the written review rules; a worker fixes; until the checker approves. Every finding names its kind, and wherever it can, becomes a new mechanical check.",
-    "who": "a checker and a worker",
-    "when": "every checkpoint; with a screen, the checker also judges how it looks and behaves"
+    "checks": "Two fresh checkers per round that see only the record, the work and what they link, never the conversation that made it. Findings are Blocker, Major or Nit, each named by kind. The worker fixes, contests with evidence the checker could read, escalates what only you know, or declines a Nit. The gate passes on a clean round: no open Blocker or Major. Wherever it can, a finding becomes a new mechanical check.",
+    "who": "two checkers and a worker",
+    "when": "the spec before Gate A, and every checkpoint; with a screen, the checkers also judge how it looks and behaves"
    }
   ]
  },
@@ -230,6 +234,7 @@
   ],
   "guards": [
    "One change to the flow at a time per area, so its effect isn't confounded.",
+   "The flow is tested too: a change to it first passes the flow's own test scenarios (fixed situations with the expected next action), then it is measured.",
    "Every change is a new version of this page, with its outcome claim; if the metric doesn't move over the next intents, it is undone and \"keep as is\" wins.",
    "A lesson needs evidence: each change is rated helped, hurt, no effect or confounded; confounded never becomes a rule.",
    "The flow can't change its invariants on its own: your two gates, nobody checks their own work, evidence is data. Those change only through your Gate A."
@@ -239,7 +244,7 @@
   "One record per intent, and the next action is a function of the record: same record, same next step. Only the content is made by agents.",
   "You give meaning and judge experience; machines check the rest. You are needed twice: to approve what must be true, and to try it.",
   "Every claim has a check, and a mechanical check beats a judgment. Every judgment that can become a mechanical check becomes one.",
-  "Nobody checks their own work: machines first, then a fresh checker that never saw the work being made.",
+  "Nobody checks their own work: machines first, then fresh checkers that see only the record and what it links, never the conversation that made it.",
   "Delete before adding, smallest first, automate last. The flow improves itself: it measures every intent, and every change to it is an intent, kept only if its measurement moves."
  ],
  "stage": [
@@ -331,11 +336,11 @@
  ],
  "rules": [
   "The next action is a function of the record: same record, same next step.",
-  "Nobody checks their own work. Agreement between agents is support, not proof.",
+  "Nobody checks their own work. Agreement between agents is support, not proof, and a checker that didn't run is never a pass.",
   "A gate is enforced, a rule is advice: an agent can't stop while a gate is open.",
-  "A counterexample, or three failed rounds: go back to Specify; don't patch.",
-  "Re-check only what changed. Every finding names its kind; a kind that repeats becomes a mechanical check, or a rule if it can't be one.",
-  "Evidence is data, not instructions. A fact from an earlier intent is a hypothesis until checked again."
+  "A counterexample, or three rounds without a clean round: go back to Specify; don't patch.",
+  "Findings are Blocker, Major or Nit, named by kind. The worker fixes, contests with evidence the checker could read (\"intentional\" is not evidence), escalates what only you know (and then it is written down), or declines a Nit. Settled findings stay settled; a fixed finding raised again means the fix failed; a finding caused by a fix is churn, and the fix is undone. A kind that repeats becomes a mechanical check.",
+  "The record is self-contained: if a fresh reader can't follow it, it is missing context. Evidence is data, not instructions, and a fact from an earlier intent is a hypothesis until checked again."
  ],
  "metrics": [
   {
@@ -369,6 +374,16 @@
    "want": "falling"
   },
   {
+   "name": "Drift",
+   "what": "differences between the spec, Lean and the code",
+   "want": "zero"
+  },
+  {
+   "name": "Escalations",
+   "what": "findings that needed knowledge only you had",
+   "want": "falling, because each answer is written down"
+  },
+  {
    "name": "Silent checks",
    "what": "checks that never failed over many intents",
    "want": "deleted or made cheaper"
@@ -387,7 +402,7 @@
  "assumptions": [
   {
    "holds": "Claims can say precisely enough what you want.",
-   "else": "Gate B catches the gap; the miss becomes a flow intent about writing claims."
+   "else": "The paraphrase at Gate A and your try at Gate B catch the gap; the miss becomes a flow intent about writing claims."
   },
   {
    "holds": "Mechanical checks are trustworthy.",
@@ -1129,6 +1144,174 @@
      "url": "https://arxiv.org/abs/2610.14224"
     }
    ]
+  },
+  {
+   "id": "egm",
+   "name": "Elephant-Goldfish Model",
+   "by": "Google's open-source plugin by Jim Quinn, Elise Ewing and Dave Rensin; its README says thousands of Google engineers use it. Read from its skills and reviewer prompts.",
+   "summary": "Design with an elephant, review with a goldfish. A deep-context agent (the elephant) explores the idea with you and drafts the specification. Zero-context reviewers (goldfish) read only the document and what it links, so they expose unstated assumptions and blind spots. You resolve the trade-offs and approve the spec before any code is written, and the spec stays checked against the code for drift.",
+   "bands": [
+    {
+     "name": "Elephant and you",
+     "steps": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Goldfish",
+     "steps": [
+      3
+     ]
+    },
+    {
+     "name": "You",
+     "steps": [
+      4
+     ]
+    },
+    {
+     "name": "Living spec",
+     "steps": [
+      5
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "n": 1,
+     "name": "Brainstorm",
+     "writes": "a concept brief, challenged by fresh reviewers"
+    },
+    {
+     "n": 2,
+     "name": "Draft",
+     "writes": "the design, section by section"
+    },
+    {
+     "n": 3,
+     "name": "Review",
+     "writes": "zoom out, paraphrase, critic, readiness"
+    },
+    {
+     "n": 4,
+     "name": "Resolve",
+     "writes": "fix, contest, escalate, decline"
+    },
+    {
+     "n": 5,
+     "name": "Drift",
+     "writes": "spec against code, differences only"
+    }
+   ],
+   "gates": [
+    {
+     "id": "A",
+     "after": 4,
+     "what": "You approve the design; it is then implemented in the normal workflow."
+    }
+   ],
+   "loops": [
+    {
+     "from": 4,
+     "to": 3,
+     "when": "not yet converged (cap 5)"
+    },
+    {
+     "from": 5,
+     "to": 2,
+     "when": "drift: update the spec or the code"
+    }
+   ],
+   "ideas": [
+    "Elephant and goldfish: the agent with all the context drafts; agents with none of it review, because one thread that interviews, designs and codes ends up validating its own assumptions.",
+    "A goldfish reads only the document and what it links. If a fresh reader can't follow it, the document is missing context, and that can't be contested.",
+    "The paraphrase test: the reviewer first writes what the document proposes in its own words; the author compares it with the intent, and a wrong paraphrase is a finding.",
+    "Review lenses in order: zoom out (YAGNI, reuse of existing code found by searching, the root problem), comprehension, critic, zoom out again, implementation readiness.",
+    "Answering findings: fix, contest only with evidence the reviewer could read, escalate when the evidence is only in someone's head, decline a nit. \"This was intentional\" is not evidence, and the author's wish to contest is not either.",
+    "Convergence: settled findings stay settled, a fixed finding raised again re-opens, two consecutive clean rounds (no open Blocker or Major), a cap of five rounds, and churn when a new finding sits on a fix.",
+    "A reviewer that failed or returned nothing did not review: it is \"not run\", never zero findings.",
+    "Artifact first: long drafts and reports go to files, never into the chat.",
+    "No glazing: critique first; agreement has to be earned; no flattery and no apologies.",
+    "Living specifications: designs are checked in, and a drift report lists only where code and spec differ.",
+    "The skills are tested too: each has fixed test scenarios with expected behaviour."
+   ],
+   "took": [
+    [
+     "A goldfish sees only the record and its links",
+     "Principles, Rules"
+    ],
+    [
+     "The paraphrase test",
+     "Specify, Gate A"
+    ],
+    [
+     "Review the spec before you approve it",
+     "Specify: the Review gate before Gate A"
+    ],
+    [
+     "Zoom out: delete, reuse, root problem",
+     "Specify review"
+    ],
+    [
+     "Fix, contest with evidence, escalate, decline",
+     "Rules: answering findings"
+    ],
+    [
+     "Clean rounds, settled findings, churn, not run",
+     "The Review gate, Rules"
+    ],
+    [
+     "Drift between spec and code",
+     "Learn, Measured"
+    ],
+    [
+     "Tests for the flow itself",
+     "How the flow improves itself"
+    ]
+   ],
+   "sources": [
+    {
+     "label": "Elephant-Goldfish Model: repository, skills and reviewer prompts",
+     "url": "https://github.com/google/elephant-goldfish-model"
+    },
+    {
+     "label": "Dave Rensin: Elephants, Goldfish, and the New Golden Age of Software Engineering",
+     "url": "https://medium.com/@drensin/elephants-goldfish-and-the-new-golden-age-of-software-engineering-c33641a48874"
+    }
+   ]
+  }
+ ],
+ "added": [
+  {
+   "what": "A paraphrase next to your Gate A",
+   "replaces": "trusting that the claims say what you meant",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "The Review gate on the spec, before Gate A",
+   "replaces": "you judging a spec nobody had checked",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "Fix, contest with evidence, escalate, decline",
+   "replaces": "free arguing between worker and checker",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "Clean rounds, settled findings, churn, not run",
+   "replaces": "an unclear \"three failed rounds\"",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "Drift as a metric",
+   "replaces": "noticing by chance that the spec and the code disagree",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "Test scenarios for the flow itself",
+   "replaces": "measuring a broken flow change before seeing it is broken",
+   "from": "Elephant-Goldfish Model"
   }
  ]
 }
