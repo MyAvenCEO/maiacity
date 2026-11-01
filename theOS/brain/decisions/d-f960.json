@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-f960",
+ "n": 40,
+ "title": "Metrics are written only by an AIP's flow",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "metrics",
+  "trace",
+  "memory"
+ ],
+ "quote": "Metrics and the like should only ever be authored by an AIP's own flow.",
+ "means": "Metrics, their measurements, lessons and every other doc are written only by an event of an AIP's lifecycle, never directly: a measurement by an AIP's Learn step, a lesson by the Learn step that drew it.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-87aa",
+  "d-4d06"
+ ],
+ "reflection": {
+  "checked": "every decision before d-f960 that held",
+  "result": "supersedes nothing"
+ }
+}

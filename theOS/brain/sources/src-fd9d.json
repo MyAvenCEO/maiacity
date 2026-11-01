@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "spec",
+ "id": "src-fd9d",
+ "title": "Jazz 2: lenses and migrations",
+ "about": [
+  "local-first data",
+  "schema and migrations"
+ ],
+ "url": "https://github.com/garden-co/jazz/blob/main/crates/jazz/SPEC/10_lenses_migrations.md"
+}

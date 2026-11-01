@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-432d",
+ "n": 55,
+ "title": "brain's MCP server moves into aip-a195",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "interface",
+  "apps"
+ ],
+ "quote": "Do it: move the MCP server into aip-a195.",
+ "means": "aip-a195 builds brain's MCP server; aip-836d only promises that every verb is a plain function brain.mjs exports.",
+ "intents": [
+  "aip-836d",
+  "aip-a195"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-d9fd"
+ ],
+ "reflection": {
+  "checked": "every decision before d-432d that held",
+  "result": "supersedes nothing"
+ }
+}

@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-5435",
+ "word": "production",
+ "means": "The branch that releases: it takes changes from main only. Nothing releases from it while avenDB's pipeline is parked.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

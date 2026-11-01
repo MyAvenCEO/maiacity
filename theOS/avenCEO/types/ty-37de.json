@@ -1,0 +1,40 @@
+{
+ "type": "type",
+ "id": "ty-37de",
+ "name": "type",
+ "file": "avenCEO/types/<name>.json",
+ "what": "One kind of doc: where it lives, its fields, its subtypes, who writes it and what it links to.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "folder",
+   "means": "where its docs live"
+  },
+  {
+   "name": "fields",
+   "means": "what each holds"
+  },
+  {
+   "name": "subtypes",
+   "means": "its kinds"
+  },
+  {
+   "name": "links_to",
+   "means": "the types it points at"
+  }
+ ],
+ "written_by": "Samuel, through avenCEO intents",
+ "links_to": [
+  "ty-37de"
+ ],
+ "trace": {
+  "events": [
+   "changed",
+   "revised"
+  ],
+  "step": "aip-31df's and aip-836d's steps",
+  "author": "agent",
+  "note": "A type and its schema change in the intent that needs it; brain (aip-836d) keeps them.",
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ }
+}

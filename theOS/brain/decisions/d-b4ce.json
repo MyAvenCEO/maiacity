@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "d-b4ce",
+ "n": 7,
+ "title": "theOS is our memory, one doc per thing",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "formats",
+  "human in the loop"
+ ],
+ "quote": "We document everything there; it is our memory. Define the files and doc types we have (intents, metrics, gates and their subtypes) that make up avenCEO's skill and UI. For now the human in the loop is a question back here in chat. Chat history, decisions, references, flow steps and item types each live in their own doc, like a page in an Obsidian wiki.",
+ "means": "One doc per thing in theOS/, each of a defined type; you are asked in chat, and your answers become decision docs.",
+ "intents": [
+  "def-e833"
+ ],
+ "supersedes": [],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before d-b4ce that held",
+  "result": "supersedes nothing"
+ }
+}

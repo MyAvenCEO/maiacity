@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="expect" content="green">
+<title>Fixture: nothing wrong</title>
+<!-- The docs check must pass here (aip-31df): the negative control for the planted pages. A fixed bar inside the
+     window, a fixed side panel that scrolls itself, a box made to scroll sideways, a long page that scrolls. -->
+<style>
+  body { margin: 0; font: 16px/1.5 sans-serif; }
+  header { position: fixed; top: 0; left: 0; right: 0; height: 40px; background: #eee; }
+  aside { position: fixed; top: 40px; right: 0; bottom: 0; width: 120px; overflow-y: auto; background: #f6f6f6; }
+  aside p { height: 2000px; margin: 0; }
+  main { padding: 56px 136px 16px 16px; }
+  .wide { overflow-x: auto; } .wide table { width: 1600px; }
+  .long { height: 3000px; }
+</style>
+</head>
+<body>
+<header>A bar</header>
+<aside><p>A panel that scrolls on its own.</p></aside>
+<main><div class="wide"><table><tr><td>A wide table in a box made to scroll sideways</td></tr></table></div><div class="long">A long page.</div></main>
+</body>
+</html>

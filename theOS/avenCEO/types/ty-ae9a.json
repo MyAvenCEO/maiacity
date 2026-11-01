@@ -1,0 +1,35 @@
+{
+ "type": "type",
+ "id": "ty-ae9a",
+ "name": "gate",
+ "file": "avenCEO/gates/<id>.json",
+ "what": "A check work must pass: your two (approve what must be true, try it) and each checkpoint's (mechanical, review).",
+ "subtypes": [
+  "human",
+  "checkpoint"
+ ],
+ "fields": [
+  {
+   "name": "after",
+   "means": "the step it closes"
+  },
+  {
+   "name": "who, what",
+   "means": "who passes it, and on what"
+  }
+ ],
+ "written_by": "Samuel, through avenCEO intents",
+ "links_to": [
+  "ty-1bdc"
+ ],
+ "trace": {
+  "events": [
+   "changed",
+   "revised"
+  ],
+  "step": "aip-31df's steps",
+  "author": "agent",
+  "note": "avenCEO's definition is built by aip-31df.",
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ }
+}

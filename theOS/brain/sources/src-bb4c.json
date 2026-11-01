@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-bb4c",
+ "title": "Elephant-Goldfish Model: repository, skills and reviewer prompts",
+ "about": [
+  "agent harness",
+  "review"
+ ],
+ "url": "https://github.com/google/elephant-goldfish-model"
+}

@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-ae58",
+ "n": 26,
+ "title": "Agents per AIP, as many as it needs",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "agents",
+  "intents"
+ ],
+ "quote": "It should never be 20 to 50 agents per AIP. Several AIPs can and should run with several agents each, but that generic rule is wrong.",
+ "means": "There is no fixed number of agents. Each AIP starts the agents its work needs; several AIPs can run at once, each with its own agents. The 20 to 50 threads came from the legacy CLAUDE.md and do not apply in theOS.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-9351"
+ ],
+ "reflection": {
+  "checked": "every decision before d-ae58 that held",
+  "result": "supersedes nothing"
+ }
+}

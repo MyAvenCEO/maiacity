@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "paper",
+ "id": "src-f135",
+ "title": "DCGKA paper (Weidner, Kleppmann et al.)",
+ "about": [
+  "group encryption"
+ ],
+ "url": "https://eprint.iacr.org/2020/1281.pdf"
+}

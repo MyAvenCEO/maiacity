@@ -1,0 +1,54 @@
+{
+ "type": "review",
+ "id": "rv-4567",
+ "intent": "aip-59ad",
+ "round": 1,
+ "lens": "zoom-out",
+ "commit": "7d453502b",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-5.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there that the plan rebuilds needlessly? Search theOS/ to find out.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "order, checkpoint 1",
+   "text": "The ruleset requires 'avenSANDBOX' until Gate B, so checkpoint 1 alone leaves production blocked; c1's test never merges.",
+   "answer": "fix",
+   "note": "Samuel's swap (remove 'avenSANDBOX', pin 'theOS' to GitHub Actions) moves to the end of checkpoint 1, right after the workflow first reports; checkpoint 1 ends with a real merge from main into production."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3, health",
+   "text": "avenOS's block answers a missing path with index.html and 200, so '200 each' passes on a broken tree.",
+   "answer": "fix",
+   "note": "The health step compares each fetched body byte for byte with the same file in the deployed commit's tree."
+  },
+  {
+   "sev": "Major",
+   "scope": "c2, checkpoint 2",
+   "text": "Dated tags, release notes and the versioning function are not needed: one deliverable, no build; a folder per commit is enough.",
+   "answer": "fix",
+   "note": "Deleted c2 and checkpoint 2. A build is named by its commit; the push trigger filters on theOS/**; tags and release notes are deferred."
+  },
+  {
+   "sev": "Nit",
+   "scope": "questions[5], c5, outcome",
+   "text": "d-7994 says by hand; the plan says automatic.",
+   "answer": "fix",
+   "note": "d-06a8 supersedes d-7994 in part: the deploy starts by itself; question 5 points at d-06a8."
+  },
+  {
+   "sev": "Nit",
+   "scope": "assumptions",
+   "text": "'Packed into one archive with its checksum' contradicts 'no archive kept'.",
+   "answer": "fix",
+   "note": "Assumption rewritten: the commit's theOS/ tree, by git archive, nothing kept besides the folder on the server."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c5, pruning",
+   "text": "A permanent script that parses the workflow is heavy for a one-time review; pruning can wait.",
+   "answer": "fix",
+   "note": "c5's check is a one-time read at Gate A plus a grep of the secrets the workflow names; no pruning: every build is kept until the undo to avenOS has been tried, pruning deferred."
+  }
+ ]
+}

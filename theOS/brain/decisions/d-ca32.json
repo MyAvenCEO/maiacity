@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-ca32",
+ "n": 71,
+ "title": "The deploy keys stay repository secrets",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "release",
+  "secrets"
+ ],
+ "quote": "Keep DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS where they are.",
+ "means": "The deploy's two secrets stay repository secrets instead of moving into the environment production. The risk is accepted and written into aip-59ad's assumptions: a workflow on any branch could read them.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-eb51",
+  "d-f6da"
+ ],
+ "reflection": {
+  "checked": "every decision before d-ca32 that held",
+  "result": "supersedes nothing; the move into the environment was only proposed in aip-59ad's revision 2"
+ }
+}

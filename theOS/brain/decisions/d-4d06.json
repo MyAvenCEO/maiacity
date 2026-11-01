@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-4d06",
+ "n": 29,
+ "title": "One trace for every type",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "trace",
+  "memory",
+  "types"
+ ],
+ "quote": "Standardize the trace across all our types; brain (aip-836d) builds and maintains it.",
+ "means": "Every type is traced the same way: its type doc says which events write its docs (what, in which step, by which kind of author), every doc shows the same trace, and aip-836d (brain) builds it and keeps it, its check enforcing it.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-87aa",
+  "d-1fee"
+ ],
+ "reflection": {
+  "checked": "every decision before d-4d06 that held",
+  "result": "supersedes nothing"
+ }
+}

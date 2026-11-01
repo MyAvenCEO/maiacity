@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-868f",
+ "title": "Keyhive: threat model",
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
+}

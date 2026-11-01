@@ -1,0 +1,9 @@
+{
+ "type": "lesson",
+ "id": "l-4be4",
+ "status": "kept",
+ "cue": "A rule keeps failing new cases.",
+ "lesson": "Go back to the problem instead of patching the rule.",
+ "evidence": "The mutual-removal rule (OLD-AIP-14).",
+ "confidence": "high"
+}

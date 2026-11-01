@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-0a23",
+ "n": 33,
+ "title": "Keep avenSANDBOX whole",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "sandbox",
+  "testing"
+ ],
+ "quote": "That's not what we wanted for aip-6fb1. Keep the name avenSANDBOX and keep the image workflow, so every scenario gets the same clean environment. Don't strip out its good parts such as Lean and bun: it was already a great sandbox.",
+ "means": "theOS takes avenSANDBOX whole: its name, its image with every tool (Playwright with Chromium, Rust with wasm, the nightly with cargo-fuzz, bun, Lean, versitygw, clang), its image workflow and its cloud setup, so every check runs in the same clean box in every scenario. Only what is avenDB's own (its crates and its four peers) stays behind.",
+ "intents": [
+  "aip-6fb1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-a347"
+ ],
+ "reflection": {
+  "checked": "every decision before d-0a23 that held",
+  "result": "supersedes nothing"
+ }
+}

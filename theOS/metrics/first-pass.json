@@ -1,9 +1,0 @@
-{
- "type": "metric",
- "id": "metrics/first-pass",
- "name": "First pass",
- "what": "checkpoints that pass both gates in the first round",
- "want": "rising",
- "how": "by hand, until a metrics script exists",
- "measurements": []
-}

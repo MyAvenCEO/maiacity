@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-d454",
+ "n": 51,
+ "title": "checkpoint 2's review gate passes",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "sandbox",
+  "gates"
+ ],
+ "quote": "Do it: pass checkpoint 2's review gate.",
+ "means": "Checkpoint 2's Review gate passes on its fourth fix, proven by the image workflow's run, after three rounds.",
+ "intents": [
+  "aip-6fb1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-9f02"
+ ],
+ "reflection": {
+  "checked": "every decision before d-d454 that held",
+  "result": "supersedes nothing"
+ }
+}

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// theOS's check command (AIP-1): serve theOS/, crawl every state a person can reach from an HTML entry page, and run
-// the docs check (docs-check.mjs) on each, at 390x844 and 1280x720. Exits 1 when a state fails, 2 when the check
-// itself could not run. Usage: node theOS/avenCEO/checks/check.mjs [--root <theOS dir>] [--entry <page under the root>] [--out <dir>]
+// theOS's check command (aip-31df): serve theOS/, crawl every state a person can reach from an HTML entry page, and run
+// the docs check (docs-check.mjs) on each, at 390x844 and 1280x720; --fixtures runs the check's own test pages instead.
+// Exits 1 when a state fails, 2 when the check itself could not run.
+// Usage: node theOS/avenCEO/checks/check.mjs [--root <theOS dir>] [--entry <page under the root>] [--out <dir>] [--fixtures]
 import { createServer } from 'node:http';
 import { createRequire, Module } from 'node:module';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docsCheck } from './docs-check.mjs';
@@ -18,7 +19,8 @@ function args(argv) {
   const o = { root: resolve(HERE, '../..'), entry: null, out: join(HERE, 'out') };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
-    if (k === '--help' || k === '-h') { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 4).join('\n')); process.exit(0); }
+    if (k === '--fixtures') { o.fixtures = true; continue; }
+    if (k === '--help' || k === '-h') { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 5).join('\n')); process.exit(0); }
     if (!['--root', '--entry', '--out'].includes(k) || argv[i + 1] === undefined) throw new Error(`unknown argument: ${k}`);
     const v = argv[++i];
     o[k.slice(2)] = k === '--entry' ? v : resolve(v);
@@ -98,7 +100,7 @@ async function actions(page, origin) {
   const { hrefs, buttons } = await page.evaluate(() => {
     // getAttribute, not .href: a link inside an SVG has no string href.
     const hrefs = [...document.querySelectorAll('a[href]')].map((a) => { try { return new URL(a.getAttribute('href'), document.baseURI).href; } catch { return null; } });
-    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML }));
+    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML, kind: b.tagName + [...b.classList].sort().map((c) => `.${c}`).join('') }));
     return { hrefs, buttons };
   });
   const links = [...new Set(hrefs)].filter((h) => {
@@ -108,16 +110,25 @@ async function actions(page, origin) {
   return { links, buttons };
 }
 
-// A state is a route and what it shows: the same URL with the same rendered text is one state.
-const keyOf = async (page) => `${page.url()}\n${await page.evaluate(() => document.body?.innerText ?? '')}`;
+// A state is a route and what it shows: the same URL with the same rendered text and the same view is one state.
+const keyOf = async (page) => `${page.url()}\n${await page.evaluate(() => `${document.body?.innerText ?? ''}\n${window.__view()}`)}`;
+
+// A view type: which boxes, by element and classes, the page renders, whatever their text. All decision pages are one view type,
+// unless one of them shows a part the others don't. Installed in every page, next to countFetches.
+// Only boxes count (an element that isn't inline), since they make the layout; inline text styling doesn't.
+function pageView() {
+  window.__view = () => [...new Set([...document.querySelectorAll('body *')]
+    .filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'inline')
+    .map((e) => e.tagName.toLowerCase() + [...e.classList].sort().map((c) => `.${c}`).join('')))].sort().join(' ');
+}
 
 // Bring the page to a state: its URL, then its buttons pressed again. Returns the key it reached, or null when a button
-// is gone. When the page is on that document and untouched by a button since it was loaded, only the hash changes,
-// which is much faster; an app can still keep something open across a hash change, so when that doesn't reach the
-// expected state, the URL is loaded afresh.
+// is gone. When the page is on that document, only the hash changes, which is much faster; an app can keep something
+// open across a hash change, so this is tried only when the state to reach is known (and then checked against it) or
+// no button was pressed since the page was loaded; otherwise, or when it misses, the URL is loaded afresh.
 async function reach(page, { url, clicks }, expect) {
   const now = page.url();
-  if (page.clean && !clicks.length && new URL(url).hash && now !== url && now.split('#')[0] === url.split('#')[0]) {
+  if ((page.clean || expect) && !clicks.length && new URL(url).hash && now !== url && now.split('#')[0] === url.split('#')[0]) {
     await page.evaluate((h) => { location.hash = h; }, new URL(url).hash);
     await settle(page);
     const key = await keyOf(page);
@@ -143,35 +154,27 @@ async function press(page, b) {
   return ok;
 }
 
-// Every state a person can reach from the entry page at one size, by following links and pressing buttons; the docs
-// check runs on each state when it is first reached. A button is pressed once per route it shows on; a button that
-// leads to another route is taken to lead there from every route of its page, and is pressed once per page.
+// Every state a person can reach from the entry page at one size, by following links and pressing buttons, each checked
+// by the docs check when first reached. Buttons are pressed only in the first state of each view type, one of each kind:
+// a first version, for speed (d-5afb); a state behind one of several buttons of the same kind can be missed.
 async function crawl(browser, size, start, origin) {
   const context = await browser.newContext({ viewport: size });
-  await context.addInitScript(countFetches);
-  await context.addInitScript(pageButtons);
+  for (const f of [countFetches, pageButtons, pageView]) await context.addInitScript(f);
   context.on('page', async (p) => { if (await p.opener()) await p.close(); }); // a link or button that opens a new tab
-  const states = [], keys = new Map(), pressed = new Set(), queue = [], loaded = new Set();
-  const doc = (url) => url.split('#')[0];
-  // A new state is checked, kept and queued to be opened; with layoutOnly, a known one is checked again and kept only
-  // when it fails, never opened (its key already is).
-  const found = async (page, recipe, layoutOnly = false) => {
+  const states = [], keys = new Set(), views = new Set(), queue = [], loaded = new Set();
+  // A new state is checked and kept, and its links are queued; when its view type is new, it is queued to have its
+  // buttons pressed too.
+  const found = async (page, recipe) => {
     const key = await keyOf(page);
-    if ((keys.has(key) && !layoutOnly) || !page.url().startsWith(origin)) return key;
+    if (keys.has(key) || !page.url().startsWith(origin)) return key;
     if (states.length >= MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
+    keys.add(key);
     const state = { size: `${size.width}x${size.height}`, url: page.url().slice(origin.length + 1), recipe, key, fails: await page.evaluate(docsCheck) };
-    if (layoutOnly) { if (state.fails.length) states.push({ ...state, layoutOnly }); return key; }
-    keys.set(key, state);
     states.push(state);
-    queue.push(state);
+    for (const l of (await actions(page, origin)).links) if (!loaded.has(l)) { loaded.add(l); queue.push({ visit: l }); }
+    const view = await page.evaluate(() => window.__view());
+    if (!views.has(view)) { views.add(view); queue.push({ state }); }
     return key;
-  };
-  const visit = async (page, url) => {
-    if (loaded.has(url)) return;
-    loaded.add(url);
-    await reach(page, { url, clicks: [] });
-    loaded.add(page.url());
-    await found(page, { url: page.url(), clicks: [] });
   };
   const open = async () => {
     const page = await context.newPage();
@@ -179,44 +182,58 @@ async function crawl(browser, size, start, origin) {
     return page;
   };
   const pages = await Promise.all(Array.from({ length: WORKERS }, open));
-  await visit(pages[0], start);
+  loaded.add(start);
+  queue.push({ visit: start });
   let busy = 0;
   const work = async (page) => {
     for (;;) {
-      const state = queue.shift();
-      if (!state) { if (!busy) break; await new Promise((r) => setTimeout(r, 50)); continue; }
+      const job = queue.shift();
+      if (!job) { if (!busy) break; await new Promise((r) => setTimeout(r, 50)); continue; }
       busy++;
       try {
+        if (job.visit) {
+          await reach(page, { url: job.visit, clicks: [] });
+          loaded.add(page.url());
+          await found(page, { url: page.url(), clicks: [] });
+          continue;
+        }
+        const { state } = job;
         // A route followed in place can show what its URL loaded afresh doesn't (the app kept something open): that
-        // state is checked but can't be brought back, so it isn't opened further; what the URL shows is a state too.
+        // state is checked but can't be brought back, so its buttons aren't pressed; what the URL shows is a state too.
         if ((await reach(page, state.recipe, state.key)) !== state.key) { state.inPlaceOnly = true; await found(page, { url: page.url(), clicks: [] }); continue; }
-        const { links, buttons } = await actions(page, origin);
         const here = origin + '/' + state.url;
         let moved = false;
-        for (const b of buttons) {
-          const sig = `${here}\n${b.html}`, pageSig = `${doc(here)}\n${b.html}`;
-          if (pressed.has(sig) || pressed.has(pageSig)) continue;
-          pressed.add(sig);
+        const kinds = new Set(); // one button of each kind (element and classes): the others of its kind lead to the same view types
+        for (const b of (await actions(page, origin)).buttons) {
+          if (kinds.has(b.kind)) continue;
+          kinds.add(b.kind);
           if (moved && (await reach(page, state.recipe, state.key)) !== state.key) break;
           moved = false;
           if (!(await press(page, b))) continue;
-          const route = page.url() !== here;
-          if (route) pressed.add(pageSig);
-          const recipe = route ? { url: page.url(), clicks: [] } : { ...state.recipe, clicks: [...state.recipe.clicks, b] };
-          const key = await found(page, recipe);
-          // A button can change only the layout (the same text): that view is checked too, and kept when it fails.
-          if (key === state.key) await found(page, recipe, true);
-          moved = key !== state.key;
+          const recipe = page.url() !== here ? { url: page.url(), clicks: [] } : { ...state.recipe, clicks: [...state.recipe.clicks, b] };
+          moved = (await found(page, recipe)) !== state.key;
         }
-        for (const l of links) await visit(page, l);
       } finally { busy--; }
     }
   };
-  const tick = setInterval(() => console.error(`${size.width}x${size.height}: ${states.length} states, ${queue.length} to open`), 15000);
+  const tick = setInterval(() => console.error(`${size.width}x${size.height}: ${states.length} states, ${views.size} view types, ${queue.length} to do`), 15000);
   await Promise.all(pages.map(work));
   clearInterval(tick);
   await context.close();
-  return states;
+  return { states, views: views.size };
+}
+
+// Crawl from one entry page at both sizes; print what failed. Returns the report.
+async function run(browser, origin, root, entry, out) {
+  const t0 = Date.now();
+  const runs = await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${entry}`, origin)));
+  const states = runs.flatMap((r) => r.states), failed = states.filter((s) => s.fails.length);
+  const results = states.map(({ size, url, recipe, fails, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }) }));
+  const report = { root, entry, seconds: Math.round((Date.now() - t0) / 1000), reached: states.length, views: runs.reduce((n, r) => n + r.views, 0), failed: failed.length, results };
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 1));
+  for (const s of failed) for (const f of s.fails) console.log(`FAIL ${s.size} ${s.url}${s.recipe.clicks.length ? ` after ${s.recipe.clicks.length} button(s)` : ''}\n  ${f.rule}: ${f.where} (content ${f.content}px, box ${f.box}px, overflow ${f.overflow})`);
+  return report;
 }
 
 async function main() {
@@ -225,21 +242,24 @@ async function main() {
   const server = await serve(o.root);
   const origin = `http://127.0.0.1:${server.address().port}`;
   const browser = await pw.chromium.launch();
-  const t0 = Date.now();
   try {
-    const states = (await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${o.entry}`, origin)))).flat();
-    const failed = states.filter((s) => s.fails.length);
-    const results = states.map(({ size, url, recipe, fails, inPlaceOnly, layoutOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }), ...(layoutOnly && { layoutOnly }) }));
-    const report = { root: o.root, entry: o.entry, playwright: version, seconds: Math.round((Date.now() - t0) / 1000), states: states.length, failed: failed.length, results };
-    mkdirSync(o.out, { recursive: true });
-    writeFileSync(join(o.out, 'report.json'), JSON.stringify(report, null, 1));
-    for (const s of SIZES.map((x) => `${x.width}x${x.height}`)) {
-      const mine = states.filter((x) => x.size === s);
-      console.log(`${s}: ${mine.length} states, ${mine.filter((x) => x.fails.length).length} failed`);
+    if (o.fixtures) {
+      // The check's own test: each page in fixtures/ says in <meta name="expect"> whether the check must be red or green.
+      let wrong = 0;
+      for (const f of readdirSync(join(HERE, 'fixtures')).filter((x) => x.endsWith('.html')).sort()) {
+        const expect = /<meta name="expect" content="(red|green)">/.exec(readFileSync(join(HERE, 'fixtures', f), 'utf8'))?.[1];
+        const r = await run(browser, origin, o.root, `avenCEO/checks/fixtures/${f}`, join(o.out, 'fixtures', f));
+        const got = r.failed ? 'red' : 'green';
+        if (got !== expect) wrong++;
+        console.log(`${got === expect ? 'ok' : 'WRONG'} ${f}: ${got}, expected ${expect ?? 'nothing (no meta)'}`);
+      }
+      console.log(`${wrong ? 'red' : 'green'}: the check's own test, ${wrong} wrong`);
+      process.exitCode = wrong ? 1 : 0;
+      return;
     }
-    for (const s of failed) for (const f of s.fails) console.log(`FAIL ${s.size} ${s.url}${s.recipe.clicks.length ? ` after ${s.recipe.clicks.length} button(s)` : ''}\n  ${f.rule}: ${f.where} (content ${f.content}px, box ${f.box}px, overflow ${f.overflow})`);
-    console.log(`${failed.length ? 'red' : 'green'}: ${states.length} states in ${report.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
-    process.exitCode = failed.length ? 1 : 0;
+    const r = await run(browser, origin, o.root, o.entry, o.out);
+    console.log(`${r.failed ? 'red' : 'green'}: ${r.reached} states checked (${r.views} view types), ${r.failed} failed, in ${r.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
+    process.exitCode = r.failed ? 1 : 0;
   } finally {
     await browser.close();
     server.close();

@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-64f2",
+ "title": "Subduction",
+ "about": [
+  "p2p sync",
+  "local-first data"
+ ],
+ "url": "https://github.com/inkandswitch/subduction"
+}

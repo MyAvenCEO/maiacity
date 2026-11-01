@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "code",
+ "id": "src-9708",
+ "title": "Peergos",
+ "about": [
+  "access control",
+  "identity"
+ ],
+ "url": "https://github.com/Peergos/Peergos/blob/master/src/peergos/shared/user/UserContext.java"
+}

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="expect" content="red">
+<title>Fixture: a fixed box past the window</title>
+<!-- The docs check must fail here (aip-31df, d-19fb): a fixed drawer with overflow auto but no height grows to fit its
+     content, so its last links sit below the window and nothing scrolls to them; and a short fixed box with content
+     spilling out of it. -->
+<style>
+  body { margin: 0; font: 16px/1.5 sans-serif; }
+  .drawer { position: fixed; top: 0; left: 0; width: 200px; overflow: auto; background: #eee; }
+  .drawer a { display: block; padding: 40px 12px; }
+  .tip { position: fixed; top: 10px; right: 10px; width: 120px; height: 40px; background: #ffe; }
+  .tip p { margin: 0; height: 2000px; }
+</style>
+</head>
+<body>
+<nav class="drawer"><a href="#1">One</a><a href="#2">Two</a><a href="#3">Three</a><a href="#4">Four</a><a href="#5">Five</a><a href="#6">Six</a><a href="#7">Seven</a><a href="#8">Eight</a><a href="#9">Nine</a></nav>
+<div class="tip"><p>A tip whose text runs far below its box.</p></div>
+</body>
+</html>

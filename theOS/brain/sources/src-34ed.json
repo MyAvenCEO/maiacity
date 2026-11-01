@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "code",
+ "id": "src-34ed",
+ "title": "Keybase teams: loader",
+ "about": [
+  "access control",
+  "identity"
+ ],
+ "url": "https://github.com/keybase/client/blob/master/go/teams/loader2.go"
+}

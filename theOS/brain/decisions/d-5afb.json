@@ -1,0 +1,33 @@
+{
+ "type": "decision",
+ "id": "d-5afb",
+ "n": 79,
+ "title": "The check presses buttons once per view type",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "checks",
+  "intents"
+ ],
+ "quote": "Start simpler: check the page layout states, one per view type. We can fine-tune it later; now we want speed.",
+ "means": "theOS's check still checks every state it reaches for layout, but presses buttons only in the first state of each view type, one button of each kind, so a run stays fast (1,243 states, 228 view types, about 80 s). Identical buttons that open different content are not all pressed: that case is written into aip-31df's gaps, to be tuned later. Samuel also had review round 4 run, whose findings are fixed.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-19fb",
+   "part": "buttons told apart by state, position and markup; no fourth round",
+   "what": "Buttons are pressed once per view type, and a fourth review round ran at Samuel's word."
+  }
+ ],
+ "relates": [
+  "d-23e7"
+ ],
+ "reflection": {
+  "checked": "every decision before d-5afb that held",
+  "result": "supersedes d-19fb in part (how buttons are pressed; the fourth round)"
+ }
+}

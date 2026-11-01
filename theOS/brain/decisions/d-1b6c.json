@@ -1,0 +1,25 @@
+{
+ "type": "decision",
+ "id": "d-1b6c",
+ "n": 1,
+ "title": "Build avenCEO with its own flow",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "aven",
+  "naming"
+ ],
+ "quote": "Let's apply our own flow to building the flow engine itself, and implement the whole agent harness now. Its product name is avenCEO.",
+ "means": "aip-31df starts: avenCEO is built with its own steps.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before d-1b6c that held",
+  "result": "supersedes nothing"
+ }
+}

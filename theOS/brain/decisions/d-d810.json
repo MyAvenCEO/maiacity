@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-d810",
+ "n": 11,
+ "title": "Checker prompts carry theOS's rule",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "checkers",
+  "legacy"
+ ],
+ "quote": "Make sure every current subagent prompt states the theOS-only rule correctly.",
+ "means": "Every checker prompt states theOS's rule: built in theOS/ from scratch; legacy code only learned from; the sandbox may be used for testing.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-9351",
+  "d-ff11"
+ ],
+ "reflection": {
+  "checked": "every decision before d-d810 that held",
+  "result": "supersedes nothing"
+ }
+}
