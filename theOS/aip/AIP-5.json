@@ -201,6 +201,17 @@
     "aip/AIP-5"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:45Z",
+   "by": "authors/samuel-andert",
+   "what": "observed",
+   "text": "Screenshots of production's ruleset: Active, no bypass, deletions restricted, pull request and status checks required, force pushes blocked.",
+   "how": "in chat to AIP-5's thread, four screenshots; read by avenMAIA",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": []
   }
  ],
  "problem": {
@@ -266,6 +277,9 @@
      },
      {
       "text": "The optional tag pattern ??.??.??* does not match the tags actually made (@aven/os@26.10.31v6), so as written it would protect none of them."
+     },
+     {
+      "text": "Seen in Samuel's screenshots (1 Nov 10:45Z): a ruleset named production, Active, bypass list empty, targeting the branch production, with Restrict deletions, Require a pull request before merging, Require status checks to pass and Block force pushes on; everything else off. Not yet seen: the required checks' names and the pull request's approvals and merge methods (both under 'Show additional settings'), and the environment production."
      }
     ]
    },
