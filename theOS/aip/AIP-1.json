@@ -77,14 +77,14 @@
    "Git keeps every version and who made it."
   ],
   "assumptions": [
-   "theOS is a standalone, fresh project: everything lives in theOS/, built from scratch. avenCEO touches no code outside theOS/. theOS owns avenSANDBOX and the release pipeline (D-24); taking them over is AIP-2's work.",
-   "theOS/ is the single source of truth and our memory: one JSON doc per thing (this intent, its reviews, your decisions, sessions, sources, avenCEO's steps, gates and types). Three viewers show them: Docs, Intents and Sources.",
-   "The plan adds, all inside theOS/: theOS/CLAUDE.md with the done rule, the check command, the crawl, the docs check, the pixel diff and its checker's prompt, and theOS/package.json with its lockfile (Playwright, pinned to the box's browser).",
-   "The 91 current intents and the Intents board are legacy too (Samuel, 1 Nov): learned from; their decisions and lessons move into avenCEO's format in a later consolidation AIP.",
-   "Viewer changes (theOS/docs) are ordinary edits under the done rule, not part of this AIP.",
-   "Samuel is the only one who passes a gate."
+   "theOS is a standalone, fresh project: everything lives in theOS/, built from scratch. avenCEO touches no code outside theOS/. theOS owns avenSANDBOX (AIP-2) and its release (AIP-5); taking them over is their work.",
+   "theOS/ is the single source of truth and our memory: one JSON doc per thing. Three apps show them: Docs (theOS/docs/index.html, with the OLD-AIPs board), Intents (theOS/avenCEO/index.html) and Sources (theOS/sources/index.html), behind the dashboard theOS/index.html.",
+   "The plan adds, all inside theOS/: theOS/CLAUDE.md with the done rule, theOS/package.json with its lockfile (Playwright, pinned to the session's Chromium in /opt/pw-browsers), and theOS/avenCEO/checks/ (the check command, the crawl, the docs check, the pixel diff and the look checker's prompt).",
+   "The 91 OLD-AIPs and their board are legacy: learned from; their decisions and lessons move into avenCEO's format in a later consolidation AIP.",
+   "Changes to the apps are ordinary edits under the done rule, not part of this AIP.",
+   "You pass Gate A and Gate B; machines pass the Mechanical gate and checkers the Review gate."
   ],
-  "risk": "Can be undone: everything is files in git, inside theOS/. Nothing outside: no push to main, no deploy, nothing outside theOS changed."
+  "risk": "Can be undone: everything is files in git, inside theOS/; the done rule republishes a private artifact, undone by republishing the version before. No push to main, no deploy."
  },
  "reuse": [
   {
@@ -136,7 +136,7 @@
   },
   {
    "name": "Checks first",
-   "note": "The done rule for every theOS commit: theOS's check command green (the crawl over the three apps, a pixel diff against the last published version, the docs check), a fresh checker's look at every view whose pixels changed, pushed and published. An AIP only for work that needs Gate A. Everything in theOS/, from scratch. Measure over three sessions; the router, the Stop hook and a metrics script only as new AIPs, and only if escapes remain.",
+   "note": "The done rule for every theOS commit: theOS's check command green (the crawl, the docs check, the pixel diff against the last published version), the look checker shown one view per group of changed views, pushed and published. An AIP only for work that needs Gate A. Everything in theOS/, from scratch. Measure after checkpoint 3; the router, the Stop hook and a metrics script only as new AIPs, and only if escapes remain.",
    "chosen": true
   },
   {
@@ -155,23 +155,23 @@
    "id": "c1",
    "promise": "The docs check fails at the parent of faf266961, where content could not be reached, and passes now.",
    "fails": "It checks something a person does not see, or is tuned to the known bug.",
-   "check": "Its rule (every scroll container whose content is taller than it can scroll; no view scrolls sideways) is committed before the replay, then run at 390x844 and 1280x720: on the current commit in the three apps, at the parent of faf266961 in the one app there (theOS/docs).",
+   "check": "Its rule (every scroll container whose content is taller than it can scroll; the page never scrolls sideways; boxes made to scroll sideways are fine) is committed before the replay, then run at 390x844 and 1280x720: it fails at the parent of faf266961 in the one app there (theOS/docs), and passes on the current commit in the three apps.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c2",
-   "promise": "The crawl reaches every state a person can reach, starting at theOS/index.html (or theOS/docs/index.html on commits without a dashboard), following every link and button and dropping duplicate states: the same route with the same rendered text.",
+   "promise": "The crawl reaches every state a person can reach from the HTML entry page it is given (theOS/index.html by default; theOS/docs/index.html on commits without a dashboard), following every link and button and dropping duplicate states: the same route with the same rendered text.",
    "fails": "A state behind a button, or a renamed data file, is never seen.",
-   "check": "On the current commit it reaches every route the docs list (stories.json, intents.json, the index docs) and a state planted behind a button in a test page; at the parents of 106ba0e5f and 3ddc07339 it reaches the OLD-AIP pages and their Learn tabs, with no edit per commit.",
+   "check": "On the current commit it reaches every route the docs list (stories.json, intents.json, the index docs), and, in a test that starts at theOS/avenCEO/checks/fixtures/, a state planted behind a button; at the parents of 106ba0e5f and 3ddc07339 it reaches the OLD-AIP pages and their Learn tabs, with no edit per commit.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c3",
-   "promise": "A pixel diff against the last published version lists the views that changed; a fresh checker, shown one view per group of changed views (by kind and size) with the counts, flags the broken ones and passes the rest.",
-   "fails": "A visual break is called done, the author picks which views are seen, or a checker that flags everything passes.",
-   "check": "Its prompt is committed first. Then replayed on pairs: (the commit that broke a view, its parent) for the intent page where two parts shared one class name (106ba0e5f), the squeezed scenario table (3ddc07339) and the board that scrolled as a whole (b1d105b39): the checker flags each; and (the fix, its parent): it passes the fixed views. Its prompts and answers are stored.",
+   "promise": "A pixel diff against the last published version lists the views that changed. They are grouped by rendered structure (the set of class names in the view) and size, and the look checker is shown, from each group, the view with the most changed pixels, with the group's count: it flags the broken ones and passes the rest. The program picks, never the author.",
+   "fails": "A visual break is called done, a break in part of a group hides behind a view that is fine, or a checker that flags everything passes.",
+   "check": "Its prompt is committed first. Then each fix is replayed as the pair (the fix's parent, the fix): 106ba0e5f (two parts of the intent page shared one class name), 3ddc07339 (the squeezed scenario table, on the 23 OLD-AIPs that have scenarios) and b1d105b39 (the board that scrolled as a whole). Shown the changed views at the parent, the checker flags them; at the fix, it passes them. Its prompts and answers are stored.",
    "kind": "review",
    "result": "open"
   },
@@ -179,14 +179,14 @@
    "id": "c4",
    "promise": "theOS's check command finishes in under 5 minutes for a change of one doc, so it is never the step that gets skipped.",
    "fails": "The check is slow and is skipped.",
-   "check": "Timed in the session's box on a one-doc change: screenshots cached by commit, each taken after document.fonts.ready.",
+   "check": "Timed in the session's box on a one-doc change with an empty cache (the box is reclaimed, so the cache lives only as long as the session); each screenshot taken after document.fonts.ready.",
    "kind": "mechanical",
    "result": "open"
   }
  ],
  "outcome": {
-  "promise": "Over the next three sessions of theOS work: zero layout escapes, zero renamed-term escapes, and fewer corrections per 10 commits than this session's 1.5 (10 in 67 commits).",
-  "how": "Tallied by hand per session, with the session's commit count; within an AIP each correction is also an event by Samuel (what: correction).",
+  "promise": "Zero layout escapes over the first three sessions after checkpoint 3 that change view code (.js, .css or .html), each with at least five such commits.",
+  "how": "Counted session by session: a layout escape is a correction event by Samuel Andert whose cause is layout. Renamed terms are AIP-3's outcome; total corrections per 10 commits stay a metric (metrics/corrections), not this AIP's test.",
   "kind": "measured",
   "result": "open"
  },
@@ -194,7 +194,7 @@
   "The operations-shape sweep (one of the three sweeps) has no check; the pixel-diff checker may catch it, nothing promises it.",
   "Running theOS's check command is part of the done rule, not enforced: enforcement is the deferred Stop hook.",
   "The published artifact not updated after a change: no check; the done rule asks for it.",
-  "Renamed words: no check until AIP-3's c6; the done rule's sweep stands in."
+  "Renamed words: AIP-3's c6; until then the done rule's sweep, which nothing enforces."
  ],
  "done_rule": "A change to theOS is done when theOS's check command is green (the crawl, the pixel diff against the last published version, the docs check), a fresh checker has looked at the changed views and found no Blocker or Major, a decision that renames a word has been swept for the old word, it is pushed to the work branch, and the theOS artifact (private) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply.",
  "aip_when": "An AIP is opened for work that needs your Gate A: a decision about what must be true (architecture, product behaviour, how we work). Small edits follow the done rule only.",
@@ -205,21 +205,22 @@
  "checkpoints": [
   {
    "n": 1,
-   "adds": "theOS/CLAUDE.md with the done rule (it says the root check does not apply in theOS, and that a decision renaming a word is swept for the old word); theOS's check command, with no dependencies yet.",
-   "claims": []
+   "adds": "theOS/CLAUDE.md with the done rule (the root check does not apply in theOS; a decision that renames a word is swept for the old word); theOS/package.json and its lockfile; the check command with a crawl that follows links, and the docs check, which fails first at faf266961's parent.",
+   "claims": [
+    "c1"
+   ]
   },
   {
    "n": 2,
-   "adds": "theOS/package.json and its lockfile (Playwright, pinned to the box's browser); the crawl and the docs check over the three apps at 390x844 and 1280x720, a screenshot of each, cached by commit; their replays; the done rule extended.",
+   "adds": "The crawl follows buttons too; the test page in theOS/avenCEO/checks/fixtures/; a screenshot of every state at 390x844 and 1280x720; the check's time limit.",
    "claims": [
-    "c1",
     "c2",
     "c4"
    ]
   },
   {
    "n": 3,
-   "adds": "The pixel diff against the last published version; the third checker's prompt in theOS/avenCEO/checkers/, shown one view per group of changed views; its replays; the done rule extended.",
+   "adds": "The pixel diff against the last published version, the grouping, and the look checker's prompt in theOS/avenCEO/checkers/look.json; its replays.",
    "claims": [
     "c3"
    ]
@@ -240,7 +241,7 @@
   },
   {
    "what": "A metrics script",
-   "until": "There are three or more records."
+   "until": "Escapes remain after checkpoint 3."
   },
   {
    "what": "An append-only check for events",
@@ -860,6 +861,51 @@
    "writes": [],
    "reads": [],
    "task": "t2"
+  },
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Round 5 on revision 7: r5-paraphrase (4 Major, 7 Nit); r5-zoom-out (3 Major, 3 Nit). Not clean: the second unclean round since your restart.",
+   "how": "fresh subagents with the prompts avenCEO/checkers/paraphrase and avenCEO/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-1/r5-paraphrase",
+    "aip/AIP-1/r5-zoom-out"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Round 5 ran.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t3"
+  },
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 8: c3 replays (the fix's parent, the fix), groups by rendered structure and shows the most changed view; the outcome is layout escapes in sessions that change view code; checkpoint 1 is the link crawl and c1, failing first; the look checker named; the apps, the published artifact and the base commit defined.",
+   "how": "by hand",
+   "writes": [
+    "avenCEO/gates/review",
+    "avenCEO/types/check",
+    "avenCEO/terms/published-2"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Every finding of round 5 answered (all fixed); revision 8 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t10"
   }
  ],
  "reviews": [
@@ -870,7 +916,9 @@
   "aip/AIP-1/r3-paraphrase",
   "aip/AIP-1/r3-zoom-out",
   "aip/AIP-1/r4-paraphrase",
-  "aip/AIP-1/r4-zoom-out"
+  "aip/AIP-1/r4-zoom-out",
+  "aip/AIP-1/r5-paraphrase",
+  "aip/AIP-1/r5-zoom-out"
  ],
  "source": {
   "type": "idea",
@@ -898,6 +946,18 @@
   {
    "id": "t3",
    "what": "Spec review round 5: paraphrase and zoom-out",
+   "step": 2,
+   "who": "two fresh checkers"
+  },
+  {
+   "id": "t10",
+   "what": "Answer round 5 and write revision 8",
+   "step": 2,
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t11",
+   "what": "Spec review round 6, the last before avenCEO's rule stops and asks you",
    "step": 2,
    "who": "two fresh checkers"
   },

@@ -1,0 +1,79 @@
+{
+ "type": "review",
+ "id": "aip/AIP-2/r2-paraphrase",
+ "intent": "aip/AIP-2",
+ "round": 2,
+ "lens": "paraphrase",
+ "commit": "5c9b5bc97",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-2.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "theOS takes over the cloud sandbox and the release pipeline from legacy avenDB. Checkpoint 1 is already done, ahead of Gate A, because Samuel asked for it directly: avenDB's four GitHub workflows were moved out of .github/workflows/ so they stop running, and everything live keeps serving. Next, theOS/sandbox/setup.sh warms a box set up only from theOS's files (bun, Chromium, Playwright) and never fails or hangs a session; Samuel pastes a new environment setup script at Gate B. After that, the script installs from theOS's lockfile and runs AIP-1's check. Deferred: what theOS releases, production's ruleset, the deploy and a box image.",
+  "existing": "The claude.ai environment avenSANDBOX runs a pasted setup script. That script looks for aven/DB2/sandbox/box/cloud-setup.sh and runs it, which warms avenDB's Docker box with four peers; if the file is missing, it exits 0. On GitHub, production took changes from main only. avensandbox.yml released avenOS, avenSANDBOX and avenPEER under dated versions, two workflows built images from aven/DB2, and avendeploy.yml deployed aven.maia.city by hand. production's ruleset requires two checks that only the parked workflow reported."
+ },
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "c1, risk",
+   "text": "c1 needs the park to reach production, but the risk says nothing merges into production: the ruleset requires \"Only from main\" and \"avenSANDBOX\" with nobody on the bypass list, and a PR's run comes from the merge commit, where avensandbox.yml no longer exists. c1's condition cannot be met, and read literally its check passes trivially, so checkpoint 2 stalls. \"A new cloud session starts\" always passes (truth 4), and nothing checks that images stay pullable.",
+   "answer": "fix",
+   "note": "c1 covers main only. production is frozen by its ruleset, said once in the risk; it moves with the release, now AIP-5. The image is no longer claimed: nothing in this plan touches it."
+  },
+  {
+   "sev": "Major",
+   "scope": "c2, checkpoint 3",
+   "text": "It installs from theOS's lockfile \"after AIP-1's checkpoint 1\", but AIP-1's checkpoint 1 has no dependencies; package.json and its lockfile arrive in AIP-1's checkpoint 2, pinning Playwright to the box's browser, which is the box AIP-2 builds: possibly circular. Where Chromium comes from is never said.",
+   "answer": "fix",
+   "note": "c2 is dropped: theOS's box needs nothing installed (the base image has bun, node and Chromium); AIP-1's check installs from its own lockfile."
+  },
+  {
+   "sev": "Major",
+   "scope": "experience, outcome, c3",
+   "text": "\"Every new session warms avenDB's box\" contradicts the Warm term and cloud-setup.sh: setup runs once, the disk is snapshotted, sessions start from it for about 7 days. When setup.sh runs, and whether the first session after Gate B has a setup log to read, is unclear; the cost may be overstated.",
+   "answer": "fix",
+   "note": "The experience is corrected: the setup runs once, before the snapshot; the cost is that the environment runs a legacy file and keeps a 24 GB snapshot of avenDB's box. The outcome measures that."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3 check",
+   "text": "The script that can block every session is the pasted environment script (a non-zero exit stops all new sessions). The check runs only setup.sh in a copy; the pasted script is tried only on the success path at Gate B. The time limit has no value and no place (setup.sh or the pasted script). A hang in the pasted script goes unchecked.",
+   "answer": "fix",
+   "note": "The pasted script is now the thing checked: its text is kept in theOS/sandbox/environment-setup.sh, it only finds theOS/sandbox/setup.sh and runs it under a 600 s limit, and it is run with no setup file, a failing one and a hanging one: each time it exits 0 within the limit."
+  },
+  {
+   "sev": "Major",
+   "scope": "title, deferred",
+   "text": "The title says theOS owns the release pipeline, but no checkpoint or claim produces a release: AIP-1 defers release gating to AIP-2, AIP-2 to an open question, so the release has no owner. Whether AIP-2 stays open after the answer or a new intent takes over is unsaid; Gate B's release and the Learn step have nothing to act on.",
+   "answer": "fix",
+   "note": "The release has its owner: AIP-5, in the inbox, with the question of what theOS releases and where, production's ruleset and the deploy. AIP-2 is the sandbox only."
+  },
+  {
+   "sev": "Nit",
+   "scope": "questions",
+   "text": "Gate A covers the checkpoint plan; the question lists outcome in its place.",
+   "answer": "fix",
+   "note": "Gate A's question names the claims, assumptions, checkpoint plan, outcome and mockup."
+  },
+  {
+   "sev": "Nit",
+   "scope": "term avensandbox",
+   "text": "It names an environment plus an image, and the image is deferred; avenSANDBOX 26.10.31v2, a released package, is a third meaning. What \"owns avenSANDBOX\" means after AIP-2 is unclear.",
+   "answer": "fix",
+   "note": "The term avenSANDBOX is redefined: the cloud environment of that name; avenDB's released package of the same name is legacy. theOS owns what the environment runs: its setup script's text and what that script finds."
+  },
+  {
+   "sev": "Nit",
+   "scope": "risk",
+   "text": "Both undos are named, neither is tested; \"can be undone\" means a tested undo restores it.",
+   "answer": "fix",
+   "note": "The park's undo (moving one file back re-lists it) is tried in a scratch checkout as part of c1; the script's undo is pasting the previous script, kept in theOS/sandbox/."
+  },
+  {
+   "sev": "Nit",
+   "scope": "events, truths",
+   "text": "The events asked and changed are not in the intent type's trace events. Truth 4 describes the legacy script c3 replaces; it is not a first principle.",
+   "answer": "fix",
+   "note": "The intent type lists every event kind in use; truth 4 moved to the evidence."
+  }
+ ]
+}

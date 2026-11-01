@@ -1,0 +1,93 @@
+{
+ "type": "review",
+ "id": "aip/AIP-1/r5-paraphrase",
+ "intent": "aip/AIP-1",
+ "round": 5,
+ "lens": "paraphrase",
+ "commit": "5c9b5bc97",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-1.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "AIP-1 builds avenCEO's first piece as checks, with nothing automated yet. theOS/CLAUDE.md gets a done rule that every theOS change must meet: the check command is green, a fresh checker finds no Blocker or Major in the views that changed, renamed words are swept, the work is pushed, and the private artifact is republished. Over three checkpoints, the check command crawls every reachable state of the three apps at two screen sizes. It fails when content can't be reached or scrolls sideways. It also compares screenshots pixel by pixel with the last published version, so the checker sees one view from each group of changed views. Success means, over three sessions: no layout escapes, no renamed-term escapes, and fewer than 1.5 corrections per 10 commits.",
+  "existing": "theOS keeps one typed JSON doc per thing. Three viewers (Docs, Intents, Sources) show the docs by following their links, and an AIP's stage is worked out from its append-only events. avenCEO runs four steps: Understand, Specify, Build, Learn. Before Samuel's Gate A, fresh paraphrase and zoom-out checkers review the spec. Each checkpoint must pass the Mechanical and Review gates, and at Gate B Samuel tries the result. Today the main session runs this by hand, and problems are found only when Samuel looks."
+ },
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "c3",
+   "text": "All the evidence commits are fixes (106ba0e5f: \"the stage chip no longer takes the page's .stage grid\"; 3ddc07339 and b1d105b39 too), yet c3 calls them \"the commit that broke a view\". The commits that broke the views are never named, and finding them means the bisect round 4's answer said was not needed: that fix did not happen.",
+   "answer": "fix",
+   "note": "c3 replays the pair (the fix's parent, the fix): the diff picks the views the fix changed; shown at the parent the checker must flag them, shown at the fix it must pass them. No commit that broke a view is needed."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3, options",
+   "text": "\"One view per group (by kind and size)\" never defines kind or says who picks the view shown. A break in part of a group can hide behind a view that is fine: only 23 of the 91 OLD-AIPs have scenarios, so the squeezed table appears on some intent pages only. Whoever picks is the author choosing again; the replays use whole-page-type breaks, so they cannot catch this. The Checks first option still says every view whose pixels changed.",
+   "answer": "fix",
+   "note": "Views are grouped by their rendered structure (the set of class names in the view) and size; the member shown is the one with the most changed pixels, picked by the program, never the author. The Checks first option says so too."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "Round 4's answer said the measured sessions start after checkpoint 3; the record does not say so, nor whether the three are counted together or one by one. Zero renamed-term escapes is promised, but AIP-1 builds nothing for it (the gaps hand it to AIP-3's c6) and the sweep is not enforced.",
+   "answer": "fix",
+   "note": "The outcome: zero layout escapes over the first three sessions after checkpoint 3 that change view code (.js, .css or .html), each with at least five such commits, counted session by session. Renamed terms are AIP-3's outcome; total corrections stay a metric, not this AIP's test."
+  },
+  {
+   "sev": "Major",
+   "scope": "avenCEO/gates/review",
+   "text": "The gate still says two fresh checkers per round, but names only one critic for a checkpoint; AIP-1 builds one checker (\"the third checker\", its lens never named) and the done rule asks for one. Who the second checker is at AIP-1's checkpoints is unsaid: round 4's fix was only partly made.",
+   "answer": "fix",
+   "note": "The Review gate says it: a spec gets two checkers (paraphrase and zoom out); a checkpoint gets one critic, the look checker (does each changed view look and behave right?), whose prompt checkpoint 3 adds."
+  },
+  {
+   "sev": "Nit",
+   "scope": "assumptions",
+   "text": "\"Samuel is the only one who passes a gate\" contradicts the Mechanical and Review gates.",
+   "answer": "fix",
+   "note": "Assumption: you pass Gate A and Gate B; machines pass the Mechanical gate and checkers the Review gate."
+  },
+  {
+   "sev": "Nit",
+   "scope": "deferred",
+   "text": "The metrics script waits \"until there are three or more records\"; AIP-1 to AIP-4 exist, so the condition is met. The Checks first option says \"only if escapes remain\".",
+   "answer": "fix",
+   "note": "The metrics script waits until escapes remain after checkpoint 3, as the option says."
+  },
+  {
+   "sev": "Nit",
+   "scope": "checkpoint 1",
+   "text": "It has no claims, and a check command with no dependencies checks nothing, against step 3's \"write its checks and see them fail\".",
+   "answer": "fix",
+   "note": "Checkpoints reordered: checkpoint 1 is theOS/CLAUDE.md, package.json, a crawl that follows links, and c1, which it fails first at faf266961's parent."
+  },
+  {
+   "sev": "Nit",
+   "scope": "avenCEO/types/check",
+   "text": "Its file is still aven/checks/<name>.json, a folder gone since D-28, and it lists the terms check as AIP-1's: an unswept rename, the very escape the record is about.",
+   "answer": "fix",
+   "note": "avenCEO/types/check now names avenCEO/checks/<name>.json and the checks AIP-1 builds."
+  },
+  {
+   "sev": "Nit",
+   "scope": "terms, done rule, risk",
+   "text": "The Published term still says \"the theOS docs page\". Whether the theOS artifact holds all three apps, and how the commit of the last published version is found, is unsaid. The risk says no deploy, but the done rule republishes.",
+   "answer": "fix",
+   "note": "A new term Published says it: the theOS artifact, the dashboard and its three apps; the last published version is the newest commit whose message names an artifact version. The risk names the republish and its undo (republish the version before)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c2",
+   "text": "Where the test page lives, and how a crawl from theOS/index.html reaches it, is unsaid.",
+   "answer": "fix",
+   "note": "The test page lives in theOS/avenCEO/checks/fixtures/, and the crawl's test starts there."
+  },
+  {
+   "sev": "Nit",
+   "scope": "assumptions, c1",
+   "text": "\"Intents\" names both a current viewer and the legacy board; the three apps' paths are never given. \"Scrolls sideways\" could mean the page or any box; ui/base.css scrolls some boxes sideways on purpose.",
+   "answer": "fix",
+   "note": "The three apps and their paths are named; the legacy board is the OLD-AIPs board in the Docs app; \"scrolls sideways\" means the page; boxes made to scroll sideways are fine."
+  }
+ ]
+}

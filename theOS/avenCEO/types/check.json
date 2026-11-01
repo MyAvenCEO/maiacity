@@ -2,8 +2,8 @@
  "type": "type",
  "id": "avenCEO/types/check",
  "name": "check",
- "file": "aven/checks/<name>.json",
- "what": "A mechanical check and its code: later, built by AIP-1 (the crawl, the docs check, the pixel diff, the terms check).",
+ "file": "avenCEO/checks/<name>.json",
+ "what": "One mechanical check: what it runs, on what, and what failing means. AIP-1 builds the crawl, the docs check and the pixel diff; brain's checks come from AIP-3.",
  "subtypes": [],
  "fields": [
   {
