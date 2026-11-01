@@ -12,6 +12,7 @@ import { docsCheck } from './docs-check.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SIZES = [{ width: 390, height: 844 }, { width: 1280, height: 720 }];
 const WORKERS = 3; // pages per size, sharing one queue
+const MOST = 5000; // states per size: more means a route shows new text each time (a clock), and the crawl would not end
 
 function args(argv) {
   const o = { root: resolve(HERE, '../..'), entry: null, out: join(HERE, 'out') };
@@ -87,16 +88,19 @@ async function settle(page) {
 }
 
 // What a person can act on in this state: the theOS pages its links lead to (an HTML page, or a hash route on one),
-// and its visible, enabled buttons, each named by its place among them and its markup.
-const SEEN = (el) => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && !el.disabled && !el.closest('[inert]');
+// and its visible, enabled buttons, each named by its place among them and its markup. window.__buttons is installed in every
+// page, next to countFetches.
+function pageButtons() {
+  const seen = (el) => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && !el.disabled && !el.closest('[inert]');
+  window.__buttons = () => [...document.querySelectorAll('button, [role="button"]')].filter(seen);
+}
 async function actions(page, origin) {
-  const { hrefs, buttons } = await page.evaluate((seen) => {
-    const visible = new Function(`return ${seen}`)();
+  const { hrefs, buttons } = await page.evaluate(() => {
     // getAttribute, not .href: a link inside an SVG has no string href.
     const hrefs = [...document.querySelectorAll('a[href]')].map((a) => { try { return new URL(a.getAttribute('href'), document.baseURI).href; } catch { return null; } });
-    const buttons = [...document.querySelectorAll('button, [role="button"]')].filter(visible).map((b, i) => ({ i, html: b.outerHTML }));
+    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML }));
     return { hrefs, buttons };
-  }, SEEN.toString());
+  });
   const links = [...new Set(hrefs)].filter((h) => {
     const u = h && new URL(h);
     return u?.origin === origin && (/\.html$/.test(u.pathname) || u.pathname.endsWith('/'));
@@ -128,14 +132,13 @@ async function reach(page, { url, clicks }, expect) {
 }
 
 async function press(page, b) {
-  const ok = await page.evaluate(({ b, seen }) => {
-    const visible = new Function(`return ${seen}`)();
-    const all = [...document.querySelectorAll('button, [role="button"]')].filter(visible);
+  const ok = await page.evaluate((b) => {
+    const all = window.__buttons();
     const el = all[b.i]?.outerHTML === b.html ? all[b.i] : all.find((x) => x.outerHTML === b.html);
     if (!el) return false;
     el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); // SVG has no .click()
     return true;
-  }, { b, seen: SEEN.toString() });
+  }, b);
   if (ok) { page.clean = false; await settle(page); }
   return ok;
 }
@@ -146,6 +149,7 @@ async function press(page, b) {
 async function crawl(browser, size, start, origin) {
   const context = await browser.newContext({ viewport: size });
   await context.addInitScript(countFetches);
+  await context.addInitScript(pageButtons);
   context.on('page', async (p) => { if (await p.opener()) await p.close(); }); // a link or button that opens a new tab
   const states = [], keys = new Map(), pressed = new Set(), queue = [], loaded = new Set();
   const doc = (url) => url.split('#')[0];
@@ -154,6 +158,7 @@ async function crawl(browser, size, start, origin) {
   const found = async (page, recipe, layoutOnly = false) => {
     const key = await keyOf(page);
     if ((keys.has(key) && !layoutOnly) || !page.url().startsWith(origin)) return key;
+    if (states.length >= MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
     const state = { size: `${size.width}x${size.height}`, url: page.url().slice(origin.length + 1), recipe, key, fails: await page.evaluate(docsCheck) };
     if (layoutOnly) { if (state.fails.length) states.push({ ...state, layoutOnly }); return key; }
     keys.set(key, state);

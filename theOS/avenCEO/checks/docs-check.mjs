@@ -4,6 +4,7 @@
 //      than it; auto and scroll let a person scroll, visible hands the content to the box around it;
 //   2. the page never scrolls sideways: content wider than the window fails, whether the page scrolls to it or hides it;
 //   3. boxes made to scroll sideways are fine (their overflow is theirs, not the page's).
+// A fixed box is a scroll container's content too: one that doesn't scroll and reaches past the window fails.
 // docsCheck runs inside the page (Playwright's page.evaluate), so it must not use anything from this module's scope.
 // It returns one entry per failure; an empty list is a pass.
 export function docsCheck() {
@@ -34,7 +35,13 @@ export function docsCheck() {
   for (const el of document.querySelectorAll('body *, body')) {
     if (el === body && fromBody) continue;
     const s = getComputedStyle(el);
-    if (!blocked(s.overflowY) || s.visibility === 'hidden' || !el.getClientRects().length) continue;
+    if (s.visibility === 'hidden' || !el.getClientRects().length) continue;
+    // A fixed box doesn't move with the page: what reaches past the window's bottom can't be scrolled to, unless the
+    // box scrolls itself.
+    if (s.position === 'fixed' && !['auto', 'scroll'].includes(s.overflowY) && el.getBoundingClientRect().bottom > innerHeight + SLACK) {
+      fails.push({ rule: 'a fixed box reaches past the window', where: where(el), content: Math.round(el.getBoundingClientRect().bottom), box: innerHeight, overflow: s.overflowY });
+    }
+    if (!blocked(s.overflowY)) continue;
     if (el.scrollHeight > el.clientHeight + SLACK) {
       fails.push({ rule: 'a box is taller inside than it can scroll', where: where(el), content: el.scrollHeight, box: el.clientHeight, overflow: s.overflowY });
     }
