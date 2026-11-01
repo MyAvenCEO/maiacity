@@ -2,8 +2,8 @@
 // function; brain.mjs re-exports them and its command line calls them. Every write names the intent it serves and its
 // author, appends that intent's event (the trace) and leaves the commit to the agent; brain check fails a commit that
 // changed a doc any other way (d-5bce, d-87d6). Writes go to files under the theOS folder `root`.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, chmodSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, chmodSync, renameSync } from 'node:fs';
+import { join, dirname, relative, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
@@ -52,6 +52,19 @@ export function docsOf(root) {
   const m = map(root);
   return new Map(Object.entries(m.ids).map(([id, file]) => [id, { file, doc: read(root, file) }]));
 }
+// c1: a doc matches its type doc's schema (no field the schema does not name), and by, session and intent name an
+// author, a session and an intent. Returns the first failure, or null. lookup(id) gives a doc by id.
+export function checkDoc(doc, typeOf, lookup) {
+  if (doc.type === 'index') return null; // written by brain index; c8 checks it equals its folder
+  const T = typeOf(doc.type);
+  if (!T) return `${doc.id}: type ${doc.type} has no type doc`;
+  const s = T.schema;
+  const f = validate(doc, s); if (f) return `${doc.id}: ${f}`;
+  const extra = s?.properties ? Object.keys(doc).filter((k) => !(k in s.properties)) : [];
+  if (extra.length) return `${doc.id}: ${extra.join(', ')}: not a field of ${doc.type} (its type doc names its fields)`;
+  for (const [k, t] of [['by', 'author'], ['session', 'session'], ['intent', 'intent']]) if (typeof doc[k] === 'string' && lookup(doc[k])?.type !== t) return `${doc.id}: ${k} ${doc[k]} is not ${t === 'author' ? 'an' : 'a'} ${t} doc`;
+  return null;
+}
 const typeDoc = (all, type) => [...all.values()].find((x) => x.doc.type === 'type' && x.doc.name === type)?.doc;
 const author = (all, by) => (all.get(by)?.doc.type === 'author' ? by : refuse('no_author', `--by must be an author doc's id: ${[...all].filter(([, x]) => x.doc.type === 'author').map(([i, x]) => `${i} (${x.doc.name})`).join(', ')}`));
 const intentOf = (all, id) => (all.get(id)?.doc.type === 'intent' ? all.get(id) : refuse('no_intent', `--intent must be an intent's id: brain holds intent lists them`));
@@ -94,7 +107,11 @@ export function add(root, { type, doc, intent, by, task }) {
   const at = stepOf(I.doc.events || []);
   if (LEARN_ONLY.includes(type) && at !== 4) refuse('step', `a ${type} is written at Learn; ${intent} stands at step ${at}`);
   const same = [...all].find(([, x]) => x.doc.type === type && x.doc.title && x.doc.title === doc.title && holdsIn(all, x.doc.id) !== 'superseded');
-  if (same) return { outcome: 'unchanged', id: same[0] };
+  if (same) {
+    const { id: _i, type: _t, at: _a, ...a } = same[1].doc, { id: _j, type: _u, at: _b, ...b } = doc;
+    if (JSON.stringify(a) === JSON.stringify(b)) return { outcome: 'unchanged', id: same[0] };
+    refuse('duplicate_title', `${same[0]} holds with the same title; supersede it, or give this one its own title`);
+  }
   for (const s of doc.supersedes || []) {
     const t = target(s);
     if (!all.has(t)) refuse('not_found', `supersedes ${t}, which is no doc`);
@@ -104,7 +121,7 @@ export function add(root, { type, doc, intent, by, task }) {
   const folder = dirname(Object.values(m.ids).find((f) => all.get(f.split('/').pop())?.doc.type === type) || refuse('no_folder', `no ${type} exists yet to show where it is filed`));
   const full = { type, id, ...doc, ...(type === 'decision' && !doc.at ? { at: now() } : {}) };
   full.type = type; full.id = id;
-  const bad = validate(full, T.schema);
+  const bad = checkDoc(full, (t) => typeDoc(all, t), (i) => all.get(i)?.doc);
   if (bad) refuse('schema', bad);
   const left = reflect(all, type, full).filter((c) => !(doc.supersedes || []).some((s) => target(s) === c));
   write(root, `${folder}/${id}`, full);
@@ -120,9 +137,11 @@ export function edit(root, { id, patch, intent, by, task }) {
   const all = docsOf(root);
   author(all, by); intentOf(all, intent);
   const x = all.get(id) || refuse('not_found', `no doc ${id}`);
+  const locked = Object.keys(patch).filter((k) => ['id', 'type', 'supersedes', 'events'].includes(k));
+  if (locked.length) refuse('not_editable', `${locked.join(', ')}: a change of meaning is a new doc that supersedes this one; events are written by the verbs`);
   const next = { ...x.doc, ...patch, id, type: x.doc.type };
   if (JSON.stringify(next) === JSON.stringify(x.doc)) return { outcome: 'unchanged', id };
-  const bad = validate(next, typeDoc(all, x.doc.type)?.schema);
+  const bad = checkDoc(next, (t) => typeDoc(all, t), (i) => all.get(i)?.doc);
   if (bad) refuse('schema', bad);
   write(root, x.file, next);
   event(root, docsOf(root), intent, by, 'edit', `${id}: ${Object.keys(patch).join(', ')}`, [id], task ? { task } : {});
@@ -143,42 +162,59 @@ export function append(root, { id, list, entry, intent, by, task }) {
   return { outcome: 'appended', id };
 }
 
-// brain index: every index doc and brain/ids.json written from the folders. Run by add; never edited by hand.
-export function index(root) {
+// brain index: brain/ids.json, every index doc, the definition's lists and a session's decisions and intents, written
+// from the docs themselves (c8). Run by add; never edited by hand. With dry, nothing is written: it returns what differs.
+export function index(root, { dry = false } = {}) {
   const m = map(root), changed = [];
-  const walk = (dir, out = []) => { for (const n of readdirSync(dir)) { const p = join(dir, n); if (statSync(p).isDirectory()) { if (!['out', 'node_modules', 'test', 'checks'].includes(n)) walk(p, out); } else if (ID.test(n.replace(/\.json$/, '')) && n.endsWith('.json')) out.push(p); } return out; };
+  const walk = (dir, out = []) => { for (const n of readdirSync(dir)) { const p = join(dir, n); if (statSync(p).isDirectory()) { if (!['out', 'node_modules', 'test', 'checks'].includes(n)) walk(p, out); } else if (n.endsWith('.json') && ID.test(n.slice(0, -5))) out.push(p); } return out; };
   const ids = {};
   for (const f of ['aip', 'avenCEO', 'brain'].flatMap((d) => (existsSync(join(root, d)) ? walk(join(root, d)) : []))) {
     const file = relative(root, f).replace(/\.json$/, ''), id = file.split('/').pop();
     if (ids[id]) refuse('duplicate_id', `${id} is both ${ids[id]} and ${file}`);
     ids[id] = file;
   }
-  if (JSON.stringify(ids) !== JSON.stringify(m.ids)) { m.ids = ids; saveMap(root, m); }
-  for (const [folder, ix] of Object.entries(m.index)) {
-    const file = ids[ix]; if (!file) continue;
-    const doc = read(root, file), dir = dirname(file);
-    // an index lists the docs of its folder of the type it already lists (aip/ holds reviews too; its index lists intents)
-    const kind = doc.items.length ? read(root, ids[doc.items[0]] || file).type : null;
-    const here = Object.entries(ids).filter(([i, f]) => i !== ix && dirname(f) === dir && (kind ? read(root, f).type === kind : read(root, f).type !== 'index')).map(([i]) => i);
-    const items = [...doc.items.filter((i) => here.includes(i)), ...here.filter((i) => !doc.items.includes(i))];
-    if (JSON.stringify(items) !== JSON.stringify(doc.items)) { doc.items = items; write(root, file, doc); changed.push(ix); }
+  if (JSON.stringify(Object.entries(ids).sort()) !== JSON.stringify(Object.entries(m.ids).sort())) { changed.push('brain/ids.json'); if (!dry) { m.ids = ids; saveMap(root, m); } }
+  const docs = Object.fromEntries(Object.entries(ids).map(([i, f]) => [i, read(root, f)]));
+  const ofType = (t) => Object.keys(docs).filter((i) => docs[i].type === t);
+  // keep the order a list has, drop what is gone, add what is new at the end
+  const sync = (id, key, want) => {
+    const doc = docs[id], have = doc[key] || [];
+    const next = [...have.filter((x) => want.includes(x)), ...want.filter((x) => !have.includes(x))];
+    if (JSON.stringify(next) !== JSON.stringify(have)) { changed.push(`${id}.${key}`); if (!dry) { doc[key] = next; write(root, ids[id], doc); } }
+  };
+  for (const ix of Object.values(m.index)) {
+    if (!docs[ix]) continue;
+    const dir = dirname(ids[ix]), kind = docs[ix].items?.length ? docs[docs[ix].items[0]]?.type : null;
+    sync(ix, 'items', Object.keys(docs).filter((i) => i !== ix && dirname(ids[i]) === dir && (kind ? docs[i].type === kind : docs[i].type !== 'index')));
+  }
+  const def = m.root && docs[m.root];
+  if (def) for (const [key, t] of [['steps', 'step'], ['gates', 'gate'], ['types', 'type'], ['checkers', 'checker'], ['terms', 'term'], ['indexes', 'index']]) if (Array.isArray(def[key])) sync(m.root, key, ofType(t));
+  for (const sid of ofType('session')) {
+    const ds = ofType('decision').filter((d) => docs[d].session === sid);
+    sync(sid, 'decisions', ds);
+    sync(sid, 'intents', [...new Set(ds.flatMap((d) => docs[d].intents || []))].filter((i) => docs[i]?.type === 'intent'));
   }
   return { changed };
 }
 
-// brain install: this clone's pre-push hook (runs brain check) and the merge driver for lists that only grow.
-export function install(root) {
+// brain install: this clone's pre-push hook (runs brain check when theOS/ changed; an older hook moves to
+// pre-push.local and runs first) and the merge driver for lists that only grow, named in theOS/.gitattributes.
+export function install(root, { program } = {}) {
   const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim();
-  const top = git('rev-parse', '--show-toplevel'), hooks = join(top, git('rev-parse', '--git-path', 'hooks'));
-  const rel = relative(top, join(root, 'brain', 'brain.mjs'));
+  const top = git('rev-parse', '--show-toplevel'), hooks = resolve(root, git('rev-parse', '--git-path', 'hooks'));
+  const rel = relative(top, join(root, 'brain', 'brain.mjs')), dir = relative(top, root);
   mkdirSync(hooks, { recursive: true });
-  const hook = join(hooks, 'pre-push');
-  const line = `node "${rel}" check || exit 1  # brain (aip-836d)`;
-  const old = existsSync(hook) ? readFileSync(hook, 'utf8') : '#!/bin/sh\n';
-  if (!old.includes('# brain (aip-836d)')) writeFileSync(hook, `${old.trimEnd()}\n${line}\n`);
+  const hook = join(hooks, 'pre-push'), local = join(hooks, 'pre-push.local');
+  const MARK = '# brain (aip-836d)';
+  if (existsSync(hook) && !readFileSync(hook, 'utf8').includes(MARK)) renameSync(hook, local);
+  writeFileSync(hook, `#!/bin/sh\n${MARK}: an older hook runs first, then brain check when ${dir}/ changed\nif [ -x "$(dirname "$0")/pre-push.local" ]; then "$(dirname "$0")/pre-push.local" "$@" || exit 1; fi\ncd "$(git rev-parse --show-toplevel)" || exit 1\nif ! git diff --quiet "@{push}" -- "${dir}" 2>/dev/null || ! git rev-parse -q --verify "@{push}" >/dev/null; then node "${rel}" check || exit 1; fi\n`);
   chmodSync(hook, 0o755);
-  git('config', 'merge.brain-lists.name', 'brain: keep both sides\' new entries of lists that only grow');
-  git('config', 'merge.brain-lists.driver', `node "${rel}" merge %O %A %B`);
+  const attrs = join(root, '.gitattributes'), want = ['aip/*.json merge=brain-lists', 'avenCEO/**/*.json merge=brain-lists', 'brain/**/*.json merge=brain-lists'];
+  const have = existsSync(attrs) ? readFileSync(attrs, 'utf8') : '';
+  const missing = want.filter((l) => !have.split('\n').includes(l));
+  if (missing.length) writeFileSync(attrs, `${have.trimEnd()}${have ? '\n' : ''}# brain's docs merge with the driver brain install sets up (aip-836d)\n${missing.join('\n')}\n`);
+  git('config', 'merge.brain-lists.name', "brain: keep both sides' new entries of lists that only grow");
+  git('config', 'merge.brain-lists.driver', `node "${program || rel}" merge %O %A %B`);
   return { hook, driver: 'brain-lists' };
 }
 
@@ -197,30 +233,40 @@ export function merge3(o, a, b) {
   throw new DoorError('conflict', 'both sides changed the same field differently; resolve by hand');
 }
 
-// brain check: every commit in the range (default: the commits since main), each against its parent.
+// brain check: every commit in the range (default: the commits since main) against its parent, from brain/door.json's
+// "since" on; then the tree as it is (c8: ids.json, the index docs and the copied lists equal what brain index writes).
+// A merge commit is checked where its result differs from every parent: there it must be what the merge driver gives.
 export function check(root, { range } = {}) {
   const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   const top = git('rev-parse', '--show-toplevel'), prefix = relative(top, root) || '.';
   const door = existsSync(join(root, 'brain', 'door.json')) ? JSON.parse(readFileSync(join(root, 'brain', 'door.json'), 'utf8')).since : null;
-  let r = range;
+  let r = range, shas;
   if (!r) { try { git('rev-parse', '--verify', 'origin/main'); r = 'origin/main..HEAD'; } catch { r = 'HEAD~1..HEAD'; } }
-  const shas = git('rev-list', '--reverse', r).split('\n').filter(Boolean);
+  try { shas = git('rev-list', '--reverse', r).split('\n').filter(Boolean); } catch { return { range: r, commits: 0, fails: [{ commit: '-', fails: [`the range ${r} does not resolve here (a shallow clone?); pass --range`] }] }; }
   const fails = [];
   const at = (sha, file) => { if (!file) return null; try { return JSON.parse(git('show', `${sha}:${prefix === '.' ? '' : `${prefix}/`}${file}.json`)); } catch { return null; } };
   for (const sha of shas) {
     if (door && (sha === door || !isAncestor(git, door, sha))) continue;
     const parents = git('rev-list', '--parents', '-n', '1', sha).split(' ').slice(1);
-    if (parents.length !== 1) continue; // a merge: its sides were checked as they were made
-    const changed = git('diff', '--name-only', parents[0], sha, '--', prefix).split('\n').filter((f) => f.endsWith('.json')).map((f) => relative(prefix, f).replace(/\.json$/, ''));
-    const docs = changed.filter((f) => ID.test(f.split('/').pop()) && !GENERATED.includes(`${f}`));
-    if (!docs.length) continue;
-    const covered = new Set(), bad = [];
-    const authors = new Set();
-    for (const f of docs) {
-      const d = at(sha, f); if (!d) continue;
-      if (d.type === 'author') authors.add(d.id);
+    const m = at(sha, 'brain/ids'); const ids = m?.ids || {};
+    const bad = [];
+    const changedFrom = (p) => git('diff', '--name-only', p, sha, '--', prefix).split('\n').filter((f) => f.endsWith('.json')).map((f) => relative(prefix, f).replace(/\.json$/, '')).filter((f) => ID.test(f.split('/').pop()));
+    if (parents.length > 1) {
+      // only what differs from every parent was made by the merge itself
+      const sets = parents.map((p) => new Set(changedFrom(p)));
+      const own = [...sets[0]].filter((f) => sets.every((x) => x.has(f)));
+      let base = null; try { base = git('merge-base', ...parents); } catch { /* unrelated histories */ }
+      for (const f of own) {
+        let want; try { want = merge3(base && at(base, f), at(parents[0], f), at(parents[1], f)); } catch { want = undefined; }
+        if (JSON.stringify(want) !== JSON.stringify(at(sha, f))) bad.push(`${f}: changed by the merge itself, not as the merge driver keeps both sides`);
+      }
+      if (bad.length) fails.push({ commit: sha.slice(0, 9), fails: bad });
+      continue;
     }
-    const m = at(sha, 'brain/ids'); for (const [id, file] of Object.entries(m?.ids || {})) if (id.startsWith('a-')) authors.add(id);
+    const docs = changedFrom(parents[0]);
+    if (!docs.length) continue;
+    const covered = new Set();
+    const isA = (id, t) => at(sha, ids[id])?.type === t;
     for (const f of docs) {
       const now_ = at(sha, f), before = at(parents[0], f);
       if (now_?.type !== 'intent') continue;
@@ -229,20 +275,23 @@ export function check(root, { range } = {}) {
       const added = neu.slice(old.length);
       if (added.length) covered.add(f.split('/').pop());
       added.forEach((e, k) => {
-        if (!authors.has(e.by)) bad.push(`${f}: event by ${e.by}, not an author doc`);
-        for (const w of e.writes || []) covered.add(w);
+        if (!isA(e.by, 'author')) bad.push(`${f}: event by ${e.by}, not an author doc`);
+        for (const w of e.writes || []) covered.add(w.split('.')[0]);
         if (e.what === 'correction' && !e.cause) bad.push(`${f}: a correction names its cause`);
-        for (const w of e.writes || []) { const wd = at(sha, m?.ids?.[w] || ''); if (wd && LEARN_ONLY.includes(wd.type) && stepOf(neu.slice(0, old.length + k)) !== 4) bad.push(`${w}: a ${wd.type} written outside Learn`); }
+        for (const w of e.writes || []) { const wd = at(sha, ids[w]); if (wd && LEARN_ONLY.includes(wd.type) && stepOf(neu.slice(0, old.length + k)) !== 4) bad.push(`${w}: a ${wd.type} written outside Learn`); }
       });
     }
-    for (const f of docs) { const id = f.split('/').pop(); if (!covered.has(id) && at(sha, f)?.type !== 'index') bad.push(`${f}: changed without an event of this commit`); }
+    const types = {}; for (const [id, file] of Object.entries(ids)) if (id.startsWith('ty-')) { const t = at(sha, file); if (t) types[t.name] = t; }
     for (const f of docs) {
       const d = at(sha, f); if (!d) continue;
-      const T = Object.values(m?.ids || {}).map((x) => at(sha, x)).find((t) => t?.type === 'type' && t.name === d.type);
-      const v = validate(d, T?.schema); if (v) bad.push(`${f}: schema: ${v}`);
+      const id = f.split('/').pop();
+      if (!covered.has(id) && d.type !== 'index') bad.push(`${f}: changed without an event of this commit`);
+      const c = checkDoc(d, (t) => types[t], (i) => at(sha, ids[i])); if (c) bad.push(c);
     }
     if (bad.length) fails.push({ commit: sha.slice(0, 9), fails: bad });
   }
+  // the tree as it is: what brain index would write must already be there
+  try { const { changed } = index(root, { dry: true }); if (changed.length) fails.push({ commit: 'tree', fails: changed.map((c) => `${c}: differs from what brain index writes (run: node brain/brain.mjs index)`) }); } catch (e) { fails.push({ commit: 'tree', fails: [e.message] }); }
   return { range: r, commits: shas.length, fails };
 }
 function isAncestor(git, a, b) { try { git('merge-base', '--is-ancestor', a, b); return true; } catch { return false; } }

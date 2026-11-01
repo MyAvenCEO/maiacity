@@ -1732,6 +1732,29 @@
    ],
    "reads": [],
    "task": "t7"
+  },
+  {
+   "at": "2026-11-01T14:23Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "type ty-15fd",
+   "how": "brain add",
+   "writes": [
+    "ty-15fd",
+    "def-e833.types"
+   ],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T14:24Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2 review by a fresh agent: 1 Blocker (brain install wrote the hook outside the clone), 5 Major (an older hook could swallow brain check; no .gitattributes, so the merge driver never ran; merge commits skipped; c8 not built; c1 let unknown fields, a free-text by and an unknown session through; a same-title draft dropped silently), 3 Nit. All fixed, each with a test: the hook in the clone's hooks folder, an older one kept as pre-push.local and run first; .gitattributes names the driver for aip/, avenCEO/ and brain/; a merge is checked where it differs from every parent; brain index writes ids.json, the index docs, the definition's lists and a session's decisions and intents, and check fails a tree where they differ; schemas are closed (a field the type doc does not name fails), by, session and intent must name an author, a session and an intent; a same-title draft with another body is refused (duplicate_title); edit refuses supersedes and events; door.json starts the door; a range that does not resolve is reported. The definition got its type doc through brain add (ty-15fd). 19 of 19 tests.",
+   "how": "a fresh subagent reading the record and the diff and trying the verbs",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
   }
  ],
  "reviews": [
