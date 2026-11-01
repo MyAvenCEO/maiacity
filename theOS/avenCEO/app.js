@@ -272,6 +272,14 @@ const PAGES = {
       ${sec('Links to', `<p>${D.links_to.map(L).join(' · ') || '–'}</p>`)}
       ${sec(`Its docs (${docs.length})`, `<p>${docs.join(' · ') || 'None yet.'}</p>`)}`;
   },
+  research(D) {
+    const groups = [['now', 'Adopt now', 'sage'], ['later', 'Later', 'ochre'], ['no', 'Not for us', '']];
+    return `${head({ ...D, title: `${D.intent.split('/').pop()}: research` }, [], `<p class="lead">${T(D.question)}</p>`)}
+      ${sec('Recommendation', `<p>${T(D.recommendation)}</p>`)}
+      ${groups.map(([k, h, c]) => sec(`${h} (${D.patterns.filter((p) => p.adopt === k).length})`, table(['Pattern', 'What', 'Seen in', 'Why'], D.patterns.filter((p) => p.adopt === k).map((p) => [e(p.name), T(p.what), p.seen_in.map(L).join(' · '), T(p.why)])))).join('')}
+      ${sec('What only you can answer', ul(D.open_questions))}
+      ${sec('Sources, and how each was read', table(['Source', 'How'], D.reads.map((r) => [L(r.source), e(r.how)])))}`;
+  },
   checker(D) { return `${head(D, [`<span class="chip">${e(D.lens)}</span>`], `<p class="lead">${T(D.what)}</p>`)}${sec('Its prompt', `<p class="note">${e(D.record_placeholder || '')}</p><pre class="code">${e(D.prompt)}</pre>`)}`; },
   metric(D) { return `${head(D, [`<span class="chip">${e(D.how)}</span>`], `<p class="lead">${T(D.what)}. Want: ${T(D.want)}.</p>`)}${sec('Measurements', table(['Session', 'Value', 'Count', 'Commits', 'Note'], (D.measurements || []).map((m) => [L(m.session), String(m.value), String(m.count ?? ''), String(m.commits ?? ''), T(m.note || '')])) || '<p class="note">None yet.</p>')}`; },
   lesson(D) { return `${head({ ...D, title: D.lesson }, [`<span class="chip sage">${e(D.status)}</span>`, `<span class="chip">${e(D.confidence)}</span>`])}${sec('Cue', `<p>${T(D.cue)}</p>`)}${sec('Evidence', `<p>${T(D.evidence)}</p>`)}`; },

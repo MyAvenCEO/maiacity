@@ -39,20 +39,21 @@
   "avenCEO/gates/review"
  ],
  "types": [
-  "avenCEO/types/intent",
-  "avenCEO/types/review",
-  "avenCEO/types/decision",
-  "avenCEO/types/session",
-  "avenCEO/types/reference",
-  "avenCEO/types/step",
-  "avenCEO/types/gate",
-  "avenCEO/types/type",
-  "avenCEO/types/checker",
+  "avenCEO/types/author",
   "avenCEO/types/check",
-  "avenCEO/types/metric",
+  "avenCEO/types/checker",
+  "avenCEO/types/decision",
+  "avenCEO/types/gate",
+  "avenCEO/types/intent",
   "avenCEO/types/lesson",
+  "avenCEO/types/metric",
+  "avenCEO/types/reference",
+  "avenCEO/types/research",
+  "avenCEO/types/review",
+  "avenCEO/types/session",
+  "avenCEO/types/step",
   "avenCEO/types/term",
-  "avenCEO/types/author"
+  "avenCEO/types/type"
  ],
  "checkers": [
   "avenCEO/checkers/paraphrase",

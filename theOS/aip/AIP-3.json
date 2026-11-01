@@ -37,6 +37,34 @@
     "Change: tell me what",
     "Send it back"
    ]
+  },
+  {
+   "q": "Decision ids: with many threads at once, keep D-n numbers, or switch to hash ids with D-n as a label?",
+   "options": [
+    "Keep D-n: only avenMAIA writes decisions, so they never collide (recommended)",
+    "Hash ids, D-n as a label"
+   ]
+  },
+  {
+   "q": "Should brain's command be the only door from the start (the check fails any commit that changed a doc without it), or advisory for one checkpoint first?",
+   "options": [
+    "The only door from the start (recommended)",
+    "Advisory for one checkpoint first"
+   ]
+  },
+  {
+   "q": "Should brain's verbs also be served over MCP, so AIP-4's mod, the apps and other sessions use the same door, or stay a command and a skill for now?",
+   "options": [
+    "A command and a skill now; MCP with AIP-4 (recommended)",
+    "MCP from the start"
+   ]
+  },
+  {
+   "q": "Is withdraw (a doc stops holding with no successor, with its reason kept) a verb you want, or must every doc that stops holding be superseded by a newer one?",
+   "options": [
+    "Withdraw, with its reason, only from an AIP's event (recommended)",
+    "Only supersede"
+   ]
   }
  ],
  "problem": {
@@ -823,6 +851,82 @@
    "writes": [],
    "reads": [],
    "task": "t15"
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "read",
+   "text": "Read for brain's research: docs only.",
+   "how": "the research thread (session_01E9zxn6mwBXcKRHezNQyoSB); details per source in aip/AIP-3/research",
+   "writes": [],
+   "reads": [
+    "sources/gbrain",
+    "sources/supermemory",
+    "sources/hindsight",
+    "sources/mempalace",
+    "sources/basic-memory",
+    "sources/beads"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "read",
+   "text": "Read for brain's research: read in full.",
+   "how": "the research thread (session_01E9zxn6mwBXcKRHezNQyoSB); details per source in aip/AIP-3/research",
+   "writes": [],
+   "reads": [
+    "sources/mem0",
+    "sources/letta",
+    "sources/graphiti",
+    "sources/cognee",
+    "sources/langmem",
+    "sources/anthropic-memory-tool",
+    "sources/claude-code-memory"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The research written: 13 sources, 16 patterns (10 now, 4 later, 2 no), a recommendation for brain's one command and 4 open questions.",
+   "how": "the research thread, merged by avenMAIA",
+   "writes": [
+    "aip/AIP-3/research",
+    "sources/gbrain",
+    "sources/supermemory",
+    "sources/hindsight",
+    "sources/mempalace",
+    "sources/mem0",
+    "sources/letta",
+    "sources/graphiti",
+    "sources/cognee",
+    "sources/langmem",
+    "sources/basic-memory",
+    "sources/beads",
+    "sources/anthropic-memory-tool",
+    "sources/claude-code-memory"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Research in (aip/AIP-3/research).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t15"
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "authors/avenmaia",
+   "what": "understood",
+   "text": "Understood again with the research: brain's problem stands; its interface is one command, brain, the only door, with a skill that teaches its verbs (aip/AIP-3/research).",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
