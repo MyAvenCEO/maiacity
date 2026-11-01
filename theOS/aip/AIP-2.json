@@ -484,6 +484,25 @@
    "writes": [],
    "reads": [],
    "task": "t6"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "Checkpoint 3: theOS/sandbox/run.sh (starts dockerd, runs a command in the image with theOS/ mounted), cloud-setup.sh (pull only), environment-setup.sh (to paste at Gate B) and environment-setup.previous.sh (the undo).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c4's test: the environment's script exits 0 with a planted failure, with a planted hang (cut at its limit, 3 s in the test) and with no setup file. A first trial of run.sh fell back to avenDB's old latest image (14 GB) and filled the session's disk; run.sh no longer falls back to any other image: it stops and says the image is not published yet.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [

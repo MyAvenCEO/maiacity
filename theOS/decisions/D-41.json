@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "D-41",
+ "n": 41,
+ "title": "One standard interface to brain",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "memory",
+  "interface"
+ ],
+ "quote": "brain needs one clean, standard interface, a command and a skill, that reads and writes it deterministically.",
+ "means": "Every read of brain and every write to it goes through one interface, a command and the agent skill that wraps it; the same input always gives the same result, and nothing writes brain any other way.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-40",
+  "decisions/D-32"
+ ],
+ "reflection": {
+  "checked": "every decision before D-41 that held",
+  "result": "supersedes nothing"
+ }
+}

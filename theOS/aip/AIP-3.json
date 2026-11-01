@@ -782,6 +782,47 @@
    "writes": [],
    "reads": [],
    "task": "t12"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "One clean, standard interface to brain, a command and a skill.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-41"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Back to Understand: research existing memory systems first.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-42"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "sent back",
+   "text": "Sent back to Understand (D-42): its spec stands as revision 4 until the research is in.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "A research thread (session_01E9zxn6mwBXcKRHezNQyoSB) studies gbrain, supermemory, Hindsight, MemPalace, mem0, Letta, Zep and Graphiti, Cognee, LangMem, Basic Memory, Beads and Claude's own memory; it writes the sources and aip/AIP-3/research on the branch claude/theos-research.",
+   "how": "a fresh thread of avenMAIA, started by the orchestrator",
+   "writes": [],
+   "reads": [],
+   "task": "t15"
   }
  ],
  "reviews": [
@@ -801,6 +842,18 @@
   "ref": "decisions/D-12"
  },
  "tasks": [
+  {
+   "id": "t15",
+   "what": "Understand again: what existing memory systems do well (research thread)",
+   "step": 1,
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t16",
+   "what": "One standard interface to brain, a command and a skill (D-41), in the spec",
+   "step": 2,
+   "who": "authors/avenmaia"
+  },
   {
    "id": "t1",
    "what": "Answer spec review round 1",

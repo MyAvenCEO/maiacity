@@ -56,7 +56,9 @@ const W = {
   // the intent stood, computed from the events before it: an AIP stands at the first step whose output is missing.
   STEPS: ['Understand', 'Specify', 'Build', 'Learn', 'Closed'],
   stepAt(ev, i) {
-    const has = (w) => ev.slice(0, i).some((x) => x.what === w);
+    // an event of what "sent back" sends the intent back to Understand: only what follows it counts
+    const before = ev.slice(0, i), back = before.map((x) => x.what).lastIndexOf('sent back');
+    const has = (w) => before.slice(back + 1).some((x) => x.what === w);
     return !has('understood') ? 1 : !has('gate-A') ? 2 : !has('gate-B') ? 3 : !has('measured') ? 4 : 5;
   },
   stepLink(n, here, docs) {

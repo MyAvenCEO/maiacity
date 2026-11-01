@@ -16,6 +16,27 @@
     "decisions/D-27"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "AIP-4's Understand: research Claude Code's extension points, in a thread.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-42"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "The research thread (session_01E9zxn6mwBXcKRHezNQyoSB) studies Claude Code's extension points (plugins, skills, slash commands, hooks, subagents, output styles, the status line, MCP servers, the Agent SDK, the apps' panes, mods) and writes aip/AIP-4/research.",
+   "how": "a fresh thread of avenMAIA, started by the orchestrator",
+   "writes": [],
+   "reads": [],
+   "task": "t1"
   }
  ],
  "reviews": [],
