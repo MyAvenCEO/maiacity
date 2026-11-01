@@ -1217,6 +1217,28 @@
    "reads": [
     "d-93eb"
    ]
+  },
+  {
+   "at": "2026-11-01T12:52Z",
+   "by": "a-6ffb",
+   "what": "built",
+   "text": "Checkpoint 2, lean as d-5afb asks: the crawl already followed buttons (moved into checkpoint 1); a screenshot of every state at both sizes, taken after document.fonts.ready, in out/shots/ with its path in report.json; the c2 test page fixtures/behind-button.html, a state only a button shows, with a box cut off in it (expected red); a box's kind now includes its data attribute names, so a tab button is not taken for a plain one.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [
+    "d-5afb"
+   ],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T12:52Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "Checkpoint 2's Mechanical gate. c2: --fixtures right on 4 of 4, behind-button red only on the states after its button. On the current commit, of the routes the docs list: 331 of 333 docs by id (the aip and sessions index docs, ix-cd61 and ix-0d91, are not linked by id), and 186 to 187 of 214 slides and OLD-AIP pages (the 27 to 28 missed are slides reached only by a chapter's dots, pressed once per view type, d-5afb). At the parents of 106ba0e5f and 3ddc07339, no edit per commit: all 91 OLD-AIP pages at both sizes, and the Learn tab on 9 of the 23 intents that have one (one per view type). c4: 101 s on a one-doc change (a lesson's text edited in a fresh worktree, a fresh output folder and browser profile), green, 1318 states, 1318 screenshots.",
+   "how": "node theOS/avenCEO/checks/check.mjs, with --fixtures and --root <worktree>/theOS; route coverage counted from report.json against docs/stories.json, docs/intents.json and brain/ids.json by a script in the session's scratchpad; Playwright 1.63.0",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
   }
  ],
  "reviews": [
