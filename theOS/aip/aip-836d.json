@@ -1592,6 +1592,16 @@
    "writes": [],
    "reads": [],
    "task": "t7"
+  },
+  {
+   "at": "2026-11-01T12:26Z",
+   "by": "a-6ffb",
+   "what": "parked",
+   "text": "Parked at a clean cut (D-78), after the migration merged (ce208cd49). Next session, first: t28; t29; t30 (the follow-ups avenMAIA found). Then the rest of checkpoint 2: schemas in the type docs, about where a doc can be superseded, brain add, edit, append, index (with the skill written from the verb list) and install, brain check failing a doc changed without an event (the only door from here), copied lists deleted. Then checkpoint 3 (the reflection, the link graph, renamed words, lists that only grow, link versions) and checkpoint 4 (brain's MCP server).",
+   "how": "by the AIP-3 thread, at avenMAIA's ask",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
   }
  ],
  "reviews": [
@@ -1765,6 +1775,27 @@
    "what": "Checkpoint 4: brain's MCP server",
    "step": 3,
    "for": "checkpoint 4",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t28",
+   "what": "Follow-up: this page still shows D-49, D-53, D-65, D-69 and D-76 in visible text (the migration event's own text, written after the rename); rename them to ids, or record why they stay",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t29",
+   "what": "Follow-up: brain/'s app is still titled Sources; title it brain (D-65)",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t30",
+   "what": "Follow-up: an id inside a title is named in full in prime (d-9271 reads 'back into aip-836d · brain: theOS's memory…'); show a nested id by its id alone, or reword the title",
+   "step": 3,
+   "for": "checkpoint 2",
    "who": "a-6ffb"
   }
  ],
