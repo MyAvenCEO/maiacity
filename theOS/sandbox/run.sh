@@ -7,10 +7,8 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 theos=$(cd "$here/.." && pwd)
-repo=$(git -C "$theos" rev-parse --show-toplevel)
-name=ghcr.io/myavenceo/aven/sandbox
-sha() { if command -v sha256sum > /dev/null; then sha256sum; else shasum -a 256; fi; }
-tag="theos-$(printf '%s %s' "$(git -C "$repo" rev-parse HEAD:theOS/sandbox/box)" "$(git -C "$repo" rev-parse HEAD:.github/workflows/avensandbox-image.yml)" | sha | cut -c1-16)"
+image=$("$here/tag.sh")
+tag=${image##*:}
 
 if ! docker info > /dev/null 2>&1; then
 	if command -v dockerd > /dev/null && [ "$(id -u)" = 0 ]; then
@@ -20,7 +18,6 @@ if ! docker info > /dev/null 2>&1; then
 	docker info > /dev/null 2>&1 || { echo "avenSANDBOX: no Docker here (on a Mac, start OrbStack)" >&2; exit 1; }
 fi
 
-image="$name:$tag"
 if ! docker image inspect "$image" > /dev/null 2>&1 && ! docker pull -q "$image" > /dev/null 2>&1; then
 	echo "avenSANDBOX: $tag is not published yet: push the change, and the image workflow builds it" >&2
 	exit 1

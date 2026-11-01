@@ -533,6 +533,39 @@
     "decisions/D-44"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:03Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c4, run.sh for real in a cloud session: with dockerd down and no image here, it started dockerd, pulled theos-4d9bc364ffc5f836 and ran a command inside it with theOS/ mounted at /work (rustc 1.99.1, bun 1.4.4, Lean 4.35.0 answered; exit 0) in 97.7 s; run again with the image present, 0.5 s. The session's /var/lib/docker held 316 KB, not avenDB's old image, so nothing had to be removed.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/run.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:05Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 1: c2-review (3 Major, 5 Nit). Not clean.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, the diff and the files",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:04Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Round 1 answered, every finding fixed: smoke per platform and latest only after smoke; a failed build no longer reads as already built; one tag script, theOS/sandbox/tag.sh, for the workflow and run.sh; actions pinned by commit; the base image by digest; the Dockerfile's comments say what each tool is for in theOS.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
   }
  ],
  "reviews": [
@@ -541,7 +574,8 @@
   "aip/AIP-2/r2-paraphrase",
   "aip/AIP-2/r2-zoom-out",
   "aip/AIP-2/r3-paraphrase",
-  "aip/AIP-2/r3-zoom-out"
+  "aip/AIP-2/r3-zoom-out",
+  "aip/AIP-2/c2-review"
  ],
  "source": {
   "type": "idea",

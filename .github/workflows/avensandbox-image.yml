@@ -1,8 +1,9 @@
 # avenSANDBOX's image, owned by theOS (theOS/aip/AIP-2.json): every tool theOS's checks are built and run with
 # (theOS/sandbox/box/Dockerfile). Built for amd64 (cloud sessions, runners) and arm64 (OrbStack on Apple Silicon), each
 # on a runner of its own kind, and joined into one image. Tagged theos-<hash of theOS/sandbox/box and this file>, so the
-# same inputs never build twice and every checkout runs exactly its own box; main's build is also "latest". Then a smoke
-# step proves every tool works inside it. Public, so it pulls without a token.
+# same inputs never build twice and every checkout runs exactly its own box (theOS/sandbox/tag.sh). A smoke step on each
+# platform proves every tool works inside it, and only then is main's box also "latest". Actions are pinned by commit.
+# Public, so it pulls without a token.
 name: avenSANDBOX image
 
 on:
@@ -31,16 +32,15 @@ jobs:
       image: ${{ steps.box.outputs.image }}
       complete: ${{ steps.built.outputs.complete }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: The box's tag
         id: box
         run: |
-          name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-          tag="theos-$(printf '%s %s' "$(git rev-parse HEAD:theOS/sandbox/box)" "$(git rev-parse HEAD:.github/workflows/avensandbox-image.yml)" | sha256sum | cut -c1-16)"
-          echo "image=$name:$tag" >> "$GITHUB_OUTPUT"
-          echo "avenSANDBOX's tag: $tag (theOS/sandbox/box and this workflow)"
-      - uses: docker/login-action@v4.7.0
+          image=$(bash theOS/sandbox/tag.sh)
+          echo "name=${image%:*}" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "avenSANDBOX's tag: ${image##*:} (theOS/sandbox/tag.sh: theOS/sandbox/box and this workflow)"
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -72,16 +72,16 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: docker/setup-buildx-action@v4.4.1
-      - uses: docker/login-action@v4.7.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push by digest
         id: push
-        uses: docker/build-push-action@v7.4.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           # theOS/sandbox/box alone: the image holds tools, never our code
           context: theOS/sandbox/box
@@ -98,7 +98,7 @@ jobs:
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: mkdir -p digests && touch "digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.arch }}
           path: digests/*
@@ -113,12 +113,12 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digest-*
           path: digests
           merge-multiple: true
-      - uses: docker/login-action@v4.7.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -132,11 +132,22 @@ jobs:
           docker buildx imagetools create --tag "$IMAGE" $(printf "$NAME@sha256:%s " *)
           docker buildx imagetools inspect "$IMAGE"
 
+  # The box is ready when it was built for both platforms already, or the build and its join just succeeded; a failed
+  # build skips the join, and that skip must not read as "already built".
   smoke:
-    name: Every tool works inside it
+    name: Every tool works inside it (${{ matrix.arch }})
     needs: [plan, publish]
-    if: always() && needs.plan.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
-    runs-on: ubuntu-24.04
+    if: >-
+      !cancelled() && needs.plan.result == 'success'
+      && (needs.plan.outputs.complete == 'true' || needs.publish.result == 'success')
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -144,8 +155,12 @@ jobs:
       - name: Each tool answers, wasm32 is installed, Chromium launches
         env:
           IMAGE: ${{ needs.plan.outputs.image }}
+          ARCH: ${{ matrix.arch }}
+        # The playwright package comes from npm at test time (the image holds the browser, not the package): it proves
+        # the image's own Chromium launches under the pinned version theOS's lockfile uses.
         run: |
-          docker run --rm "$IMAGE" bash -euc '
+          docker run --rm --platform "linux/$ARCH" "$IMAGE" bash -euc '
+            uname -m
             rustc --version; cargo --version; cargo clippy --version; rustfmt --version
             rustup target list --installed | grep -x wasm32-unknown-unknown
             wasm-bindgen --version; bun --version; node --version; lean --version; lake --version
@@ -158,16 +173,14 @@ jobs:
 
   latest:
     name: main's box is latest
-    needs: [plan, publish]
-    if: >-
-      always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success'
-      && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    needs: [plan, smoke]
+    if: "!cancelled() && github.ref == 'refs/heads/main' && needs.smoke.result == 'success'"
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       packages: write
     steps:
-      - uses: docker/login-action@v4.7.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
