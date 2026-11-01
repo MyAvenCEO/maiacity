@@ -1,0 +1,34 @@
+{
+ "type": "decision",
+ "id": "d-f1a0",
+ "title": "Build aip-59ad now: theOS's release",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01T13:40Z",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "release"
+ ],
+ "quote": "Do aip-59ad.",
+ "means": "aip-59ad (theOS's release and deploy) is unparked and built now, in its own thread. avenMAIA opens the goal pull request that brings theOS/ to main and merges it once its check is green; aip-59ad's checkpoint 1 adds theOS's release workflow and ends with a real merge from main into production, which deploys nothing yet; checkpoint 2 adds the deploy and the undo, and Gate B, the first real release to aven.maia.city, is Samuel's.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [
+  {
+   "doc": "d-93eb",
+   "part": "aip-59ad stays parked",
+   "what": "aip-59ad is built now."
+  }
+ ],
+ "relates": [
+  "d-113f",
+  "d-c219",
+  "d-ca32"
+ ],
+ "reflection": {
+  "checked": "every decision before d-f1a0 that held",
+  "result": "supersedes d-93eb in part (aip-59ad no longer parked)"
+ }
+}
