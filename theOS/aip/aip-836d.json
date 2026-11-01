@@ -1755,6 +1755,40 @@
    "writes": [],
    "reads": [],
    "task": "t7"
+  },
+  {
+   "at": "2026-11-01T14:29Z",
+   "by": "a-6ffb",
+   "what": "edit",
+   "text": "ty-50a6: schema, fields",
+   "how": "brain edit",
+   "writes": [
+    "ty-50a6"
+   ],
+   "reads": [],
+   "task": "t8"
+  },
+  {
+   "at": "2026-11-01T14:29Z",
+   "by": "a-6ffb",
+   "what": "edit",
+   "text": "t-66d6: renames",
+   "how": "brain edit",
+   "writes": [
+    "t-66d6"
+   ],
+   "reads": [],
+   "task": "t8"
+  },
+  {
+   "at": "2026-11-01T14:31Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Checkpoint 3 built. brain check now also fails, in each commit: a new doc's supersede of a doc that is gone or no longer held at the parent (c3); a new text that uses a path as a link or names an id that is no doc (c10); a rewritten entry of a list that only grows, measurements and asks too (c2); a renamed word coming back where its rename applies, the term saying where (c6; avenCEO's rename of 'aven' is the first). brain get groups links and backlinks by the field they sit in and lists what a holding doc cites that no longer holds (c10's warning). brain versions writes brain/versions.json: links whose target changed after they were cited, by git blame, skipping the migration commit; the Intents app shows them as 'changed since' on the doc's page (c5). 21 of 21 tests.",
+   "how": "by the AIP-3 thread; node --test theOS/brain/test/*.test.mjs",
+   "writes": [],
+   "reads": [],
+   "task": "t8"
   }
  ],
  "reviews": [

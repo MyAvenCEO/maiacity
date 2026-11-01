@@ -20,6 +20,7 @@ brain check fails a commit that changed a doc without the event a verb writes. R
 - `brain append <id> <list> <entry.json> --intent <aip id> --by <author id>`: an entry at the end of a list that only grows.
 - `brain index`: the index docs and brain/ids.json written again from the folders.
 - `brain install`: this clone's pre-push hook (brain check) and the merge driver for lists that only grow.
+- `brain versions`: every link whose target changed after it was cited, into brain/versions.json for the apps (c5).
 - `brain check [--range a..b]`: every commit in the range against its parent: events cover every changed doc, schemas, history only grows.
 
 A write names the intent it serves (--intent) and its author (--by, an author doc's id) and appends that intent's event;

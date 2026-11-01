@@ -233,6 +233,26 @@ export function merge3(o, a, b) {
   throw new DoorError('conflict', 'both sides changed the same field differently; resolve by hand');
 }
 
+const GROW = { metric: ['measurements'], session: ['asks'] }; // an intent's events are checked with the trace
+const PATH = /^(aip|decisions|sessions|sources|metrics|lessons|authors|avenCEO)\/[A-Za-z][\w@-]*(\/[\w@-]+)*$/;
+const IDS = /(?<![\w/-])[a-z]+-[0-9a-f]{4,}(?![\w-])/g;
+const PREFIXES = new RegExp(`^(${Object.values(PREFIX).join('|')})-`);
+const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function strings(v, out = []) { if (typeof v === 'string') out.push(v); else if (Array.isArray(v)) v.forEach((x) => strings(x, out)); else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (!(k === 'prompt' && v.type === 'review')) strings(x, out); return out; }
+// every doc in a commit, by id, as { file, doc }: one git cat-file run
+function allAt(git, sha, prefix, cwd) {
+  const files = git('ls-tree', '-r', '--name-only', sha, '--', prefix).split('\n').filter((f) => f.endsWith('.json') && ID.test(f.split('/').pop().slice(0, -5)));
+  const out = execFileSync('git', ['cat-file', '--batch'], { cwd, input: files.map((f) => `${sha}:${f}`).join('\n'), maxBuffer: 1 << 28 });
+  const all = new Map(); let i = 0;
+  for (const f of files) {
+    const nl = out.indexOf(10, i), size = +out.subarray(i, nl).toString().split(' ')[2];
+    const body = out.subarray(nl + 1, nl + 1 + size).toString('utf8');
+    i = nl + 1 + size + 1;
+    try { const d = JSON.parse(body); all.set(d.id, { file: f, doc: d }); } catch { /* not JSON */ }
+  }
+  return all;
+}
+
 // brain check: every commit in the range (default: the commits since main) against its parent, from brain/door.json's
 // "since" on; then the tree as it is (c8: ids.json, the index docs and the copied lists equal what brain index writes).
 // A merge commit is checked where its result differs from every parent: there it must be what the merge driver gives.
@@ -265,6 +285,7 @@ export function check(root, { range } = {}) {
     }
     const docs = changedFrom(parents[0]);
     if (!docs.length) continue;
+    let renames; const renamesAt = () => renames ??= Object.entries(ids).filter(([i]) => i.startsWith('t-')).map(([i, f]) => [i, at(sha, f)]).filter(([, t]) => t?.renames).map(([i, t]) => ({ term: i, word: t.word, old: t.renames.old, in: t.renames.in }));
     const covered = new Set();
     const isA = (id, t) => at(sha, ids[id])?.type === t;
     for (const f of docs) {
@@ -288,6 +309,32 @@ export function check(root, { range } = {}) {
       if (!covered.has(id) && d.type !== 'index') bad.push(`${f}: changed without an event of this commit`);
       const c = checkDoc(d, (t) => types[t], (i) => at(sha, ids[i])); if (c) bad.push(c);
     }
+    // c3: a new doc supersedes only docs that exist and held at the parent
+    const fresh = docs.filter((f) => !at(parents[0], f) && at(sha, f)?.supersedes?.length);
+    if (fresh.length) {
+      const before = allAt(git, parents[0], prefix, root);
+      for (const f of fresh) for (const sp of at(sha, f).supersedes) {
+        const t = target(sp);
+        if (!ids[t]) bad.push(`${f}: supersedes ${t}, which is no doc`);
+        else if (before.has(t) && holdsIn(before, t) === 'superseded') bad.push(`${f}: supersedes ${t}, which no longer held`);
+      }
+    }
+    for (const f of docs) {
+      const d = at(sha, f), b = at(parents[0], f); if (!d) continue;
+      // c10: every id inside a new text resolves, and no path is used as a link
+      const had = new Set(strings(b || {}));
+      for (const v of strings(d).filter((x) => !had.has(x))) {
+        if (PATH.test(v)) bad.push(`${f}: ${v} is a path; link by id`);
+        for (const r of v.match(IDS) || []) if (!ids[r] && PREFIXES.test(r)) bad.push(`${f}: ${r} names no doc`);
+      }
+      // c2: lists that only grow, beyond an intent's events (checked above)
+      for (const k of GROW[d.type] || []) if (b && JSON.stringify((d[k] || []).slice(0, (b[k] || []).length)) !== JSON.stringify(b[k] || [])) bad.push(`${f}: earlier ${k} changed (they only grow)`);
+      // c6: a renamed word does not come back where its rename applies
+      for (const R of renamesAt(sha)) if (R.in.some((dir) => f.startsWith(`${dir}/`))) {
+        const n = (x) => (JSON.stringify(x || '').match(new RegExp(`(?<![A-Za-z/._-])${esc(R.old)}(?![A-Za-z/._-])`, 'g')) || []).length;
+        if (n(d) > n(b)) bad.push(`${f}: "${R.old}" is ${R.word} now (${R.term})`);
+      }
+    }
     if (bad.length) fails.push({ commit: sha.slice(0, 9), fails: bad });
   }
   // the tree as it is: what brain index would write must already be there
@@ -295,3 +342,39 @@ export function check(root, { range } = {}) {
   return { range: r, commits: shas.length, fails };
 }
 function isAncestor(git, a, b) { try { git('merge-base', '--is-ancestor', a, b); return true; } catch { return false; } }
+
+// brain versions (c5): a link's version is the commit that added the citing line (git blame, skipping the migration
+// commit); a link is flagged when its target changed after that. Intents, reviews, indexes and the definition change
+// all the time, so links to them are not flagged. Returns { citing id: [{ target, cited, changed }] }.
+const STEADY = ['decision', 'term', 'reference', 'lesson', 'metric', 'type', 'step', 'gate', 'checker', 'author', 'research'];
+export function versions(root, only) {
+  const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  const m = map(root), all = docsOf(root);
+  let skip = null; try { skip = JSON.parse(readFileSync(join(root, 'brain', 'renames.json'), 'utf8')).commit; } catch { /* none */ }
+  const old = (() => { try { return Object.fromEntries(Object.entries(JSON.parse(readFileSync(join(root, 'brain', 'renames.json'), 'utf8')).names).filter(([k]) => k.includes('/')).map(([k, v]) => [v, k])); } catch { return {}; } })();
+  const changedAt = new Map();
+  const lastChange = (id) => {
+    if (changedAt.has(id)) return changedAt.get(id);
+    let t = 0;
+    for (const line of git('log', '--format=%H %at', '--', `${m.ids[id]}.json`).split('\n').filter(Boolean)) { const [h, ct] = line.split(' '); if (h !== skip) { t = +ct; break; } }
+    if (!t && old[id] && skip) { const x = git('log', '-1', '--format=%at', `${skip}^`, '--', `${old[id]}.json`); t = +x || 0; }
+    changedAt.set(id, t); return t;
+  };
+  const out = {};
+  for (const id of only || Object.keys(m.ids)) {
+    if (!m.ids[id]) continue;
+    let blame; try { blame = git('blame', '--line-porcelain', ...(skip ? ['--ignore-rev', skip] : []), '--', `${m.ids[id]}.json`); } catch { continue; }
+    let time = 0;
+    for (const line of blame.split('\n')) {
+      if (line.startsWith('author-time ')) time = +line.slice(12);
+      else if (line.startsWith('\t')) for (const r of line.match(IDS) || []) {
+        const t = all.get(r);
+        if (!t || r === id || !STEADY.includes(t.doc.type)) continue;
+        const c = lastChange(r);
+        if (c > time) (out[id] ??= []).push({ target: r, cited: new Date(time * 1000).toISOString().slice(0, 16) + 'Z', changed: new Date(c * 1000).toISOString().slice(0, 16) + 'Z' });
+      }
+    }
+    if (out[id]) out[id] = [...new Map(out[id].map((x) => [x.target, x])).values()];
+  }
+  return out;
+}

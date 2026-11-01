@@ -46,8 +46,12 @@ test('get: the doc, what supersedes it, its links and backlinks', () => {
   assert.equal(g.doc.title, 'Second, superseded in part');
   assert.equal(g.holds, 'holds in part');
   assert.deepEqual(g.supersededBy, [{ by: 'decisions/D-3', part: 'part', what: 'its wording' }]);
-  assert.deepEqual(g.links, ['decisions/D-1']);
-  assert.deepEqual(g.backlinks, ['decisions/D-3']);
+  // grouped by the field they sit in (c10)
+  assert.deepEqual(g.links, { supersedes: ['decisions/D-1'] });
+  assert.deepEqual(g.backlinks, { supersedes: ['decisions/D-3'] });
+  assert.deepEqual(g.citesSuperseded, []);
+  // D-4 holds and relates D-1, which no longer holds: a warning
+  assert.deepEqual(get(docs, 'decisions/D-4').citesSuperseded, ['decisions/D-1']);
 });
 
 test('get: the id prime and holds print resolves to the same doc', () => {

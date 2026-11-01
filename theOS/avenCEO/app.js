@@ -308,18 +308,22 @@ async function show() {
   else if (LISTS.some(([k]) => k === route)) { const [k, t, type] = LISTS.find(([x]) => x === route); html = ['decision', 'term'].includes(type) ? reflected(t, type) : list(k, t, type); }
   else {
     const d = G.docs.get(route) || await W.get(route);
-    html = d && PAGES[d.type] ? `${d.type === 'intent' ? stepper(d) : ''}<article class="doc">${PAGES[d.type](d)}${d.type === 'intent' ? '' : traceOf(route)}${backlinks(route)}</article>` : `<article class="doc"><h1>Not found</h1><p class="path">${W.esc(route)}</p></article>`;
+    html = d && PAGES[d.type] ? `${d.type === 'intent' ? stepper(d) : ''}<article class="doc">${PAGES[d.type](d)}${d.type === 'intent' ? '' : traceOf(route)}${backlinks(route)}${changedSince(route)}</article>` : `<article class="doc"><h1>Not found</h1><p class="path">${W.esc(route)}</p></article>`;
   }
   $('#main').innerHTML = html;
   toc();
   $('#main').scrollTo(0, 0);
 }
 
+// Links whose target changed after they were cited (brain versions writes brain/versions.json; aip-836d, c5).
+const changedSince = (p) => { const xs = G.versions?.[p] || []; return xs.length ? sec('Changed since cited', `<p>${xs.map((x) => `${L(x.target)} <span class="chip ochre" title="cited ${e(x.cited)}, changed ${e(x.changed)}">changed since</span>`).join(' · ')}</p>`, 'Each link was written when its target read differently; check it still says what this doc relies on.') : ''; };
+
 async function start() {
   await W.ready();
   const def = await W.get(W.DEF);
   const sources = await W.get(W.indexOf('sources'));
   G = { ...(await W.crawl([W.DEF, ...def.indexes.filter((p) => p !== W.indexOf('sources'))])), def, sources };
+  G.versions = W.map ? await fetch('../brain/versions.json').then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   const n = (type) => ofType(type).length;
   $('#nav').innerHTML = `<a href="#home" data-r="home">avenCEO</a>` + LISTS.map(([k, t, type]) => (k === 'gap' ? '<span class="gap"></span>'
     : `<a href="#${k}" data-r="${k}">${t}<span>${k === 'waiting' ? ofType('intent').reduce((s, [, I]) => s + (I.questions || []).filter((q) => !q.answered && !q.replaced_by).length, 0) : n(type)}</span></a>`)).join('');

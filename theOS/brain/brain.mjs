@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import vm from 'node:vm';
-export { add, edit, append, index, install, check, reflect, merge3, validate, DoorError } from './door.mjs';
+export { add, edit, append, index, install, check, reflect, merge3, validate, versions, DoorError } from './door.mjs';
 
 const THEOS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SAMUEL = 'authors/samuel-andert';
@@ -106,9 +106,19 @@ export function get(docs, ref) {
   if (!doc) throw new BrainError('not_found', `no doc ${ref}; list the docs with: brain holds <type>`);
   const W = Wof(docs);
   const supersededBy = W.supersededBy(docs, path).map((s) => ({ by: s.p, part: s.part || 'whole', what: s.what || s.how || '' }));
-  const links = [...W.paths(doc)].filter((q) => q !== path).sort();
-  const backlinks = [...docs].filter(([p, d]) => p !== path && d.type !== 'index' && W.paths(d).has(path)).map(([p]) => p).sort();
-  return plain({ id: path, name: W.name(doc, path), doc, holds: holdsOf(docs, path), supersededBy, links, backlinks });
+  // links by type: a link's type is the field it sits in (supersedes, relates, intents, writes …); c10
+  const byField = (d, keep) => {
+    const out = {};
+    for (const [k, v] of Object.entries(d)) { const xs = [...W.paths(v)].filter(keep).sort(); if (xs.length) out[k] = xs; }
+    return out;
+  };
+  const links = byField(doc, (q) => q !== path);
+  const backlinks = {};
+  for (const [p, d] of docs) if (p !== path && d.type !== 'index') for (const [k, xs] of Object.entries(byField(d, (q) => q === path))) (backlinks[k] ??= []).push(p);
+  for (const k of Object.keys(backlinks)) backlinks[k].sort();
+  // a doc that holds and rests on one that no longer does: a warning for the maintenance pass
+  const citesSuperseded = holdsOf(docs, path) === 'superseded' ? [] : [...new Set(Object.entries(links).filter(([k]) => k !== 'supersedes').flatMap(([, xs]) => xs))].filter((q) => docs.has(q) && holdsOf(docs, q) === 'superseded');
+  return plain({ id: path, name: W.name(doc, path), doc, holds: holdsOf(docs, path), supersededBy, links, backlinks, citesSuperseded });
 }
 
 // The command line: brain <verb> [args] [--json] [--root <theOS folder>].
@@ -139,6 +149,7 @@ export const VERBS = [
   ['append <id> <list> <entry.json> --intent <aip id> --by <author id>', 'an entry at the end of a list that only grows'],
   ['index', 'the index docs and brain/ids.json written again from the folders'],
   ['install', "this clone's pre-push hook (brain check) and the merge driver for lists that only grow"],
+  ['versions', 'every link whose target changed after it was cited, into brain/versions.json for the apps (c5)'],
   ['check [--range a..b]', 'every commit in the range against its parent: events cover every changed doc, schemas, history only grows'],
 ];
 
@@ -194,6 +205,7 @@ async function main(argv) {
       install: () => door.install(root),
       check: () => door.check(root, { range: opt('range') }),
       reflect: () => { const all = door.docsOf(root); return door.reflect(all, arg, file(arg2)); },
+      versions: () => { const v = door.versions(root); writeFileSync(join(root, 'brain', 'versions.json'), `${JSON.stringify(v, null, 1)}\n`); return { flagged: Object.keys(v).length }; },
     };
     if (writes[verb]) {
       if (['add', 'edit', 'append'].includes(verb) && (!who.intent || !who.by)) throw new BrainError(!who.intent ? 'no_intent' : 'no_author', `brain ${verb} needs --intent <aip id> and --by <author id>`);
@@ -207,6 +219,7 @@ async function main(argv) {
     if (!verbs[verb]) throw new BrainError('unknown_verb', `the verbs are: ${VERBS.map(([v]) => v.split(' ')[0]).join(', ')}`);
     if (verb !== 'prime' && !arg) throw new BrainError('missing_arg', verb === 'holds' ? 'brain holds <type>, e.g. brain holds decision' : 'brain get <id>');
     const out = verbs[verb]();
+    if (verb === 'get') try { out.changedSince = door.versions(root, [out.id])[out.id] || []; } catch { /* no git here */ }
     process.stdout.write(`${json ? JSON.stringify(out) : text(verb, out)}\n`);
   } catch (e) {
     if (!(e instanceof BrainError) && !(e instanceof door.DoorError)) throw e;

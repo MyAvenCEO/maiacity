@@ -15,5 +15,13 @@
  "reflection": {
   "checked": "every term that held",
   "result": "supersedes aven (renamed)"
+ },
+ "renames": {
+  "old": "aven",
+  "in": [
+   "aip",
+   "avenCEO",
+   "brain"
+  ]
  }
 }

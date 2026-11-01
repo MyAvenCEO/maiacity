@@ -138,3 +138,52 @@ test('install: the hook in this clone\'s hooks folder, an older hook kept and ru
   assert.deepEqual(check(root, { range: 'HEAD~1..HEAD' }).fails, []);
   assert.equal(J(root, J(root, 'brain/ids').ids[I]).events.filter((e) => e.what === 'add').length, 2);
 });
+
+test('checkpoint 3: check fails a supersede of what no longer held (c3), a path or a dangling id as a link (c10), a rewritten measurement (c2), a renamed word coming back (c6)', () => {
+  const { root, names, I } = world();
+  const ids = () => J(root, 'brain/ids').ids;
+  // the term that renamed "old-word" says where it must not come back
+  const nw = ids()[names['avenCEO/terms/new-word']];
+  put(root, nw, { ...J(root, nw), renames: { old: 'oldword', in: ['brain'] } });
+  put(root, 'avenCEO/types/ty-0005', { type: 'type', id: 'ty-0005', name: 'term', schema: { type: 'object', properties: Object.fromEntries(['type', 'id', 'word', 'means', 'about', 'supersedes', 'renames'].map((k) => [k, {}])) } });
+  index(root);
+  git(root, 'init', '-q'); git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
+  const run = () => check(root, { range: 'HEAD~1..HEAD' }).fails.flatMap((f) => f.fails).join(' | ');
+  // c10 and c6, through the door
+  edit(root, { id: names['D-4'], patch: { relates: ['decisions/D-3', 'd-ffff'], means: 'see oldword' }, intent: I, by: 'a-0001' });
+  git(root, 'commit', '-qam', 'links');
+  const r = run();
+  assert.match(r, /decisions\/D-3 is a path; link by id/);
+  assert.match(r, /d-ffff names no doc/);
+  assert.match(r, /"oldword" is New word now/);
+  // c3: a new doc, written by hand with its event, supersedes a doc that no longer held
+  git(root, 'reset', '-q', '--hard', 'HEAD~1');
+  put(root, 'brain/decisions/d-abcd', { type: 'decision', id: 'd-abcd', title: 'late', about: ['x'], supersedes: [{ doc: names['D-1'] }] });
+  const intent = J(root, ids()[I]); intent.events.push({ at: 'x', by: 'a-0001', what: 'add', writes: ['d-abcd'] }); put(root, ids()[I], intent);
+  index(root); git(root, 'add', '-A'); git(root, 'commit', '-qm', 'late');
+  assert.match(run(), /supersedes .* which no longer held/);
+  // c2: a measurement rewritten
+  git(root, 'reset', '-q', '--hard', 'HEAD~1');
+  const m = J(root, 'brain/metrics/m-0001'); m.measurements = [{ value: 1 }]; put(root, 'brain/metrics/m-0001', m);
+  const i2 = J(root, ids()[I]); i2.events.push({ at: 'x', by: 'a-0001', what: 'measured', writes: [] }); i2.events.push({ at: 'x', by: 'a-0001', what: 'x', writes: ['m-0001'] }); put(root, ids()[I], i2);
+  git(root, 'commit', '-qam', 'm1');
+  const m2 = J(root, 'brain/metrics/m-0001'); m2.measurements = [{ value: 2 }]; put(root, 'brain/metrics/m-0001', m2);
+  const i3 = J(root, ids()[I]); i3.events.push({ at: 'x', by: 'a-0001', what: 'x', writes: ['m-0001'] }); put(root, ids()[I], i3);
+  git(root, 'commit', '-qam', 'm2');
+  assert.match(run(), /earlier measurements changed/);
+});
+
+test('brain versions flags a link whose target changed after it was cited (c5)', async () => {
+  const { versions } = await import('../door.mjs');
+  const { root, names, I } = world();
+  const at = (d) => ({ cwd: root, env: { ...process.env, GIT_AUTHOR_DATE: d, GIT_COMMITTER_DATE: d } });
+  const commit = (m, d) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', m], at(d));
+  git(root, 'init', '-q'); git(root, 'add', '-A'); commit('base', '2026-01-01T00:00:00Z');
+  const d4 = names['D-4'], d3 = names['D-3'];
+  assert.deepEqual(versions(root, [d4])[d4], undefined);
+  // D-4 relates D-3 from now on; later D-3 changes
+  edit(root, { id: d4, patch: { relates: [d3] }, intent: I, by: 'a-0001' }); commit('cite', '2026-02-01T00:00:00Z');
+  assert.deepEqual(versions(root, [d4])[d4], undefined);
+  edit(root, { id: d3, patch: { title: 'Third, changed later' }, intent: I, by: 'a-0001' }); commit('change', '2026-03-01T00:00:00Z');
+  assert.deepEqual(versions(root, [d4])[d4].map((x) => x.target), [d3]);
+});

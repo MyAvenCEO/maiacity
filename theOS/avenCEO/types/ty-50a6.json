@@ -17,6 +17,10 @@
   {
    "name": "reflection",
    "means": "what it was checked against and the result; who, when and how are on the event that wrote it"
+  },
+  {
+   "name": "renames",
+   "means": "the old word this term renamed, and the folders where the old word must not come back (c6)"
   }
  ],
  "written_by": "the orchestrator",
@@ -72,6 +76,13 @@
    },
    "reflection": {
     "type": "object"
+   },
+   "renames": {
+    "type": "object",
+    "required": [
+     "old",
+     "in"
+    ]
    }
   }
  }
