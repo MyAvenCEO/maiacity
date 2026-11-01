@@ -1250,6 +1250,36 @@
     "rv-19f5"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T13:02Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 2 on 50b664e: clean (no Blocker, no Major); 4 Nit, all fixed. Check green after them: 1324 states checked (258 view types) in 94 s, the whole command timed; --fixtures 4 of 4.",
+   "how": "a fresh subagent (Agent tool) seeing only the record, d-5afb, the diff and the earlier rounds",
+   "writes": [
+    "rv-19f5"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:02Z",
+   "by": "a-6ffb",
+   "what": "gate",
+   "text": "Checkpoint 2 passed its Mechanical gate (the test pages, the replays, c4 at 94 to 101 s) and its Review gate (round 2 clean). c2 stays open: not every route the docs list is reached per view type; Samuel decides at Gate B.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:02Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Checkpoint 2 built and through both gates.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
   }
  ],
  "reviews": [

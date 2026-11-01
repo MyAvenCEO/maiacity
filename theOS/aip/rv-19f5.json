@@ -7,7 +7,7 @@
  "lens": "zoom-out (code)",
  "checker": "a fresh agent (Agent tool, general-purpose), seeing only the record, d-5afb, the diff and the earlier rounds",
  "prompt": "You are a \"goldfish\" critic: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI) and fixes of symptoms instead of root causes. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything. You may read files and run read-only commands.\n\nThe project is theOS, a standalone project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/; code outside it is legacy and must not be changed or depended on.\n\nRead only these four things:\n1. The record: /home/user/maiacity/theOS/aip/aip-31df.json (its claims c2 and c4, checkpoint 2, gaps, and its latest events).\n2. The decision that sets this checkpoint's scope: /home/user/maiacity/theOS/brain/decisions/d-5afb.json (check per view type, speed first, fine-tune later).\n3. The diff of checkpoint 2's code: {diff} (theOS/avenCEO/checks/check.mjs and theOS/avenCEO/checks/fixtures/behind-button.html). The whole file theOS/avenCEO/checks/check.mjs may be read for context; checkpoint 1's code was reviewed in /home/user/maiacity/theOS/aip/aip-31df/c1-review.json (if that path does not exist, find c1-review under theOS/aip/), and its findings are settled.\n{earlier}\nYour job is the zoom-out review of this diff:\n1. YAGNI: what in it is not needed for checkpoint 2 and its claims c2 and c4, within d-5afb's scope? What could be deleted?\n2. Simplest form: is there a clearly simpler way to do the same thing, with the same result?\n3. Root cause: does it make the crawl reach what a person can reach (c2), or is it tuned to the replay commits?\n4. Correctness that would make the check lie: a pass where a person would see a problem, a failure where none is, or a reported coverage or time that is not true.\n\nFor each finding give: Severity (Blocker | Major | Nit), the place (file and line or function), and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
- "prompt_note": "{diff} is the path of that round's diff: git diff of theOS/avenCEO/checks from 11de95b (checkpoint 2's start) to the reviewed commit. {earlier} is empty in round 1; from round 2 it names this doc's earlier rounds as settled. Round 1's item 3 named c1-review by its old path; it is rv-7122.",
+ "prompt_note": "{diff} is the path of that round's diff: git diff of theOS/avenCEO/checks from 11de95b (checkpoint 2's start) to the reviewed commit. {earlier} is empty in round 1; in round 2 it was the item \"4. The earlier rounds of this review: <this doc>, each finding with its answer. Those findings are settled: do not raise them again unless the diff shows the fix did not actually happen, or the evidence given for a contest is false.\", and item 3 named c1's review as aip/rv-7122.json and coverage.mjs among the files. Round 1's item 3 named c1-review by its old path; it is rv-7122.",
  "rounds": [
   {
    "round": 1,
@@ -56,6 +56,42 @@
      "text": "--fixtures only checks the run is red; if the first state failed for another reason the test would pass with no button pressed. The coverage numbers come from an uncommitted scratchpad script.",
      "answer": "fix",
      "note": "Fixed: expect red-after-click, which --fixtures checks (every failing state was reached by a button); and the count is committed as theOS/avenCEO/checks/coverage.mjs."
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "commit": "50b664e",
+   "diff": "11de95b..50b664e",
+   "result": "Clean: no Blocker, no Major; 4 Nit, all fixed. Round 1's fixes confirmed; the coverage numbers rerun by the checker agree with the record.",
+   "findings": [
+    {
+     "sev": "Nit",
+     "scope": "check.mjs, the time limit",
+     "text": "The time starts inside run(), leaving out start-up, the browser launch and close, and the limit is checked only at the end.",
+     "answer": "fix",
+     "note": "Fixed: the command is timed from the top of main(). Checked at the end, as before: a slow run is red, late."
+    },
+    {
+     "sev": "Nit",
+     "scope": "check.mjs, red-after-click",
+     "text": "A button that changes the route is recorded like a link (no clicks), so a state only such a button reaches counts as red, not red-after-click.",
+     "answer": "fix",
+     "note": "The comment now says red-after-click means a button that kept the route."
+    },
+    {
+     "sev": "Nit",
+     "scope": "coverage.mjs",
+     "text": "It knows the Docs app's markup and the replay commits' legacy file name, reads legacy OLD-AIP data, and counts a Learn tab as reached when a recipe pressed it, not when its content rendered; its header should say it is c2's own count.",
+     "answer": "fix",
+     "note": "Its header says so now: c2's measuring tool, not part of the check, with what it knows and how it counts."
+    },
+    {
+     "sev": "Nit",
+     "scope": "check.mjs, found(), the screenshot",
+     "text": "If page.screenshot throws, the whole run exits 2 instead of reporting the state.",
+     "answer": "fix",
+     "note": "A failed screenshot leaves shot null; the state's verdict stands."
     }
    ]
   }

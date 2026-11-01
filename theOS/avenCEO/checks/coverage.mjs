@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// c2's count (aip-31df): of the routes theOS's docs list, which did a run of the check reach? The slides of every chapter
+// c2's own count (aip-31df), a measuring tool, not part of the check: of the routes theOS's docs list, which did a run
+// of the check reach? It knows the Docs app's markup (its Learn tab's data-itab) and the legacy file name of the replay
+// commits, and counts a Learn tab as reached when a state's recipe pressed it. The slides of every chapter
 // (docs/stories.json), every OLD-AIP page and how many show their Learn tab (docs/intents.json, docs/theINTENTS.json on
 // older commits), and every doc by its id (brain/ids.json, where it exists).
 // Usage: node theOS/avenCEO/checks/coverage.mjs [--root <theOS dir>] [<report.json>]

@@ -177,7 +177,8 @@ async function crawl(browser, size, start, origin, out) {
     states.push(state); // its number, read right after with no await between, names its screenshot: parallel pages mustn't share one
     // A screenshot of the state as a person sees it in the window; settle() waited for document.fonts.ready.
     state.shot = join('shots', state.size, `${String(states.length).padStart(4, '0')}.png`);
-    await page.screenshot({ path: join(out, state.shot) });
+    // A failed screenshot doesn't stop the check: the state's verdict stands without it.
+    await page.screenshot({ path: join(out, state.shot) }).catch(() => { state.shot = null; });
     for (const l of (await actions(page, origin)).links) if (!loaded.has(l)) { loaded.add(l); queue.push({ visit: l }); }
     const view = await page.evaluate(() => window.__view());
     if (!views.has(view)) { views.add(view); queue.push({ state }); }
@@ -246,6 +247,7 @@ async function run(browser, origin, root, entry, out) {
 }
 
 async function main() {
+  const t0 = Date.now(); // c4 times the whole command: start-up, the browser and the crawl
   const o = args(process.argv.slice(2));
   const { pw, version } = playwright();
   const server = await serve(o.root);
@@ -256,7 +258,8 @@ async function main() {
       // The check's own test: each page in fixtures/ says in <meta name="expect"> whether the check must be red or green.
       let wrong = 0;
       for (const f of readdirSync(join(HERE, 'fixtures')).filter((x) => x.endsWith('.html')).sort()) {
-        // red-after-click: red, and only in states reached by pressing a button.
+        // red-after-click: red, and only in states reached by pressing a button that kept the route (one that changes the
+        // route is recorded like a link).
         const expect = /<meta name="expect" content="(red|green|red-after-click)">/.exec(readFileSync(join(HERE, 'fixtures', f), 'utf8'))?.[1];
         const r = await run(browser, origin, o.root, `avenCEO/checks/fixtures/${f}`, join(o.out, 'fixtures', f));
         const bad = r.results.filter((x) => x.fails.length);
@@ -269,6 +272,7 @@ async function main() {
       return;
     }
     const r = await run(browser, origin, o.root, o.entry, o.out);
+    r.seconds = Math.round((Date.now() - t0) / 1000);
     if (r.seconds >= LIMIT) console.log(`FAIL the check took ${r.seconds} s, at or over its limit of ${LIMIT} s (c4)`);
     console.log(`${r.failed ? 'red' : 'green'}: ${r.reached} states checked (${r.views} view types), ${r.failed} failed, in ${r.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
     process.exitCode = r.failed || r.seconds >= LIMIT ? 1 : 0;
