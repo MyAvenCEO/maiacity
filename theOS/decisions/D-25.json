@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "D-25",
+ "n": 25,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "memory",
+  "formats",
+  "references"
+ ],
+ "quote": "yes do it, move to AIP 3",
+ "means": "brain's direction is approved and AIP-3 takes it into Understand: one JSON doc per thing, JSON Lines for what only grows, a JSON Schema per type, binaries by content hash, internal references pinned as path@full commit SHA. The memory parts of AIP-1 (decisions, terms, the trace, authors) move to AIP-3.",
+ "intents": [
+  "aip/AIP-3",
+  "aip/AIP-1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-12",
+  "decisions/D-23"
+ ],
+ "reflection": {
+  "checked": "every decision before D-25 that held",
+  "result": "supersedes nothing"
+ }
+}

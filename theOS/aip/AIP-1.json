@@ -88,16 +88,20 @@
  },
  "reuse": [
   {
-   "what": "theOS/docs/app.js: stageOf() and renderRecord()",
-   "use": "Used (theOS): the viewer; one file per record, its stage computed from its events."
+   "what": "theOS/ui/wiki.js and theOS/aven/app.js",
+   "use": "Used (theOS): the three apps read every doc by following its links; an AIP's stage is computed from its events."
+  },
+  {
+   "what": "brain (AIP-3): the term docs in theOS/aven/terms/ and their reflection",
+   "use": "Used: the terms check reads the glossary brain computes: the words that hold, and the words a newer term renamed."
   },
   {
    "what": "theOS/docs/intents.json and the Intents board",
    "use": "Legacy (Samuel, 1 Nov): learned from; its decisions and lessons move into aven's format when they are consolidated."
   },
   {
-   "what": "avenSANDBOX (aven/DB2/SANDBOX.md: the box and its browsers)",
-   "use": "Used for testing, by Samuel's exception (1 Nov): theOS's checks may run in it; nothing in it is changed."
+   "what": "theOS's sandbox (AIP-2)",
+   "use": "theOS owns avenSANDBOX from now on (D-24). The checks run in the session's box, with its Chromium and Playwright, until AIP-2 gives theOS its own."
   },
   {
    "what": "aven/DB2/sandbox/brain.mjs",
@@ -105,7 +109,7 @@
   },
   {
    "what": "aven/DB2/brain/GLOSSARY.md",
-   "use": "Learned from, not touched: the format for decided renames (→ x), words with two meanings (⚠) and their scopes."
+   "use": "Learned from, not touched: the format for decided renames (→ x), words with two meanings (⚠) and their scopes. In theOS a rename is a term doc that supersedes the old word (D-18)."
   },
   {
    "what": "aven/ops/checks/app-scroll.mjs",
@@ -136,7 +140,7 @@
   },
   {
    "name": "Checks first",
-   "note": "The done rule for every theOS commit: theOS's check command green (the crawl, a pixel diff against the base commit, the docs check, the terms check), a fresh checker's look at every view whose pixels changed, pushed and published. An AIP only for work that needs Gate A. Everything in theOS/, from scratch. Measure over three sessions; the router, the Stop hook and a metrics script only as new AIPs, and only if escapes remain.",
+   "note": "The done rule for every theOS commit: theOS's check command green (the crawl over the three apps, a pixel diff against the base commit, the docs check, the terms check over brain's term docs), a fresh checker's look at every view whose pixels changed, pushed and published. An AIP only for work that needs Gate A. Everything in theOS/, from scratch. Measure over three sessions; the router, the Stop hook and a metrics script only as new AIPs, and only if escapes remain.",
    "chosen": true
   },
   {
@@ -155,13 +159,13 @@
    "id": "c1",
    "promise": "The docs check fails at the parent of faf266961, where content could not be reached, and passes now.",
    "fails": "It checks something a person does not see, or is tuned to the known bug.",
-   "check": "Its rule (every scroll container whose content is taller than it can scroll; no view scrolls sideways) is committed before the replay, then run at 390x844, 1280x720 and 1440x900.",
+   "check": "Its rule (every scroll container whose content is taller than it can scroll; no view scrolls sideways) is committed before the replay, then run in the three apps (Docs, Intents, Sources) at 390x844, 1280x720 and 1440x900.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c2",
-   "promise": "The crawl reaches every state a person can reach from theOS/index.html, following every link and button and dropping duplicate states, on any commit.",
+   "promise": "The crawl reaches every state a person can reach from theOS/index.html, across the three apps, following every link and button and dropping duplicate states, on any commit.",
    "fails": "A state behind a button, or a renamed data file, is never seen.",
    "check": "Run on the current commit and on the parents of 106ba0e5f, 3ddc07339 and faf266961: it reaches the intent pages and their Learn tabs with no edit per commit.",
    "kind": "mechanical",
@@ -177,9 +181,9 @@
   },
   {
    "id": "c4",
-   "promise": "The terms check fails when a renamed word comes back where its rename applies, stays quiet where the word keeps its other meaning, and passes now.",
+   "promise": "The terms check fails when a word that a newer term renamed comes back where the rename applies, stays quiet where the word keeps its other meaning, and passes now.",
    "fails": "A rename sweep misses a place, or a word with two meanings raises a false alarm.",
-   "check": "A test plants each renamed word once where the rename applies (story ids, slide text fields) and once where its other meaning is correct (for example the rules of an Architecture panel); each entry cites the OLD-AIP that decided it.",
+   "check": "A test plants each renamed word once where the rename applies (story ids, slide text fields, the apps' text) and once where its other meaning is correct (for example the rules of an Architecture panel). Each rename is a term doc that supersedes the old word and cites the decision or OLD-AIP that decided it.",
    "kind": "mechanical",
    "result": "open"
   }
@@ -194,23 +198,25 @@
   "The operations-shape sweep (one of the three sweeps) has no check; the pixel-diff checker may catch it, nothing promises it.",
   "Running theOS's check command is part of the done rule, not enforced: enforcement is the deferred Stop hook."
  ],
- "done_rule": "A change to theOS is done when theOS's check command is green (the crawl, the pixel diff against the base commit, the docs check and the terms check), a fresh checker has looked at every view whose pixels changed and found no Blocker or Major, it is pushed to the work branch, and the theOS docs page (a private artifact) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply.",
+ "done_rule": "A change to theOS is done when theOS's check command is green (the crawl, the pixel diff against the base commit, the docs check and the terms check), a fresh checker has looked at every view whose pixels changed and found no Blocker or Major, it is pushed to the work branch, and the theOS artifact (private) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply.",
  "aip_when": "An AIP is opened for work that needs your Gate A: a decision about what must be true (architecture, product behaviour, how we work). Small edits follow the done rule only.",
  "mockup": [
+  "The dashboard: theOS/index.html",
   "The Intents app: theOS/aven/index.html",
-  "This intent's page: theOS/aven/index.html#aip/AIP-1"
+  "This intent's page: theOS/aven/index.html#aip/AIP-1",
+  "The Sources app: theOS/sources/index.html"
  ],
  "checkpoints": [
   {
    "n": 1,
-   "adds": "theOS/CLAUDE.md with the done rule (it says the root check does not apply in theOS); theOS/package.json and its lockfile; the check command; the terms check over theOS/docs/glossary.json, with its test.",
+   "adds": "theOS/CLAUDE.md with the done rule (it says the root check does not apply in theOS); theOS/package.json and its lockfile; the check command; the terms check over brain's term docs (theOS/aven/terms/), with its test.",
    "claims": [
     "c4"
    ]
   },
   {
    "n": 2,
-   "adds": "The crawl and the docs check: every reachable state from theOS/index.html at 390x844, 1280x720 and 1440x900, the reachability rule, a screenshot of each; their replays; the done rule extended.",
+   "adds": "The crawl and the docs check: every reachable state of the three apps from theOS/index.html at 390x844, 1280x720 and 1440x900, the reachability rule, a screenshot of each; their replays; the done rule extended.",
    "claims": [
     "c1",
     "c2"
@@ -218,7 +224,7 @@
   },
   {
    "n": 3,
-   "adds": "The pixel diff against the base commit, the checker's prompt in theOS/aven/checkers/, its replays; the done rule extended.",
+   "adds": "The pixel diff against the base commit; a third checker, whose prompt joins the two in theOS/aven/checkers/, shown only the views whose pixels changed; its replays; the done rule extended.",
    "claims": [
     "c3"
    ]
@@ -238,25 +244,28 @@
    "until": "A later AIP (Samuel, 1 Nov: \"we consolidate the current AIPs later into the new flow format\"). Their decisions have no claims or checkpoints yet, so that AIP decides how each maps."
   },
   {
-   "what": "Release gating by version",
-   "until": "aven releases anything on its own."
-  },
-  {
    "what": "A metrics script",
    "until": "There are three or more records."
   },
   {
    "what": "An append-only check for events",
    "until": "Records multiply; git keeps their history meanwhile."
+  },
+  {
+   "what": "Memory: decisions and their reflection, terms, the trace, authors, the schema of every doc",
+   "until": "AIP-3, brain (D-25)."
+  },
+  {
+   "what": "Release gating, and where theOS's checks run",
+   "until": "AIP-2, which gives theOS the sandbox and the release pipeline (D-24)."
   }
  ],
  "deleted": [
-  "Anything in legacy code: rules in the repository's check.mjs, entries in aven/ops/ci/suites.json, agents in the repository's .claude, a line in its CLAUDE.md. theOS is standalone (Samuel, 1 Nov).",
+  "Anything in legacy code: rules in the repository's check.mjs, entries in aven/ops/ci/suites.json, agents in the repository's .claude, a line in its CLAUDE.md. theOS is standalone (D-4); taking over the release pipeline is AIP-2's, not this one's (D-24).",
   "Choosing which views the checker sees: the pixel diff chooses.",
   "Picking checks by path: there is one app, and every check always runs.",
   "Contrast and slide text size: no escape asked for them.",
-  "The memory and decision-history section: it moved into aven's definition.",
-  "A separate lessons file: lessons stay in aven's definition."
+  "The memory and decision-history section: it moved to AIP-3, brain (D-25)."
  ],
  "questions": [
   {
@@ -274,7 +283,8 @@
     "Round 4 on revision 5 as it is",
     "Build with the open findings",
     "Back to Understand"
-   ]
+   ],
+   "answered": "decisions/D-23"
   }
  ],
  "events": [
@@ -720,6 +730,38 @@
     "aven/terms/aven",
     "aven/terms/avenmaia-2",
     "aven/terms/author"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:09Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Revision 6, then round 4.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-23"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:09Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 6: D-7 to D-25 folded in. The checks cover the three apps; the terms check reads brain's term docs (a rename is a term that supersedes); memory, decisions, terms, the trace and authors handed to AIP-3; theOS's sandbox and release pipeline handed to AIP-2.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:09Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Both checker prompts state the rule after D-24: theOS owns avenSANDBOX and the release pipeline, through AIP-2.",
+   "how": "by hand",
+   "writes": [
+    "aven/checkers/paraphrase",
+    "aven/checkers/zoom-out"
    ],
    "reads": []
   }

@@ -1,0 +1,39 @@
+{
+ "type": "decision",
+ "id": "D-24",
+ "n": 24,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "sandbox",
+  "release",
+  "legacy",
+  "theOS"
+ ],
+ "quote": "move it now (since this very avenMAIA session is living inside of this). this also should comment out the current avenDB aven.maia.city pipeline that we had (since it should be overwritten by the new theOS from now on), so the OS should be the new authority of the whole release pipeline, avenSANDBOX etc. do you see what I mean?",
+ "means": "theOS owns avenSANDBOX and the whole release pipeline from now on. avenDB's pipeline (its releases, its box image, avenPEER's image and the aven.maia.city deploy) is parked, not deleted: what is live stays live until theOS releases in its place.",
+ "intents": [
+  "aip/AIP-2"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-4",
+   "part": "part",
+   "what": "D-4 never touched legacy code; theOS now takes the release pipeline and the sandbox from avenDB, and parks avenDB's workflows."
+  },
+  {
+   "decision": "decisions/D-5",
+   "part": "part",
+   "what": "D-5 used the sandbox for testing only; theOS now owns it."
+  }
+ ],
+ "relates": [
+  "decisions/D-13"
+ ],
+ "reflection": {
+  "checked": "every decision before D-24 that held",
+  "result": "supersedes D-4 (part), D-5 (part)"
+ }
+}
