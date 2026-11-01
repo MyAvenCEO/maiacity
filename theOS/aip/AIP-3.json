@@ -29,7 +29,8 @@
     "Defer c5 until such a correction (recommended)",
     "Keep c5 in checkpoint 4"
    ],
-   "answer": "Don't defer (Samuel, 12:20): c5 is in checkpoint 3."
+   "answer": "Don't defer (Samuel, 10:47): c5 is in checkpoint 3.",
+   "answered": "decisions/D-67"
   },
   {
    "q": "Gate A for AIP-3, after its spec review: are its claims, assumptions, outcome and mockup what must be true?",
@@ -38,7 +39,7 @@
     "Change: tell me what",
     "Send it back"
    ],
-   "answer": "'ok' (Samuel, 12:20), read as approval only if round 6 came back clean; it did not, so Gate A is asked again as question 15."
+   "answer": "'ok' (D-68): approval only if round 6 came back clean; it did not, so Gate A is asked again as question 15."
   },
   {
    "q": "Decision ids: with many threads at once, keep D-n numbers, or switch to hash ids with D-n as a label?",
@@ -123,7 +124,8 @@
     "Build with them open",
     "Back to Understand"
    ],
-   "answer": "Do as you believe is best (Samuel, 12:20): answers applied in revision 9, round 6 run."
+   "answer": "Do as you believe is best (Samuel, 10:47): answers applied in revision 9, round 6 run.",
+   "answered": "decisions/D-66"
   },
   {
    "q": "Gate A for AIP-3: round 6 was not clean (8 Major, 8 Nit), and revision 10 answers every finding: the migration now opens checkpoint 2 so everything is built once on flat hash ids; the skill is a real Claude Code skill; supersede 'in part' is defined. Approve revision 10's claims, outcome and mockup as what must be true, or run one more round first?",
@@ -1082,7 +1084,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T10:30Z",
+   "at": "2026-11-01T10:19Z",
    "by": "authors/samuel-andert",
    "what": "answer",
    "text": "Hash ids: rename the numbered docs, keep no labels. The reflection: brain add does not refuse a skipped candidate; the reviewer judges.",
@@ -1091,7 +1093,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T10:40Z",
+   "at": "2026-11-01T10:19Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 5: the one door, brain protocol v1 (prime, holds, get, reflect, add, edit, append, check), one program behind the command, the skill and MCP; hash ids and one rename (c9); the reflection judged by the reviewer, only a supersede of a doc that did not hold refused (c3); links as a typed, audited graph (c10); no delete, no withdraw; checkpoints reordered so the door comes first (D-46); maintenance pass, cursor read and valid-from deferred.",
@@ -1109,7 +1111,7 @@
    ]
   },
   {
-   "at": "2026-11-01T10:40Z",
+   "at": "2026-11-01T10:19Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Revision 5 written with the one door.",
@@ -1119,7 +1121,7 @@
    "task": "t16"
   },
   {
-   "at": "2026-11-01T10:55Z",
+   "at": "2026-11-01T10:23Z",
    "by": "authors/avenmaia",
    "what": "review",
    "text": "Round 3 on revision 5: r3-paraphrase (9 Major, 2 Nit); r3-zoom-out (4 Major, 3 Nit). Not clean.",
@@ -1132,7 +1134,7 @@
    "task": "t4"
   },
   {
-   "at": "2026-11-01T10:55Z",
+   "at": "2026-11-01T10:23Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Round 3 run.",
@@ -1142,7 +1144,7 @@
    "task": "t4"
   },
   {
-   "at": "2026-11-01T11:05Z",
+   "at": "2026-11-01T10:23Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 6: brain check inside AIP-1's check command, no CI; brain writes files and the agent commits; the step computed, not passed; hash ids for new docs in checkpoint 1, the rename its own claim (c12) and c2's one exception; index docs written by brain; the left candidates recorded for the reviewer (D-50); edit only for corrections, --expect deferred; MCP after AIP-4's Gate A (c11); the outcome counts corrections only; the definition's updates named for avenMAIA; questions point at D-49 and D-50.",
@@ -1156,7 +1158,7 @@
    ]
   },
   {
-   "at": "2026-11-01T11:05Z",
+   "at": "2026-11-01T10:23Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Every finding of round 3 answered (all 18 fixed) and revision 6 written.",
@@ -1166,7 +1168,7 @@
    "task": "t17"
   },
   {
-   "at": "2026-11-01T11:10Z",
+   "at": "2026-11-01T10:26Z",
    "by": "authors/avenmaia",
    "what": "changed",
    "text": "The definition now matches AIP-3: the reflection for every type, the reviewer judging what it left (D-50), a change of meaning as a new doc and a correction as an edit through brain, D-n until hash ids land, Reflection and Decision superseded by new terms, the decision type in polished words (D-36). This answers round 3's finding on the definition as fixed.",
@@ -1180,7 +1182,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T11:20Z",
+   "at": "2026-11-01T10:26Z",
    "by": "authors/avenmaia",
    "what": "review",
    "text": "Round 4 on revision 6: r4-paraphrase (8 Major, 3 Nit); r4-zoom-out (4 Major, 4 Nit). Not clean.",
@@ -1193,7 +1195,7 @@
    "task": "t18"
   },
   {
-   "at": "2026-11-01T11:20Z",
+   "at": "2026-11-01T10:26Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Round 4 run.",
@@ -1203,7 +1205,7 @@
    "task": "t18"
   },
   {
-   "at": "2026-11-01T11:35Z",
+   "at": "2026-11-01T10:26Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 7: each type's steps as data and research allowed at Specify; a correction's cause back in the schema; the measurement at Learn; the hash id format defined, a collision failing at merge; merges checked against the first parent; about required where a doc can be superseded; copied lists deleted instead of checked (c8); c5 deferred; prime shorter; get's checkpoint 1 answer said; three findings escalated as questions 11 to 13 (keep old ids, where sessions start, MCP into AIP-4).",
@@ -1214,7 +1216,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T11:35Z",
+   "at": "2026-11-01T10:26Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Every finding of round 4 answered (16 fixed, 3 escalated) and revision 7 written.",
@@ -1223,7 +1225,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T11:45Z",
+   "at": "2026-11-01T10:42Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Answered (D-53): rename every doc and every reference.",
@@ -1233,7 +1235,7 @@
    "task": "t19"
   },
   {
-   "at": "2026-11-01T11:45Z",
+   "at": "2026-11-01T10:42Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Answered (D-54): theOS threads start in theOS/.",
@@ -1243,7 +1245,7 @@
    "task": "t20"
   },
   {
-   "at": "2026-11-01T11:45Z",
+   "at": "2026-11-01T10:42Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Answered (D-55): the MCP server moves into AIP-4.",
@@ -1253,7 +1255,7 @@
    "task": "t21"
   },
   {
-   "at": "2026-11-01T11:45Z",
+   "at": "2026-11-01T10:42Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 8: the rename covers every doc and every reference, prose and events included, with a lookup of old names (c12, D-53); the hook in theOS/.claude/settings.json (D-54); MCP gone to AIP-4, the verbs plain exported functions (c7, D-55); checkpoint 4 dropped. Question 3 (link versions) stays open.",
@@ -1268,7 +1270,7 @@
    ]
   },
   {
-   "at": "2026-11-01T12:00Z",
+   "at": "2026-11-01T10:44Z",
    "by": "authors/avenmaia",
    "what": "review",
    "text": "Round 5 on revision 8: r5-paraphrase (6 Major, 5 Nit); r5-zoom-out (3 Major, 3 Nit). Not clean; the third round of this thread, so patching stops: every finding has a proposed answer, and you get question 14.",
@@ -1281,7 +1283,7 @@
    "task": "t22"
   },
   {
-   "at": "2026-11-01T12:00Z",
+   "at": "2026-11-01T10:44Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Round 5 run and recorded; the stop question asked.",
@@ -1291,7 +1293,7 @@
    "task": "t22"
   },
   {
-   "at": "2026-11-01T12:20Z",
+   "at": "2026-11-01T10:47Z",
    "by": "authors/samuel-andert",
    "what": "answer",
    "text": "brain is the single source of truth: rename Sources to brain and move terms, decisions and sessions into the brain folder. To the open questions: do as you believe is best (question 14: apply round 5's answers and run one more round; the brain folder in the one migration, lessons, metrics and authors too); don't defer (question 3: link versions stay); ok (Gate A, read as approval if round 6 is clean).",
@@ -1300,7 +1302,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T12:30Z",
+   "at": "2026-11-01T10:47Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 9: round 5's answers applied: reads first (checkpoint 1 needs nothing from AIP-1), the door for writes from checkpoint 2; the merge rule (only what differs from both parents) with brain index and a merge driver; a pre-push hook and avenMAIA's check on merged trees; step limits only for metrics and lessons; random hash ids; the rename's exception tied to one SHA; causes set by Samuel or a fresh checker; c7 restated; corrections at any step; c6 for words, renames.json for ids. Samuel's answers: one brain/ folder for everything brain keeps, moved in the one migration with the rename (checkpoint 4); link versions kept (c5); the outcome after checkpoint 3.",
@@ -1313,7 +1315,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T12:30Z",
+   "at": "2026-11-01T10:47Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Every finding of round 5 answered (all fixed) and revision 9 written.",
@@ -1323,7 +1325,7 @@
    "task": "t23"
   },
   {
-   "at": "2026-11-01T12:35Z",
+   "at": "2026-11-01T10:48Z",
    "by": "authors/samuel-andert",
    "what": "answer",
    "text": "Reference everything flat by hash ids, never by paths.",
@@ -1332,7 +1334,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T12:35Z",
+   "at": "2026-11-01T10:48Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 9, amended: a link is a flat id, never a path; brain resolves an id to its file (brain index writes the map for the apps); folders are only where files sit (protocol ids and layout, c10, c12).",
@@ -1343,7 +1345,7 @@
    "reads": []
   },
   {
-   "at": "2026-11-01T12:55Z",
+   "at": "2026-11-01T10:51Z",
    "by": "authors/avenmaia",
    "what": "review",
    "text": "Round 6 on revision 9: r6-paraphrase (6 Major, 5 Nit); r6-zoom-out (2 Major, 3 Nit). Not clean.",
@@ -1356,7 +1358,7 @@
    "task": "t25"
   },
   {
-   "at": "2026-11-01T12:55Z",
+   "at": "2026-11-01T10:51Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Round 6 run.",
@@ -1366,7 +1368,7 @@
    "task": "t25"
   },
   {
-   "at": "2026-11-01T13:10Z",
+   "at": "2026-11-01T10:51Z",
    "by": "authors/avenmaia",
    "what": "revised",
    "text": "Revision 10: the migration opens checkpoint 2, so schemas, the door and the checks are built once on flat hash ids (three checkpoints); every doc gets an id, aip and avenCEO too; ids.json maps ids to files; the skill written as theOS/.claude/skills/brain/SKILL.md; brain install sets up hooks, prime only reads; part defined (all or part); topic words warned when new; review prompts kept verbatim in the migration; c5 blame skips the migration commit; no MCP server, as AIP-4 is dropped (D-64); questions carry Samuel's answers; Gate A asked again (question 15).",
@@ -1379,13 +1381,30 @@
    ]
   },
   {
-   "at": "2026-11-01T13:10Z",
+   "at": "2026-11-01T10:51Z",
    "by": "authors/avenmaia",
    "what": "done",
    "text": "Every finding of round 6 answered (all 16 fixed) and revision 10 written.",
    "how": "by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:53Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Samuel's answers recorded as decisions: D-65 (brain is one folder), D-66 (round 5's answers applied, one more round; the door for writes from checkpoint 2), D-67 (link versions stay), D-68 (Gate A if round 6 is clean: it was not, so question 15 asks again), D-69 (links are flat hash ids). The questions point at them. Event times from revision 5 on restamped from their commits' times, at avenMAIA's ask.",
+   "how": "by the AIP-3 thread",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [
+    "decisions/D-65",
+    "decisions/D-66",
+    "decisions/D-67",
+    "decisions/D-68",
+    "decisions/D-69"
+   ]
   }
  ],
  "reviews": [
