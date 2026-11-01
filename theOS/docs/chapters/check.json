@@ -7,6 +7,7 @@
    "code": {
     "type": "theos/change@1",
     "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "ops": [
      "c40b11:7"
     ],
@@ -77,6 +78,7 @@
    "code": {
     "type": "theos/change@1",
     "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "ops": [
      "a17e02:18",
      "a17e02:19"
@@ -101,6 +103,7 @@
    "code": {
     "type": "theos/change@1",
     "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "ops": [
      "c40b11:9"
     ],
@@ -139,6 +142,7 @@
     "change": {
      "type": "theos/change@1",
      "on": "data:b3:7Hq…#house-list",
+     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
      "ops": [
       "c40b11:9"
      ],

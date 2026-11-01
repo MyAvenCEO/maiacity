@@ -118,33 +118,31 @@
      },
      {
       "operation": "walk",
-      "at": "/items/*/assignee"
+      "at": "/items/*/assignee",
+      "schema": "data:b3:Sc4…@b3:1f0…#todo-list"
      },
      {
       "operation": "find",
       "where": {
        "done": false
-      }
+      },
+      "schema": "data:b3:Pf3…@b3:2d9…#profile"
      }
     ]
    },
-   "deep": "chain pipes the result set of each step into the next; later steps keep the data and schema of the results they receive. Each step is validated on its own."
+   "deep": "chain pipes the result set of each step into the next. Every step names the schema version it reads, and the engine checks that the results it receives match it. Each step is validated on its own."
   },
   {
    "title": "New kinds of operations plug in.",
    "text": "find, walk, search and near are {plugins}. Each one declares its name, the shape of its JSON, and which broad kind of operation it is. A new plugin, say for maps or for time series, slots in the same way.",
    "code": {
     "plugin": "search",
-    "spec": "b3:6dq…",
+    "spec": "data:b3:Pg6…@b3:6dq…#search",
     "kind": "read",
-    "input": {
-     "text": "string",
-     "at": "list of paths",
-     "limit": "number"
-    },
+    "input": "data:b3:Pi2…@b3:8a1…#search-input",
     "runs": "local"
    },
-   "deep": "One plugin registry for every operation (find, walk, near …); the Policies chapter adds conditions to the same registry. Each plugin is named by the hash of its specification and declares its JSON shape and its broad kind. Unknown plugins fail closed."
+   "deep": "One plugin registry for every operation (find, walk, near …); the Policies chapter adds conditions to the same registry. A plugin's specification and its input shape are both data, named by their data ID and version like any schema. Unknown plugins wait until known."
   },
   {
    "title": "Four broad kinds.",

@@ -65,7 +65,7 @@
     "$id": "data:b3:Op7…@b3:2c4…#operations",
     "type": "object",
     "propertyNames": {
-     "$ref": "theos:operation-names"
+     "$ref": "data:b3:Rg4…@b3:9c1…#operation-names"
     },
     "additionalProperties": {
      "properties": {
@@ -83,7 +83,7 @@
       },
       "data": {
        "additionalProperties": {
-        "$ref": "#"
+        "$ref": "data:b3:Op7…@b3:2c4…#operations"
        }
       }
      },

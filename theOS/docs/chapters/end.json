@@ -83,6 +83,7 @@
     },
     "change": {
      "type": "theos/change@1",
+     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
      "ops": [
       "6b2f58:12"
      ],
