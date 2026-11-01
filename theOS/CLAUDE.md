@@ -1,1 +1,1 @@
-Read what holds first with brain prime: `node brain/brain.mjs prime` (a session-start hook runs it for you). Act on what it lists, never on a superseded doc; `node brain/brain.mjs get <path>` shows one doc, `node brain/brain.mjs holds <type>` the rest (AIP-3).
+Read what holds first with brain prime: `node brain/brain.mjs prime` (a session-start hook runs it for you). Act on what it lists, never on a superseded doc; `node brain/brain.mjs get <id>` shows one doc, `node brain/brain.mjs holds <type>` the rest (AIP-3).

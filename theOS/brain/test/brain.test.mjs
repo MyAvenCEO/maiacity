@@ -14,7 +14,7 @@ const theOS = join(here, '..', '..');
 const cli = (...args) => JSON.parse(execFileSync(process.execPath, [join(theOS, 'brain', 'brain.mjs'), ...args, '--json', '--root', fixtures], { encoding: 'utf8' }));
 const docs = await load(fixtures);
 
-test('holds: a doc holds unless a doc that holds supersedes it; in part, it holds in part', () => {
+test('holds: a doc holds until a newer doc supersedes it; in part, it holds in part; a chain does not bring an old one back', () => {
   assert.deepEqual(holds(docs, 'decision'), [
     { id: 'decisions/D-5', title: 'Fifth, superseded in a named part', holds: 'holds in part' },
     { id: 'decisions/D-4', title: 'Fourth, holds, with a free-text part', holds: 'holds' },
@@ -48,6 +48,11 @@ test('get: the doc, what supersedes it, its links and backlinks', () => {
   assert.deepEqual(g.supersededBy, [{ by: 'decisions/D-3', part: 'part', what: 'its wording' }]);
   assert.deepEqual(g.links, ['decisions/D-1']);
   assert.deepEqual(g.backlinks, ['decisions/D-3']);
+});
+
+test('get: the id prime and holds print resolves to the same doc', () => {
+  assert.deepEqual(get(docs, 'D-2'), get(docs, 'decisions/D-2'));
+  assert.equal(get(docs, 'new-word').id, 'avenCEO/terms/new-word');
 });
 
 test('get: a missing doc is a fixed error with its fix', () => {

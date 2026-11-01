@@ -51,7 +51,7 @@ function holdsOf(docs, path) { return Wof(docs).holds(docs, path); }
 // brain holds <type>: the docs of a type that hold now, wholly or in part. Decisions newest first, the rest by title.
 export function holds(docs, type) {
   const types = typesIn(docs);
-  if (!types.includes(type)) throw new BrainError('unknown_type', `a type is one of: ${types.join(', ')}`);
+  if (!types.includes(type) || type === 'index') throw new BrainError('unknown_type', `a type is one of: ${types.filter((t) => t !== 'index').join(', ')}`);
   const xs = [...docs].filter(([, d]) => d.type === type)
     .map(([p, d]) => ({ id: p, title: titleOf(d), holds: holdsOf(docs, p), n: d.n }))
     .filter((x) => x.holds !== 'superseded')
@@ -85,9 +85,16 @@ export function prime(docs) {
 }
 
 // brain get <path>: one doc, whether it holds, what supersedes it, its links and backlinks (index docs left out).
-export function get(docs, path) {
-  const doc = docs.get(path);
-  if (!doc) throw new BrainError('not_found', `no doc ${path}; list the docs with: brain holds <type>`);
+export function get(docs, ref) {
+  // a path (decisions/D-12), or the id prime and holds print (D-12, avensandbox-3)
+  let path = docs.has(ref) ? ref : null;
+  if (!path) {
+    const hits = [...docs].filter(([p, d]) => d.type !== 'index' && (d.id === ref || p.split('/').pop() === ref)).map(([p]) => p);
+    if (hits.length > 1) throw new BrainError('ambiguous', `${ref} names ${hits.join(', ')}; pass the path`);
+    path = hits[0];
+  }
+  const doc = path && docs.get(path);
+  if (!doc) throw new BrainError('not_found', `no doc ${ref}; list the docs with: brain holds <type>`);
   const W = Wof(docs);
   const supersededBy = W.supersededBy(docs, path).map((s) => ({ by: s.p, part: s.part || 'whole', what: s.what || s.how || '' }));
   const links = [...W.paths(doc)].filter((q) => q !== path).sort();
@@ -115,14 +122,15 @@ function text(verb, out) {
 async function main(argv) {
   const json = argv.includes('--json');
   const r = argv.indexOf('--root');
-  const root = r >= 0 && argv[r + 1] ? resolve(argv[r + 1]) : THEOS;
+  if (r >= 0 && !argv[r + 1]) { process.stderr.write('brain: missing_arg: --root <the theOS folder>\n'); process.exitCode = 1; return; }
+  const root = r >= 0 ? resolve(argv[r + 1]) : THEOS;
   const args = argv.filter((a, i) => a !== '--json' && (r < 0 || (i !== r && i !== r + 1)));
   const [verb, arg] = args;
   try {
     const docs = await load(root);
     const verbs = { prime: () => prime(docs), holds: () => holds(docs, arg), get: () => get(docs, arg) };
-    if (!verbs[verb]) throw new BrainError('unknown_verb', 'the verbs are: prime, holds <type>, get <path>');
-    if (verb !== 'prime' && !arg) throw new BrainError('missing_arg', verb === 'holds' ? 'brain holds <type>, e.g. brain holds decision' : 'brain get <path>, e.g. brain get decisions/D-1');
+    if (!verbs[verb]) throw new BrainError('unknown_verb', 'the verbs are: prime, holds <type>, get <id or path>');
+    if (verb !== 'prime' && !arg) throw new BrainError('missing_arg', verb === 'holds' ? 'brain holds <type>, e.g. brain holds decision' : 'brain get <id or path>, e.g. brain get D-1');
     const out = verbs[verb]();
     process.stdout.write(`${json ? JSON.stringify(out) : text(verb, out)}\n`);
   } catch (e) {

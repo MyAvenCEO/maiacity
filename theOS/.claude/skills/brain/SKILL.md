@@ -13,7 +13,7 @@ and guessing what still holds. Run them from theOS/.
   session-start hook already ran it for you; run it again after you changed brain.
 - `brain holds <type>` (`node brain/brain.mjs holds decision`): the docs of a type that hold now. Types: decision,
   term, reference, intent, lesson, metric, session, author and the others in avenCEO/types.
-- `brain get <path>` (`node brain/brain.mjs get decisions/D-12`): one doc, whether it holds, what supersedes it, its
+- `brain get <id or path>` (`node brain/brain.mjs get D-12`): one doc, whether it holds, what supersedes it, its
   links and backlinks.
 
 Add `--json` for data. A refusal prints a fixed code and its fix (not_found, unknown_type, missing_arg, bad_root,

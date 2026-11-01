@@ -110,7 +110,7 @@ function reflection(d, path) {
 function reflected(title, type) {
   const xs = ofType(type).sort((a, b) => (b[1].n ?? 0) - (a[1].n ?? 0) || W.label(a[1], a[0]).localeCompare(W.label(b[1], b[0])));
   const card = ([p, d]) => {
-    const part = supersededBy(p).filter((s) => !W.whole(s)).map((s) => `${s.p.split('/').pop()}: ${s.what}`).join(' ');
+    const part = supersededBy(p).filter((s) => !W.whole(s)).map((s) => `${s.p.split('/').pop()}: ${s.what || s.how}`).join(' ');
     return `<a class="card" href="#${p}"><span class="top">${holdChip(p)}${chips(d.about)}</span><b>${e(type === 'decision' ? `${d.id} · ${d.title || d.means}` : W.label(d, p))}</b>
       <small>${e(d.means)}</small>${part ? `<small><b>Changed by</b> ${e(part)}</small>` : ''}</a>`;
   };

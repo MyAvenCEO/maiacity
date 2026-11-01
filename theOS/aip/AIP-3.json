@@ -1508,6 +1508,28 @@
    "writes": [],
    "reads": [],
    "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:04Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 1 re-review by a fresh agent: no Blocker, 1 Major (brain get refused the ids prime and holds print), 6 Nit. The Major fixed with a test; Nits fixed but two: a question with only an answer text stays open, as the apps count it; 'newer' is enforced by brain add at checkpoint 2. Checkpoint 1 passes its gates: 9 of 9 tests.",
+   "how": "a fresh subagent reading the record, the commit and running the tests",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:04Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 1 done: the read verbs.",
+   "how": "node --test theOS/brain/test/*.test.mjs (9 pass); two fresh reviews",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
   }
  ],
  "reviews": [
