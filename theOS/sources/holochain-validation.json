@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/holochain-validation",
+ "title": "Holochain: validation",
+ "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/7_validation.md",
+ "read": "yes"
+}

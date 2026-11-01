@@ -1,0 +1,10 @@
+{
+ "type": "gate",
+ "subtype": "human",
+ "id": "avenCEO/gates/B",
+ "name": "Gate B",
+ "after": "avenCEO/steps/3-build",
+ "who": "Samuel",
+ "what": "You try it as a person would. One question: ship, change, or send back. Release follows by itself, with a tested undo.",
+ "how": "Asked in chat; your answer is quoted into a decision doc with its time."
+}

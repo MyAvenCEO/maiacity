@@ -1,0 +1,17 @@
+{
+ "type": "metric",
+ "id": "metrics/corrections",
+ "name": "Corrections",
+ "what": "your corrections outside Gate A and Gate B, per 10 commits to theOS",
+ "want": "falling",
+ "how": "tallied by hand per session, with the session's commit count",
+ "measurements": [
+  {
+   "session": "sessions/2026-10-31-avenmaia",
+   "value": 1.5,
+   "count": 10,
+   "commits": 67,
+   "note": "the baseline, 31 Oct to 1 Nov 2026"
+  }
+ ]
+}

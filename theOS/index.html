@@ -2,45 +2,54 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>theOS</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500&display=swap">
-<link rel="stylesheet" href="docs/style.css">
+<link rel="stylesheet" href="ui/base.css">
+<style>
+  .dash { min-height: 100%; padding: clamp(20px, 5vw, 64px) max(16px, 5vw); display: grid; gap: 26px; align-content: start; max-width: 1180px; margin: 0 auto; }
+  .dash > header h1 { margin: 0 0 6px; font: 500 clamp(32px, 5vw, 52px)/1.05 var(--display); color: var(--paper); }
+  .dash > header p { margin: 0; max-width: 70ch; color: var(--stage-soft); font-size: 16px; line-height: 1.55; }
+  .apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .tile { display: grid; gap: 10px; align-content: start; padding: 22px; border-radius: 10px; background: var(--paper); color: var(--ink); text-decoration: none; border: 2px solid transparent; }
+  .tile:hover { border-color: var(--clay); }
+  .tile h2 { margin: 0; font: 500 26px var(--display); } .tile p { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-soft); }
+  .tile .nums { display: flex; flex-wrap: wrap; gap: 6px; } .tile .k { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--clay); }
+  .waiting { background: var(--ground); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; }
+  .waiting h2 { margin: 0; font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+  @media (max-width: 900px) { .apps { grid-template-columns: minmax(0, 1fr); } }
+</style>
 </head>
 <body>
-<main class="stage">
-  <nav class="stories" id="stories" aria-label="Chapters"></nav>
-  <div class="main">
-  <div class="cardwrap">
-  <article class="card" id="card" aria-live="polite">
-    <div class="terms" id="terms" aria-label="Terms so far"></div>
-    <div class="body">
-    <span class="num" id="num">01</span>
-    <h1 class="title" id="title"></h1>
-    <p class="text" id="text"></p>
-    <ul class="list" id="list" hidden></ul>
-    <div class="side">
-      <div class="flow" id="flow" hidden></div>
-      <pre class="code" id="code" hidden></pre>
-      <table class="table" id="table" hidden></table>
-    </div>
-    </div>
-    <aside class="deep" id="deep" hidden></aside>
-  </article>
-  <button type="button" class="spectab" id="spectab" aria-controls="spec" aria-expanded="false">Architecture</button>
-  <aside class="spec" id="spec" aria-label="Architecture" hidden></aside>
-  </div>
-  <div class="nav">
-    <button type="button" id="prev">← Back</button>
-    <div class="track" id="track" aria-label="The story so far"></div>
-    <button type="button" id="next">Go on →</button>
-  </div>
-  <section class="intents" id="intents" aria-label="Intents"></section>
+<main class="dash">
+  <header><h1>theOS</h1><p>A standalone project, built from scratch: the architecture explained, the intents that shape it, and the sources we learned from. Every intent, decision and source is one JSON doc in theOS/.</p></header>
+  <section class="waiting" id="waiting" hidden><h2>Waiting for you</h2></section>
+  <div class="apps">
+    <a class="tile" href="docs/"><span class="k">Docs</span><h2>The architecture</h2><p>The 13 chapters of theOS, slide by slide, with each slide's Architecture panel. The 91 legacy intents (OLD-AIPs) live here until they are consolidated.</p><span class="nums" id="n-docs"></span></a>
+    <a class="tile" href="avenCEO/"><span class="k">Intents</span><h2>avenCEO</h2><p>Our agent harness: every AIP and all its stages, your decisions, the sessions, and avenCEO's own steps, gates and doc types.</p><span class="nums" id="n-ceo"></span></a>
+    <a class="tile" href="sources/"><span class="k">Sources</span><h2>What we learned from</h2><p>One doc per source: protocols drawn as flows, articles, repositories and specifications, with whether each was read and what we took.</p><span class="nums" id="n-src"></span></a>
   </div>
 </main>
-<script src="docs/app.js"></script>
+<script>
+// The dashboard only counts and lists; each app reads theOS's docs itself.
+(async () => {
+  const get = (p) => fetch(p).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const chip = (t) => `<span class="chip">${t}</span>`;
+  const [stories, intents, aips, decisions, sessions, sources] = await Promise.all(['docs/stories.json', 'docs/intents.json', 'aip/index.json', 'decisions/index.json', 'sessions/index.json', 'sources/index.json'].map(get));
+  const chapters = (stories?.stories || []).filter((s) => !s.kind).length;
+  document.getElementById('n-docs').innerHTML = chip(`${chapters} chapters`) + chip(`${intents?.intents.length ?? 0} OLD-AIPs`);
+  document.getElementById('n-ceo').innerHTML = chip(`${aips?.items.length ?? 0} AIPs`) + chip(`${decisions?.items.length ?? 0} decisions`) + chip(`${sessions?.items.length ?? 0} sessions`);
+  const refs = await Promise.all((sources?.items || []).map((p) => get(`${p}.json`)));
+  document.getElementById('n-src').innerHTML = chip(`${refs.length} sources`) + chip(`${refs.filter((r) => r?.subtype === 'protocol').length} protocols`);
+  const open = (await Promise.all((aips?.items || []).map((p) => get(`${p}.json`)))).flatMap((I) => (I?.questions || []).filter((q) => !q.answered).map((q) => [I, q]));
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  if (open.length) {
+    const w = document.getElementById('waiting'); w.hidden = false;
+    w.insertAdjacentHTML('beforeend', open.map(([I, q]) => `<div class="wait"><span class="path"><a class="wl" href="avenCEO/#${esc(I.id.startsWith('aip/') ? I.id : 'aip/' + I.id)}">${esc(I.id)}</a></span><b>${esc(q.q)}</b><ul>${q.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ul></div>`).join(''));
+  }
+})();
+</script>
 </body>
 </html>

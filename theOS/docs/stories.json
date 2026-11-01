@@ -3,85 +3,73 @@
   {
    "id": "identity",
    "title": "Identity",
-   "file": "docs/chapters/identity.json"
+   "file": "chapters/identity.json"
   },
   {
    "id": "data",
    "title": "Data",
-   "file": "docs/chapters/data.json"
+   "file": "chapters/data.json"
   },
   {
    "id": "merge",
    "title": "Merging",
-   "file": "docs/chapters/merge.json"
+   "file": "chapters/merge.json"
   },
   {
    "id": "schema",
    "title": "Schemas",
-   "file": "docs/chapters/schema.json"
+   "file": "chapters/schema.json"
   },
   {
    "id": "ops",
    "title": "Operations",
-   "file": "docs/chapters/ops.json"
+   "file": "chapters/ops.json"
   },
   {
    "id": "policies",
    "title": "Policies",
-   "file": "docs/chapters/policies.json"
+   "file": "chapters/policies.json"
   },
   {
    "id": "check",
    "title": "Checking",
-   "file": "docs/chapters/check.json"
+   "file": "chapters/check.json"
   },
   {
    "id": "keys",
    "title": "Keys",
-   "file": "docs/chapters/keys.json"
+   "file": "chapters/keys.json"
   },
   {
    "id": "end",
    "title": "Endings",
-   "file": "docs/chapters/end.json"
+   "file": "chapters/end.json"
   },
   {
    "id": "time",
    "title": "Time",
-   "file": "docs/chapters/time.json"
+   "file": "chapters/time.json"
   },
   {
    "id": "net",
    "title": "Network",
-   "file": "docs/chapters/net.json"
+   "file": "chapters/net.json"
   },
   {
    "id": "sync",
    "title": "Sync",
-   "file": "docs/chapters/sync.json"
+   "file": "chapters/sync.json"
   },
   {
    "id": "carry",
    "title": "Carriers",
-   "file": "docs/chapters/carry.json"
+   "file": "chapters/carry.json"
   },
   {
    "id": "intents",
-   "title": "Intents",
-   "file": "docs/intents.json",
+   "title": "OLD-AIPs",
+   "file": "intents.json",
    "kind": "intents"
-  },
-  {
-   "id": "avenceo",
-   "title": "avenCEO",
-   "file": "avenCEO/avenceo.json",
-   "kind": "doc"
-  },
-  {
-   "id": "sources",
-   "title": "Sources",
-   "file": "docs/intents.json",
-   "kind": "sources"
   }
  ]
 }

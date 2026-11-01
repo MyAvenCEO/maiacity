@@ -1,0 +1,6 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/session",
+ "word": "Session",
+ "means": "One working conversation with the orchestrator, from its first message to its last commit; corrections are counted per 10 of its commits."
+}

@@ -1,0 +1,8 @@
+{
+ "type": "index",
+ "id": "aip/index",
+ "title": "AIPs",
+ "items": [
+  "aip/AIP-1"
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/loro",
+ "title": "Loro",
+ "url": "https://github.com/loro-dev/loro",
+ "read": "yes"
+}

@@ -1,0 +1,111 @@
+{
+ "type": "session",
+ "id": "sessions/2026-10-31-avenmaia",
+ "orchestrator": "avenMAIA",
+ "from": "2026-10-31",
+ "to": "2026-11-01",
+ "commits": {
+  "theOS": 68,
+  "note": "commits touching theOS/ when this doc was written"
+ },
+ "summary": "The theOS explainer (13 chapters with Architecture panels), the security audits and research that became the 91 current intents, then avenCEO: from a flow definition to AIP-1, built with its own steps.",
+ "asks": [
+  {
+   "about": "theOS explainer",
+   "quote": "rename rule to policy; read has paths like every other operation; one SSOT for the operations shape; every reference names data id @ version",
+   "did": "The 13 chapters, their Architecture panels and the operations schema."
+  },
+  {
+   "about": "security",
+   "quote": "make another deep security audit around all the current decided facts ... this is mission critical crypto design",
+   "did": "Audits from primary sources; findings became proposals."
+  },
+  {
+   "about": "research",
+   "quote": "deep audit of other systems such as urbit / tlon, hypercore / pears, jazz lenses and loro branching, p2panda, iroh",
+   "did": "Research that fed the current intents."
+  },
+  {
+   "about": "guardian",
+   "quote": "one guardian per identity ... its own primitive ... the root of trust",
+   "did": "OLD-AIP-91, woven through the chapters."
+  },
+  {
+   "about": "intents",
+   "quote": "lets create a proper flow pipeline instead ... learn, propose, decision ... a kanban board",
+   "did": "The Intents board (now legacy)."
+  },
+  {
+   "about": "flow",
+   "quote": "lets define a new flow from scratch how we actually want to work",
+   "did": "The flow: first principles, design thinking, the Claude Code team, Shopify Helix, Harness², the Elephant-Goldfish Model."
+  },
+  {
+   "about": "avenCEO",
+   "quote": "lets apply our own flow to building out the flow engine ... call it avenCEO",
+   "did": "AIP-1, three spec review rounds, five revisions."
+  },
+  {
+   "about": "memory",
+   "quote": "we document everything in there also as our memory ... each in their own doc",
+   "did": "This: one JSON doc per thing in theOS/."
+  }
+ ],
+ "decisions": [
+  "decisions/2026-11-01-build-avenceo",
+  "decisions/2026-11-01-we-call-them-aips",
+  "decisions/2026-11-01-aip-1-new-sequence",
+  "decisions/2026-11-01-theos-standalone",
+  "decisions/2026-11-01-sandbox-for-testing",
+  "decisions/2026-11-01-ssot-in-theos",
+  "decisions/2026-11-01-theos-is-our-memory",
+  "decisions/2026-11-01-three-viewers",
+  "decisions/2026-11-01-html-and-json",
+  "decisions/2026-11-01-old-aip"
+ ],
+ "corrections": [
+  {
+   "text": "The intent detail page broke: two parts of the page shared one CSS class name.",
+   "commit": "106ba0e5f"
+  },
+  {
+   "text": "The scenario table squeezed its first column into a tall strip.",
+   "commit": "3ddc07339"
+  },
+  {
+   "text": "The intents and decisions pages did not scroll.",
+   "commit": "faf266961"
+  },
+  {
+   "text": "The board scrolled as a whole instead of per column.",
+   "commit": "b1d105b39"
+  },
+  {
+   "text": "Not every \"rule\" was renamed to \"policy\" after that was decided.",
+   "commit": ""
+  },
+  {
+   "text": "Slides kept an old shape of operations after its single source of truth changed.",
+   "commit": ""
+  },
+  {
+   "text": "The published page was not updated after a change.",
+   "commit": ""
+  },
+  {
+   "text": "Agents were modelled without their own identity, and coops with members.",
+   "commit": ""
+  },
+  {
+   "text": "An audit leaned on summaries instead of primary sources.",
+   "commit": ""
+  },
+  {
+   "text": "Decisions were listed oldest first.",
+   "commit": ""
+  }
+ ],
+ "intents": [
+  "aip/AIP-1"
+ ]
+}

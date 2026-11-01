@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/decentralised-mls-draft",
+ "title": "Decentralised MLS (draft)",
+ "url": "https://github.com/phnx-im/dmls-spec/blob/main/draft-kohbrok-mls-dmls.md",
+ "read": "yes"
+}

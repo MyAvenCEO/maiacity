@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "metrics/undo",
+ "name": "Undo",
+ "what": "releases undone, and how long undoing took",
+ "want": "rare, and minutes",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

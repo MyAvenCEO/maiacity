@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "metrics/escapes",
+ "name": "Escapes",
+ "what": "problems found after Gate B, per intent",
+ "want": "falling",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

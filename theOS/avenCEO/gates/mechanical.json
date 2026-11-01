@@ -1,0 +1,10 @@
+{
+ "type": "gate",
+ "subtype": "checkpoint",
+ "id": "avenCEO/gates/mechanical",
+ "name": "Mechanical gate",
+ "after": "avenCEO/steps/3-build",
+ "who": "machines",
+ "what": "Every check a machine can run: tests, vectors from the model, Lean theorems, the Aeneas proof that the Rust keeps the model, the same tests in wasm, a screenshot diff against the mockup.",
+ "when": "every checkpoint"
+}

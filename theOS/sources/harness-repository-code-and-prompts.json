@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/harness-repository-code-and-prompts",
+ "title": "Harness²: repository, code and prompts",
+ "url": "https://github.com/google-research/harness2",
+ "read": "yes"
+}

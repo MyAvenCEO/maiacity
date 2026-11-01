@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "metrics/outcome",
+ "name": "Outcome",
+ "what": "each intent's outcome claim, measured",
+ "want": "met",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

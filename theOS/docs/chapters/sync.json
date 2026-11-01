@@ -37,7 +37,7 @@
     "b3:00b1…": "depth 1: closes a chunk",
     "b3:0000…": "depth 2: closes a bigger one"
    },
-   "deep": "Sedimentree (from Ink & Switch's Subduction): depth = number of leading zero bytes of a change's BLAKE3 hash. Depth ≥ 1 closes a chunk; deeper chunks contain shallower ones. Equal content gives an equal minimal hash. (AIP-33)"
+   "deep": "Sedimentree (from Ink & Switch's Subduction): depth = number of leading zero bytes of a change's BLAKE3 hash. Depth ≥ 1 closes a chunk; deeper chunks contain shallower ones. Equal content gives an equal minimal hash. (OLD-AIP-33)"
   },
   {
    "title": "Finding what's missing, cheaply.",
@@ -52,7 +52,7 @@
      "send": "RIBLT summaries until all peel"
     }
    },
-   "deep": "Two levels (AIP-34): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference. Summaries cover only data both sides may want, so a peer learns nothing about the rest (AIP-65)."
+   "deep": "Two levels (OLD-AIP-34): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference. Summaries cover only data both sides may want, so a peer learns nothing about the rest (OLD-AIP-65)."
   },
   {
    "title": "Fingerprints, step by step.",
@@ -125,7 +125,7 @@
      "value": "…"
     }
    },
-   "deep": "BLAKE3 verified streaming over the sealed bytes: every received range is checked against the Value's name before use, by readers and carriers alike. Ranges can come from several peers at once. The proof runs through the movie's metadata Doc, since a Value has no policies of its own (AIP-72)."
+   "deep": "BLAKE3 verified streaming over the sealed bytes: every received range is checked against the Value's name before use, by readers and carriers alike. Ranges can come from several peers at once. The proof runs through the movie's metadata Doc, since a Value has no policies of its own (OLD-AIP-72)."
   },
   {
    "title": "News travels by gossip.",
@@ -137,7 +137,7 @@
      "chunk:b3:e40d…"
     ]
    },
-   "deep": "Gossip topic = data ID. Announcements carry only new chunk hashes, never content, and peers pass news only to peers that showed want (AIP-65)."
+   "deep": "Gossip topic = data ID. Announcements carry only new chunk hashes, never content, and peers pass news only to peers that showed want (OLD-AIP-65)."
   },
   {
    "title": "Peers sync. They never ask.",

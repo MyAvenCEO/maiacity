@@ -1,0 +1,37 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/reference",
+ "name": "reference",
+ "file": "sources/<slug>.json",
+ "what": "One source we learned from: whether and how it was read, what it says, what we took and where it lives.",
+ "subtypes": [
+  "protocol",
+  "article",
+  "repo",
+  "paper",
+  "spec",
+  "retelling"
+ ],
+ "fields": [
+  {
+   "name": "url, read",
+   "means": "where it is, and whether it was read"
+  },
+  {
+   "name": "summary, ideas",
+   "means": "what it says"
+  },
+  {
+   "name": "took",
+   "means": "what we took, and where it lives in avenCEO"
+  },
+  {
+   "name": "steps, gates, loops",
+   "means": "for a protocol: its flow, drawn as a diagram"
+  }
+ ],
+ "written_by": "the orchestrator",
+ "links_to": [
+  "avenCEO/types/step"
+ ]
+}

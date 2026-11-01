@@ -9,7 +9,7 @@
     "keep: may store it for good.",
     "sync: may pass it on to others whose policies say want."
    ],
-   "deep": "want, keep and sync are operations in policies, like any other. Policies, roles and endings are signed but not encrypted for carriers; content and keys are sealed (AIP-65). Not to be confused with a relay (Network chapter), which only passes encrypted packets between two devices and holds nothing."
+   "deep": "want, keep and sync are operations in policies, like any other. Policies, roles and endings are signed but not encrypted for carriers; content and keys are sealed (OLD-AIP-65). Not to be confused with a relay (Network chapter), which only passes encrypted packets between two devices and holds nothing."
   },
   {
    "title": "want",
@@ -30,7 +30,7 @@
      "value": "…"
     }
    },
-   "deep": "The proof chain: the data's birth record → the policy giving want (or read) to a role → the asker's identity in that role → the asker's agent policy. The carrier evaluates it against the signed policies, roles and endings of that data, which it holds in clear, and binds the answer to this connection's challenge (AIP-65)."
+   "deep": "The proof chain: the data's birth record → the policy giving want (or read) to a role → the asker's identity in that role → the asker's agent policy. The carrier evaluates it against the signed policies, roles and endings of that data, which it holds in clear, and binds the answer to this connection's challenge (OLD-AIP-65)."
   },
   {
    "title": "keep",
@@ -58,7 +58,7 @@
      "value": "…"
     }
    },
-   "deep": "keep means the carrier stores sealed chunks durably and serves them to askers holding want. Keys follow both layers of policy (AIP-57, AIP-58): the backup's policy covers no read, so no key is ever sealed to its lock."
+   "deep": "keep means the carrier stores sealed chunks durably and serves them to askers holding want. Keys follow both layers of policy (OLD-AIP-57, OLD-AIP-58): the backup's policy covers no read, so no key is ever sealed to its lock."
   },
   {
    "title": "sync",
@@ -82,7 +82,7 @@
      "value": "…"
     }
    },
-   "deep": "sync means the peer may forward sealed chunks to others whose policies give them want, which bridges devices that are never online at the same time. The role “street-carrier” is yours and holds the street coop (coop:b3:s5t8…#street); the street's server acts for the street under the street's own narrow policy (AIP-58)."
+   "deep": "sync means the peer may forward sealed chunks to others whose policies give them want, which bridges devices that are never online at the same time. The role “street-carrier” is yours and holds the street coop (coop:b3:s5t8…#street); the street's server acts for the street under the street's own narrow policy (OLD-AIP-58)."
   },
   {
    "title": "What a carrier sees.",
@@ -101,7 +101,7 @@
      "which file a Value is"
     ]
    },
-   "deep": "This is the metadata a carrier learns, stated plainly, as Keyhive does for its relays: who may carry and read this data, by pseudonymous IDs, how big it is and when it changes. Content and keys stay sealed (AIP-65)."
+   "deep": "This is the metadata a carrier learns, stated plainly, as Keyhive does for its relays: who may carry and read this data, by pseudonymous IDs, how big it is and when it changes. Content and keys stay sealed (OLD-AIP-65)."
   },
   {
    "title": "Endings reach carriers too.",
@@ -121,12 +121,12 @@
      "agent:b3:r7p…#plumber-phone": "want refused"
     }
    },
-   "deep": "Endings are written by the owner (AIP-60) and visible to carriers (AIP-65), so a carrier checks each want against the endings it holds."
+   "deep": "Endings are written by the owner (OLD-AIP-60) and visible to carriers (OLD-AIP-65), so a carrier checks each want against the endings it holds."
   },
   {
    "title": "All the policies on one list.",
    "text": "One piece of data, one owner, four roles and one agent, each with exactly what it needs. Every line is a policy the owner wrote.",
-   "deep": "One owner, four roles and one agent: readers and writers (household), children who add and tick (kids), a reader (grandma), a forwarding carrier (street-carrier), and your backup agent, a durable carrier. The four roles are data policies; the backup's line is your own policy to your agent (AIP-58).",
+   "deep": "One owner, four roles and one agent: readers and writers (household), children who add and tick (kids), a reader (grandma), a forwarding carrier (street-carrier), and your backup agent, a durable carrier. The four roles are data policies; the backup's line is your own policy to your agent (OLD-AIP-58).",
    "table": {
     "head": [
      "Who",

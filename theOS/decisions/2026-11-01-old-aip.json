@@ -1,0 +1,13 @@
+{
+ "type": "decision",
+ "subtype": "answer",
+ "id": "decisions/2026-11-01-old-aip",
+ "by": "Samuel",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "quote": "pls rename the legacy AIPs as OLD-AIP, not the theOS AIP",
+ "means": "The 91 legacy intents are OLD-AIP-1 to OLD-AIP-91; AIP-n is avenCEO's sequence.",
+ "intents": [
+  "aip/AIP-1"
+ ]
+}

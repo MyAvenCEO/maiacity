@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/hypercore",
+ "title": "Hypercore",
+ "url": "https://github.com/holepunchto/hypercore",
+ "read": "yes"
+}

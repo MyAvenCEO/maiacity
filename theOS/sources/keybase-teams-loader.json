@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/keybase-teams-loader",
+ "title": "Keybase teams: loader",
+ "url": "https://github.com/keybase/client/blob/master/go/teams/loader2.go",
+ "read": "yes"
+}

@@ -1,0 +1,6 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/rule-id",
+ "word": "Rule ID",
+ "means": "The stable name of one rule in an Architecture panel, for example verify.2_record_key."
+}

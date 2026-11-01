@@ -1,0 +1,17 @@
+{
+ "type": "index",
+ "id": "decisions/index",
+ "title": "Decisions",
+ "items": [
+  "decisions/2026-11-01-old-aip",
+  "decisions/2026-11-01-html-and-json",
+  "decisions/2026-11-01-three-viewers",
+  "decisions/2026-11-01-theos-is-our-memory",
+  "decisions/2026-11-01-ssot-in-theos",
+  "decisions/2026-11-01-sandbox-for-testing",
+  "decisions/2026-11-01-theos-standalone",
+  "decisions/2026-11-01-aip-1-new-sequence",
+  "decisions/2026-11-01-we-call-them-aips",
+  "decisions/2026-11-01-build-avenceo"
+ ]
+}

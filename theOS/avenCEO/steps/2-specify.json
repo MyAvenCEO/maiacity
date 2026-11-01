@@ -1,0 +1,34 @@
+{
+ "type": "step",
+ "id": "avenCEO/steps/2-specify",
+ "n": 2,
+ "name": "Specify",
+ "writes": "claims · mockup · checkpoints",
+ "question": "What can we delete? If nothing: what is the simplest change, and what must be true afterwards?",
+ "do": [
+  "Delete first. \"Keep as is\" is always an option, and it may win. More options only when more than one is viable, from fresh agents that can't see each other.",
+  "Write the claims. Each is a promise, how it could fail, and its check: mechanical (test, vector, proof, screenshot diff), review, person, or measured. A claim without a check gets one, or is written down as an assumption.",
+  "One outcome claim says what will be measured after release, and what would count as success.",
+  "Make the mockup: the slides and the Architecture panel diff with rule IDs; for a screen, a clickable page.",
+  "Plan the checkpoints, smallest first. If it can't be undone, checkpoint 1 is the Lean model and its theorems, before any code.",
+  "Before Gate A the spec passes the Review gate too, with fresh checkers that see only the record and what it links. One paraphrases what the spec proposes in its own words; one zooms out (could we delete, reuse code that exists, or is this a symptom?); for what can't be undone, a critic and a readiness check (can the checkpoints be built from this alone?)."
+ ],
+ "output": "claims (with one outcome claim) · assumptions · mockup · checkpoints",
+ "gate": "avenCEO/gates/A",
+ "gate_text": "Gate A: you approve what must be true (the claims, the assumptions, the mockup and the plan), with the checker's paraphrase next to it. Nothing is built before.",
+ "who": "A worker agent; option agents when needed; you at Gate A.",
+ "back": [
+  {
+   "to": "avenCEO/steps/1-understand",
+   "when": "the problem isn't clear yet"
+  }
+ ],
+ "from": [
+  "Musk 2 and 3: delete, simplify",
+  "Design thinking: ideate, prototype",
+  "Claude Code team: evals before building",
+  "Shopify Helix: a checkpoint plan a person approves",
+  "Harness²: keep as is, independent proposals",
+  "Elephant-Goldfish Model: the paraphrase test, zoom out, reviewing the spec"
+ ]
+}

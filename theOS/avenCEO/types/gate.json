@@ -1,0 +1,25 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/gate",
+ "name": "gate",
+ "file": "avenCEO/gates/<id>.json",
+ "what": "A check work must pass: your two (approve what must be true, try it) and each checkpoint's (mechanical, review).",
+ "subtypes": [
+  "human",
+  "checkpoint"
+ ],
+ "fields": [
+  {
+   "name": "after",
+   "means": "the step it closes"
+  },
+  {
+   "name": "who, what",
+   "means": "who passes it, and on what"
+  }
+ ],
+ "written_by": "Samuel, through avenCEO intents",
+ "links_to": [
+  "avenCEO/types/step"
+ ]
+}

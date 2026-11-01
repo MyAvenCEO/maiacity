@@ -1,0 +1,25 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/metric",
+ "name": "metric",
+ "file": "metrics/<name>.json",
+ "what": "One number avenCEO learns from: what it counts, which way we want it, how it is measured, and its measurements.",
+ "subtypes": [
+  "by hand",
+  "computed"
+ ],
+ "fields": [
+  {
+   "name": "what, want, how",
+   "means": "the definition"
+  },
+  {
+   "name": "measurements",
+   "means": "one row per session"
+  }
+ ],
+ "written_by": "the orchestrator",
+ "links_to": [
+  "avenCEO/types/session"
+ ]
+}

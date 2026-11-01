@@ -1,0 +1,100 @@
+{
+ "type": "review",
+ "id": "aip/AIP-1/r2-paraphrase",
+ "intent": "aip/AIP-1",
+ "round": 2,
+ "lens": "paraphrase",
+ "commit": "cb781cef3",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead only this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/aip/AIP-1.json\n\nIt is the record of one piece of planned work: building \"avenCEO\", an agent harness. Its definition is theOS/docs/avenceo.json; read that too (skip its \"protocols\" array, which only summarises outside sources).\n\nThe record's \"review\" field holds round 1 of this review, with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenceo.json.\n\nReport in plain text, at most 600 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "Revision 2 builds only a small part of avenCEO. It adds a headless-browser render check for the theOS/docs pages at 390x844 and 1440x900, and a text search that fails when a superseded (\"decided\") term comes back. Both checks go into check.mjs's plan(). It also adds one checker agent file for the two goldfish spec lenses (paraphrase, zoom out) and a \"done rule\": check.mjs green, checkers clean, page published. Each new AIP becomes one JSON file in theOS/docs/aip/, and the viewer computes its stage. Success means zero layout and sweep escapes and fewer than ten corrections over the next three intents, counted by hand. The router, the Stop hook, the metrics script and migrating the 91 intents are deferred.",
+  "existing": "Agents check their own work, and Samuel catches layout, sweep and judgement mistakes by looking. The 91 intents sit in theOS/docs/intents.json with stored stages. avenDB's decisions sit in DECISIONS.md, append-only, checked by decisions.mjs and written by avenMAIA. check.mjs, run by hand, picks checks by changed path. app-scroll.mjs is a similar headless check for another app. I cannot paraphrase what \"published\" or \"release\" means for a theOS/docs page. The record never says."
+ },
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "note, id, c2, glossary, lessons",
+   "text": "There are two AIP-1s now; the lessons cite theOS AIP-14 and AIP-90, and c2 tags terms with an AIP of the old sequence. Every AIP-n reference is ambiguous.",
+   "answer": "fix",
+   "note": "Until the consolidation, the current intents are cited as \"theOS AIP-n\"; plain AIP-n is avenCEO's sequence. The glossary says so."
+  },
+  {
+   "sev": "Major",
+   "scope": "c2, outcome",
+   "text": "\"Decided term\" is undefined; \"rule\" is still correct in many places; only one of the three sweep escapes is about a word.",
+   "answer": "fix",
+   "note": "The terms check reads theOS/docs/glossary.json, in the format learned from avenDB's GLOSSARY.md: a rename (→ x) with its scope, words with two meanings marked ⚠. The operations-shape sweep is listed as a gap, and the outcome promises zero renamed-term escapes, not zero sweeps."
+  },
+  {
+   "sev": "Major",
+   "scope": "c1, checkpoint 1",
+   "text": "The column minimum and \"every page\" are undefined; a threshold can be tuned to the replay; the fourth layout escape has no commit.",
+   "answer": "fix",
+   "note": "c1 now checks reachability, not a tuned width: no view scrolls sideways and every scroll container whose content is taller than it can scroll. Its rules are written before any replay. The views are listed from stories.json, intents.json and the records. The fourth escape is faf266961. The two visual escapes go to the screenshot checker (c2), not to a threshold."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3",
+   "text": "check.mjs is run by hand, main has no CI, the Stop hook is deferred: a plan() test does not catch a change going out without the checks.",
+   "answer": "fix",
+   "note": "c4 now promises only what a test can show (theOS's check command picks both checks for theOS/docs paths). Running it is part of the done rule; enforcing it automatically is the deferred Stop hook. Said plainly in the gaps."
+  },
+  {
+   "sev": "Major",
+   "scope": "c4",
+   "text": "The prompts named more than the record's path, point to a path that no longer exists, and no revision is recorded, so the comparison can't be done.",
+   "answer": "fix",
+   "note": "The claim now says what the checkers get: the record's path, avenCEO's definition and their lens. Each review entry records the commit it reviewed (round 1: b42f1201d, round 2: cb781cef3), where the old path existed. c4 is met for rounds 1 and 2."
+  },
+  {
+   "sev": "Major",
+   "scope": "c5, stage",
+   "text": "stageOf() keys on event names nobody defines; the record uses other names; the Build row needs checkpoints and a release that stageOf ignores.",
+   "answer": "fix",
+   "note": "The record shape now lists the event names; stageOf() reads only events (understood, gate-A, gate-B, measured) and handles a record with only a source. The c5 test is deferred, as the zoom-out advised."
+  },
+  {
+   "sev": "Major",
+   "scope": "done rule, risk, gaps",
+   "text": "\"Published\" is undefined; the risk says nothing is published on its own while the definition asks for a release; the checkpoint lenses differ.",
+   "answer": "fix",
+   "note": "The done rule is defined: theOS's check command green, a fresh checker's look at the screenshots of the changed views with no Blocker or Major, pushed to the work branch, and the private theOS docs page republished with its version noted. The definition marks the automatic release as later."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "The same ten are called escapes and corrections; the baseline is per session and the window per intent.",
+   "answer": "fix",
+   "note": "Of the ten corrections, seven were escapes (problems in work already called done) and three judgement. The outcome is tallied per session, like the baseline: the next three sessions of theOS docs work."
+  },
+  {
+   "sev": "Major",
+   "scope": "assumptions",
+   "text": "The list of what avenCEO adds was still incomplete (two checks, tests, app.js).",
+   "answer": "fix",
+   "note": "The assumption now lists every file the plan adds or changes."
+  },
+  {
+   "sev": "Nit",
+   "scope": "record shape",
+   "text": "title, note, gaps, design and whys_note are missing; options use \"why\" where the record uses \"note\".",
+   "answer": "fix",
+   "note": "Matched."
+  },
+  {
+   "sev": "Nit",
+   "scope": "glossary",
+   "text": "A-numbers, rule IDs, theOS and avenDB are undefined.",
+   "answer": "fix",
+   "note": "Added."
+  },
+  {
+   "sev": "Nit",
+   "scope": "events",
+   "text": "The revision 2 event says three questions were dropped, but two remain.",
+   "answer": "fix",
+   "note": "History only grows: a correction event explains it (three of four dropped, one added)."
+  }
+ ]
+}

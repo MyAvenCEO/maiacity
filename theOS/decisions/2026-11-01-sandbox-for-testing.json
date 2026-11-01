@@ -1,0 +1,13 @@
+{
+ "type": "decision",
+ "subtype": "answer",
+ "id": "decisions/2026-11-01-sandbox-for-testing",
+ "by": "Samuel",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "quote": "we can reuse f.e. the sandbox, for our testing - but else not. also our current \"intents board\" is legacy too -> we can learn from it - but want to migrate its lessons to build the new avenCEO harness, right?",
+ "means": "The sandbox may be used for testing; the Intents board is legacy, its lessons move into avenCEO.",
+ "intents": [
+  "aip/AIP-1"
+ ]
+}

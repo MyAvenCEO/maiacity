@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/matrix-room-version-12",
+ "title": "Matrix: room version 12",
+ "url": "https://github.com/matrix-org/matrix-spec/blob/main/content/rooms/v12.md",
+ "read": "yes"
+}

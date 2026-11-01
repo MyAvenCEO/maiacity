@@ -1,5 +1,5 @@
 {
- "title": "Intents",
+ "title": "OLD-AIPs",
  "stages": [
   {
    "id": "learn",
@@ -83,7 +83,7 @@
  ],
  "intents": [
   {
-   "id": "AIP-1",
+   "id": "OLD-AIP-1",
    "n": 1,
    "title": "theBRAIN is native HTML, CSS, JS and JSON",
    "stage": "decided",
@@ -98,7 +98,7 @@
    "slides": []
   },
   {
-   "id": "AIP-2",
+   "id": "OLD-AIP-2",
    "n": 2,
    "title": "Agents act; humans and coops own",
    "stage": "decided",
@@ -125,7 +125,7 @@
    ]
   },
   {
-   "id": "AIP-3",
+   "id": "OLD-AIP-3",
    "n": 3,
    "title": "Three kinds of identity: human, coop, agent",
    "stage": "decided",
@@ -155,7 +155,7 @@
    ]
   },
   {
-   "id": "AIP-4",
+   "id": "OLD-AIP-4",
    "n": 4,
    "title": "Data owns itself: the seal",
    "stage": "decided",
@@ -166,7 +166,7 @@
    "decision": {
     "text": "Data is born with a fresh key pair, the seal. Its public key is the data ID. It signs exactly one thing, the first policy, and the private key is wiped.",
     "why": "Nobody holds the seal, so it cannot be shared, lost or stolen. Keyhive does the same with its genesis key.",
-    "superseded_by": "AIP-64",
+    "superseded_by": "OLD-AIP-64",
     "sources": [
      {
       "label": "Keyhive design: glossary (genesis key)",
@@ -181,7 +181,7 @@
    "slides": []
   },
   {
-   "id": "AIP-5",
+   "id": "OLD-AIP-5",
    "n": 5,
    "title": "One owner per piece of data, and it is an identity",
    "stage": "decided",
@@ -190,10 +190,10 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "The birth record's policy names exactly one owner: an identity, human or coop. The owner may do everything, its policy never expires, and ownership never moves to another identity (AIP-54). The owner is not a role.",
+    "text": "The birth record's policy names exactly one owner: an identity, human or coop. The owner may do everything, its policy never expires, and ownership never moves to another identity (OLD-AIP-54). The owner is not a role.",
     "why": "A role of owners cannot shrink durably: any past owner could revoke the others for good (Keyline's warning). With one owner identity, people change inside the coop, not in the data.",
     "rejected": "An \"owners\" role holding admin.",
-    "supersedes": "AIP-4 as first drafted (owners role)",
+    "supersedes": "OLD-AIP-4 as first drafted (owners role)",
     "sources": [
      {
       "label": "Keyhive design: Keyline (root role, rotation)",
@@ -211,7 +211,7 @@
    ]
   },
   {
-   "id": "AIP-6",
+   "id": "OLD-AIP-6",
    "n": 6,
    "title": "Policies go to roles, never to people directly",
    "stage": "decided",
@@ -239,7 +239,7 @@
    ]
   },
   {
-   "id": "AIP-7",
+   "id": "OLD-AIP-7",
    "n": 7,
    "title": "People see \"policies\"; underneath they are capabilities",
    "stage": "decided",
@@ -270,7 +270,7 @@
    ]
   },
   {
-   "id": "AIP-8",
+   "id": "OLD-AIP-8",
    "n": 8,
    "title": "A policy: role, data, operations, conditions, expiry, proof",
    "stage": "decided",
@@ -279,7 +279,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "A policy is a signed certificate with: the role it is given to; the data it applies to; its operations, keyed by name (AIP-56) (create, read, update, delete, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the owner's agent; and the proof chain back to the data's birth record. Identity policies use the same shape with act and own (AIP-48). Writing policies is not an operation: it belongs to the owner (AIP-30).",
+    "text": "A policy is a signed certificate with: the role it is given to; the data it applies to; its operations, keyed by name (OLD-AIP-56) (create, read, update, delete, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the owner's agent; and the proof chain back to the data's birth record. Identity policies use the same shape with act and own (OLD-AIP-48). Writing policies is not an operation: it belongs to the owner (OLD-AIP-30).",
     "why": "One small vocabulary for content, carrying and the policies themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
     "sources": [
      {
@@ -300,7 +300,7 @@
    ]
   },
   {
-   "id": "AIP-9",
+   "id": "OLD-AIP-9",
    "n": 9,
    "title": "Sharing only narrows",
    "stage": "decided",
@@ -311,7 +311,7 @@
    "decision": {
     "text": "Whoever may share hands on a policy that is the same or smaller: fewer operations, shorter expiry, more conditions. Never more.",
     "why": "Attenuation keeps delegation safe without asking anyone. Meadowcap and Biscuit both require each step to sit inside the previous one.",
-    "superseded_by": "AIP-54",
+    "superseded_by": "OLD-AIP-54",
     "sources": [
      {
       "label": "Meadowcap (Willow capabilities)",
@@ -330,7 +330,7 @@
    "slides": []
   },
   {
-   "id": "AIP-10",
+   "id": "OLD-AIP-10",
    "n": 10,
    "title": "Read is encryption, everything else is verification",
    "stage": "decided",
@@ -339,7 +339,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Opening a piece of data at all is enforced by keys; read's conditions by the reader's own engine (AIP-55). Every other operation is enforced by every peer checking each signed change against the policies in the history.",
+    "text": "Opening a piece of data at all is enforced by keys; read's conditions by the reader's own engine (OLD-AIP-55). Every other operation is enforced by every peer checking each signed change against the policies in the history.",
     "why": "Encryption can only be all or nothing per key; signature checks can be as fine as needed.",
     "sources": [
      {
@@ -358,7 +358,7 @@
    ]
   },
   {
-   "id": "AIP-11",
+   "id": "OLD-AIP-11",
    "n": 11,
    "title": "Reading is per piece of data; changes can be as fine as needed",
    "stage": "decided",
@@ -369,12 +369,12 @@
    "decision": {
     "text": "Read is granted per piece of data. Anything to be shared on its own is its own data. Create, update and delete can be narrowed to paths and matching entries.",
     "why": "A reader holds the plaintext, so finer read limits would be promises, not protection.",
-    "superseded_by": "AIP-55"
+    "superseded_by": "OLD-AIP-55"
    },
    "slides": []
   },
   {
-   "id": "AIP-12",
+   "id": "OLD-AIP-12",
    "n": 12,
    "title": "Every policy expires and renews itself",
    "stage": "decided",
@@ -385,12 +385,12 @@
    "decision": {
     "text": "Policies expire after 30 days unless set otherwise. The owner renews unchanged policies a week before they end, under its own policies (a coop can let one agent do renewals). The owner's first policy never expires.",
     "why": "Forgotten shares close by themselves; families are never locked out.",
-    "superseded_by": "AIP-60"
+    "superseded_by": "OLD-AIP-60"
    },
    "slides": []
   },
   {
-   "id": "AIP-13",
+   "id": "OLD-AIP-13",
    "n": 13,
    "title": "Endings: revoke and lapse",
    "stage": "decided",
@@ -402,7 +402,7 @@
     "text": "A revoke (by the owner) and a lapse (by any peer that can read the policies, once the date has passed) are the same kind of event in the history. An ending wins over every change that never saw it, turns the data key if the ended policy gave read, and is the delete trigger on honest devices.",
     "why": "Validity follows from the history alone, so all copies agree. No clock is trusted.",
     "rejected": "Checking expiry against each device's own clock (copies would disagree).",
-    "superseded_by": "AIP-60",
+    "superseded_by": "OLD-AIP-60",
     "sources": [
      {
       "label": "Keyhive design: convergent capabilities",
@@ -421,7 +421,7 @@
    "slides": []
   },
   {
-   "id": "AIP-14",
+   "id": "OLD-AIP-14",
    "n": 14,
    "title": "Ambiguity resolves toward less authority",
    "stage": "decided",
@@ -430,7 +430,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "When policy, role or ending changes are concurrent with other changes, the result with less authority wins. A change that never saw a removal or an ending is dropped (AIP-13). Nothing wins by being “latest”: order matters only where one change has seen the other, and last-writer-wins is never used for authority (AIP-25). When two holders remove each other at once, both removals stand and the one top repairs (AIP-59).",
+    "text": "When policy, role or ending changes are concurrent with other changes, the result with less authority wins. A change that never saw a removal or an ending is dropped (OLD-AIP-13). Nothing wins by being “latest”: order matters only where one change has seen the other, and last-writer-wins is never used for authority (OLD-AIP-25). When two holders remove each other at once, both removals stand and the one top repairs (OLD-AIP-59).",
     "why": "The safe default without a central order. Keyhive's guiding principle.",
     "sources": [
      {
@@ -448,7 +448,7 @@
    ]
   },
   {
-   "id": "AIP-15",
+   "id": "OLD-AIP-15",
    "n": 15,
    "title": "A removed admin means a successor role",
    "stage": "decided",
@@ -459,7 +459,7 @@
    "decision": {
     "text": "When an admin is removed from a role, the role is replaced by a successor with a new ID and the remaining members are added again.",
     "why": "A removed admin can backdate a revoke by pretending not to have seen their removal. Old revokes then point at a dead role.",
-    "superseded_by": "AIP-30",
+    "superseded_by": "OLD-AIP-30",
     "sources": [
      {
       "label": "Keyhive design: Keyline (root role, rotation)",
@@ -474,7 +474,7 @@
    "slides": []
   },
   {
-   "id": "AIP-16",
+   "id": "OLD-AIP-16",
    "n": 16,
    "title": "Keys: identity key, role key, data key",
    "stage": "decided",
@@ -483,9 +483,9 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Content is encrypted with a data key. The data key is wrapped for the owner and for each reading role. The role key is wrapped for each member's identity key. Each new data key opens the previous one, within the hot window only (AIP-39).",
+    "text": "Content is encrypted with a data key. The data key is wrapped for the owner and for each reading role. The role key is wrapped for each member's identity key. Each new data key opens the previous one, within the hot window only (OLD-AIP-39).",
     "why": "Envelope encryption is the proven pattern (HPKE; Keybase teams, Jazz, Cryptree). Removing a member rotates one role key, not every piece of data. Forward secrecy is given up on purpose, because CRDTs need their whole history.",
-    "superseded_by": "AIP-57",
+    "superseded_by": "OLD-AIP-57",
     "sources": [
      {
       "label": "RFC 9180: Hybrid Public Key Encryption",
@@ -508,7 +508,7 @@
    "slides": []
   },
   {
-   "id": "AIP-17",
+   "id": "OLD-AIP-17",
    "n": 17,
    "title": "The keyring travels with the data",
    "stage": "decided",
@@ -532,7 +532,7 @@
    ]
   },
   {
-   "id": "AIP-18",
+   "id": "OLD-AIP-18",
    "n": 18,
    "title": "Which key turns when",
    "stage": "decided",
@@ -543,7 +543,7 @@
    "decision": {
     "text": "Adding a member or giving read: nothing turns. Removing a member: new role key, data keys on next write. Taking read: new data key now. An agent's device stolen: identity key and every role it is in. Concurrent rotations are both kept until the next one.",
     "why": "Only read touches keys; the rest is signed policies.",
-    "superseded_by": "AIP-57",
+    "superseded_by": "OLD-AIP-57",
     "sources": [
      {
       "label": "Keyhive notebook 02: BeeKEM",
@@ -558,7 +558,7 @@
    "slides": []
   },
   {
-   "id": "AIP-19",
+   "id": "OLD-AIP-19",
    "n": 19,
    "title": "Envelopes only for published, signed locks",
    "stage": "decided",
@@ -589,7 +589,7 @@
    ]
   },
   {
-   "id": "AIP-20",
+   "id": "OLD-AIP-20",
    "n": 20,
    "title": "BeeKEM inside large roles, later",
    "stage": "decided",
@@ -620,7 +620,7 @@
    ]
   },
   {
-   "id": "AIP-21",
+   "id": "OLD-AIP-21",
    "n": 21,
    "title": "Data is a Doc or a Value",
    "stage": "decided",
@@ -629,7 +629,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "A Doc is JSON that changes, made of CRDT data types (Loro underneath). A Value is bytes that never change, named by the BLAKE3 hash of their sealed bytes (AIP-72), streamed in checked ranges. Every Value has a small metadata Doc; the Value's keyring holds one envelope, addressed to that Doc's data key, so read on the Doc means read on the Value.",
+    "text": "A Doc is JSON that changes, made of CRDT data types (Loro underneath). A Value is bytes that never change, named by the BLAKE3 hash of their sealed bytes (OLD-AIP-72), streamed in checked ranges. Every Value has a small metadata Doc; the Value's keyring holds one envelope, addressed to that Doc's data key, so read on the Doc means read on the Value.",
     "why": "Mergeable structure where it helps, plain files where it does not.",
     "sources": [
      {
@@ -654,7 +654,7 @@
    ]
   },
   {
-   "id": "AIP-22",
+   "id": "OLD-AIP-22",
    "n": 22,
    "title": "Words: operation, CRDT op",
    "stage": "decided",
@@ -679,7 +679,7 @@
    ]
   },
   {
-   "id": "AIP-23",
+   "id": "OLD-AIP-23",
    "n": 23,
    "title": "The engine: JSON operations, pluggable, local",
    "stage": "decided",
@@ -688,7 +688,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Every read, change, search and sync is a JSON operation (find, walk, search, near …, and chain, which runs each step under that step's own operation). New kinds plug in and name their broad operation (AIP-53), which a policy must allow. Operations run only on your own device, over what you can read.",
+    "text": "Every read, change, search and sync is a JSON operation (find, walk, search, near …, and chain, which runs each step under that step's own operation). New kinds plug in and name their broad operation (OLD-AIP-53), which a policy must allow. Operations run only on your own device, over what you can read.",
     "why": "One engine for everything, with no server in the loop."
    },
    "slides": [
@@ -699,7 +699,7 @@
    ]
   },
   {
-   "id": "AIP-24",
+   "id": "OLD-AIP-24",
    "n": 24,
    "title": "Peers sync, they never ask",
    "stage": "decided",
@@ -723,7 +723,7 @@
    ]
   },
   {
-   "id": "AIP-25",
+   "id": "OLD-AIP-25",
    "n": 25,
    "title": "Policies are their own signed set, not a Loro doc",
    "stage": "decided",
@@ -747,7 +747,7 @@
    ]
   },
   {
-   "id": "AIP-26",
+   "id": "OLD-AIP-26",
    "n": 26,
    "title": "Sealed in chunks, linked by hashes",
    "stage": "decided",
@@ -779,7 +779,7 @@
    ]
   },
   {
-   "id": "AIP-27",
+   "id": "OLD-AIP-27",
    "n": 27,
    "title": "Carriers see sealed chunks and proofs, never policies",
    "stage": "decided",
@@ -790,7 +790,7 @@
    "decision": {
     "text": "Policies are sealed for readers. A carrier checks only proofs: the asker's want proof, and each change author's proof. IDs in proofs are pseudonymous.",
     "why": "Keyhive syncs its membership graph to servers in plain text; we keep that private too.",
-    "superseded_by": "AIP-65",
+    "superseded_by": "OLD-AIP-65",
     "sources": [
      {
       "label": "Keyhive notebook 05: Syncing Keyhive",
@@ -805,7 +805,7 @@
    "slides": []
   },
   {
-   "id": "AIP-28",
+   "id": "OLD-AIP-28",
    "n": 28,
    "title": "Peer to peer over iroh",
    "stage": "decided",
@@ -814,7 +814,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Devices connect directly over iroh: the address is the agent's signer key (AIP-31), relays see only sealed traffic.",
+    "text": "Devices connect directly over iroh: the address is the agent's signer key (OLD-AIP-31), relays see only sealed traffic.",
     "why": "No cloud in the middle; the address can change without touching the identity.",
     "sources": [
      {
@@ -835,7 +835,7 @@
    ]
   },
   {
-   "id": "AIP-29",
+   "id": "OLD-AIP-29",
    "n": 29,
    "title": "Evaluate Subduction for sync",
    "stage": "decided",
@@ -867,7 +867,7 @@
    ]
   },
   {
-   "id": "AIP-30",
+   "id": "OLD-AIP-30",
    "n": 30,
    "title": "Only the owner changes policies",
    "stage": "decided",
@@ -876,9 +876,9 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "The owner writes and ends all policies on its data; ownership acts (retain, erase, open the archive, migrate to a new schema version) stay with the owner alone. Nobody else writes policies, and ownership is never handed over (AIP-54).",
-    "why": "Identities work like Gnosis Safes: agents of the identities in its roles sign under the identity's own policies (one signature for now, AIP-49), with one guardian at the top of a coop (AIP-59). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
-    "supersedes": "AIP-15; removes admin from the role do-list in AIP-8",
+    "text": "The owner writes and ends all policies on its data; ownership acts (retain, erase, open the archive, migrate to a new schema version) stay with the owner alone. Nobody else writes policies, and ownership is never handed over (OLD-AIP-54).",
+    "why": "Identities work like Gnosis Safes: agents of the identities in its roles sign under the identity's own policies (one signature for now, OLD-AIP-49), with one guardian at the top of a coop (OLD-AIP-59). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
+    "supersedes": "OLD-AIP-15; removes admin from the role do-list in OLD-AIP-8",
     "sources": [
      {
       "label": "Keyhive design: Keyline (root role, rotation)",
@@ -896,7 +896,7 @@
    ]
   },
   {
-   "id": "AIP-31",
+   "id": "OLD-AIP-31",
    "n": 31,
    "title": "A signer is the key of an agent",
    "stage": "decided",
@@ -907,7 +907,7 @@
    "decision": {
     "text": "A signer is only a key: the current key of exactly one agent identity, registered in that agent's history. How it is kept is up to the device the agent runs on: derived from the passkey's PRF plus a per-device salt on phones, the keychain on laptops, an environment variable, secret manager or HSM on servers. Loro's peer ID stays a number, bound to the signer in each chunk's signed header.",
     "why": "Separates who acts (identities) from what signs (keys). Not derived from the passkey alone: synced passkeys give several devices the same secret, and Apple's Secure Enclave holds only P-256 keys.",
-    "supersedes": "the separate iroh key in AIP-28",
+    "supersedes": "the separate iroh key in OLD-AIP-28",
     "sources": [
      {
       "label": "WebAuthn PRF extension",
@@ -929,7 +929,7 @@
    ]
   },
   {
-   "id": "AIP-32",
+   "id": "OLD-AIP-32",
    "n": 32,
    "title": "Words, and dialing identities",
    "stage": "decided",
@@ -947,7 +947,7 @@
    ]
   },
   {
-   "id": "AIP-33",
+   "id": "OLD-AIP-33",
    "n": 33,
    "title": "Sealed chunks settle in layers (sedimentree)",
    "stage": "decided",
@@ -958,7 +958,7 @@
    "decision": {
     "text": "Each sealed change is hashed (BLAKE3). Its leading zero bytes give its depth; a change of depth 1 or more closes a chunk with everything since the last one at that depth. Deeper chunks hold shallower ones. Equal content gives an equal minimal hash.",
     "why": "Every peer, even one that reads nothing, cuts the same chunks; old history becomes a few big chunks; equality is one hash.",
-    "supersedes": "refines AIP-26",
+    "supersedes": "refines OLD-AIP-26",
     "sources": [
      {
       "label": "Subduction design: sedimentree",
@@ -972,7 +972,7 @@
    ]
   },
   {
-   "id": "AIP-34",
+   "id": "OLD-AIP-34",
    "n": 34,
    "title": "Fingerprints inside data, RIBLT across data",
    "stage": "decided",
@@ -1005,7 +1005,7 @@
    ]
   },
   {
-   "id": "AIP-35",
+   "id": "OLD-AIP-35",
    "n": 35,
    "title": "Compact at stable points; newcomers get snapshots",
    "stage": "decided",
@@ -1016,7 +1016,7 @@
    "decision": {
     "text": "When every writer has seen a version, a device may cut there: newcomers get a snapshot plus the ops after it, never the old history. What lies before the cut is sealed under a new key; honest devices drop the old chunks and keys.",
     "why": "CRDT history keeps deleted text and needs old keys, so forward secrecy is lost. Cutting at stable points gives it back for everything before the cut, without losing any late op.",
-    "superseded_by": "AIP-39",
+    "superseded_by": "OLD-AIP-39",
     "sources": [
      {
       "label": "Loro: shallow snapshots",
@@ -1031,7 +1031,7 @@
    "slides": []
   },
   {
-   "id": "AIP-36",
+   "id": "OLD-AIP-36",
    "n": 36,
    "title": "Heal: keys turn regularly",
    "stage": "decided",
@@ -1040,7 +1040,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Role keys and data keys turn regularly, not only when someone leaves, so a stolen key soon opens nothing new (post-compromise security). Forgetting the past is AIP-39; the archive is AIP-40.",
+    "text": "Role keys and data keys turn regularly, not only when someone leaves, so a stolen key soon opens nothing new (post-compromise security). Forgetting the past is OLD-AIP-39; the archive is OLD-AIP-40.",
     "why": "Full forward secrecy for live CRDT history is impossible: a late op may need any old state. Keyhive gave forward secrecy up; BeeKEM's κ parameter shows the trade-off. These three layers get as close as the setting allows.",
     "sources": [
      {
@@ -1066,7 +1066,7 @@
    ]
   },
   {
-   "id": "AIP-37",
+   "id": "OLD-AIP-37",
    "n": 37,
    "title": "Lock away: older keys behind a fresh tap",
    "stage": "decided",
@@ -1077,7 +1077,7 @@
    "decision": {
     "text": "Current keys stay ready on the device. Older keys, needed only for scrolling far back or merging a very late CRDT op, are sealed under an archive key derived from the passkey's PRF secret. The secure hardware releases it only after a fresh tap or face scan; afterwards it is wiped from memory.",
     "why": "A thief with the device, or malware reading app storage, gets only the current keys. Limits: malware running during the tap, or a taken-over passkey sync account.",
-    "superseded_by": "AIP-40",
+    "superseded_by": "OLD-AIP-40",
     "sources": [
      {
       "label": "WebAuthn PRF extension",
@@ -1088,7 +1088,7 @@
    "slides": []
   },
   {
-   "id": "AIP-38",
+   "id": "OLD-AIP-38",
    "n": 38,
    "title": "Signing policies are pluggable",
    "stage": "decided",
@@ -1099,7 +1099,7 @@
    "decision": {
     "text": "Each identity's signing policies hold one entry per action, built from kinds: threshold (k of n), weights, all-of / any-of, time lock with objection window. A policy kind is identified by the hash of its specification and is declarative data, not code. A device that does not know a kind treats the policy as not satisfied. Changing the signing policies needs the policy for that action.",
     "why": "New kinds of signing policies can be added over time without old devices ever wrongly accepting something.",
-    "superseded_by": "AIP-48",
+    "superseded_by": "OLD-AIP-48",
     "sources": [
      {
       "label": "KERI specification (weighted thresholds)",
@@ -1110,7 +1110,7 @@
    "slides": []
   },
   {
-   "id": "AIP-39",
+   "id": "OLD-AIP-39",
    "n": 39,
    "title": "Keys live hot, then cold, and can be erased",
    "stage": "decided",
@@ -1119,9 +1119,9 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Hot: the newest keys, linked by back-links and ready on readers' devices; they turn regularly (AIP-36). Cold: at rotation boundaries older than the hot window, the chain is cut; older keys leave the chain and go to the owner's archive. Erased: on request, keys are shredded everywhere. Late writers from before a cut lose and get a conflict view of what was not adopted. The hot window is 30 days, equal to a policy's lifetime.",
+    "text": "Hot: the newest keys, linked by back-links and ready on readers' devices; they turn regularly (OLD-AIP-36). Cold: at rotation boundaries older than the hot window, the chain is cut; older keys leave the chain and go to the owner's archive. Erased: on request, keys are shredded everywhere. Late writers from before a cut lose and get a conflict view of what was not adopted. The hot window is 30 days, equal to a policy's lifetime.",
     "why": "Back-links and an archive cannot coexist for the same keys: a stolen current key would open the whole past. Splitting by age gives heal, archive and erasure one consistent lifecycle.",
-    "supersedes": "AIP-35",
+    "supersedes": "OLD-AIP-35",
     "sources": [
      {
       "label": "Loro: shallow snapshots",
@@ -1139,7 +1139,7 @@
    ]
   },
   {
-   "id": "AIP-40",
+   "id": "OLD-AIP-40",
    "n": 40,
    "title": "The archive belongs to the owner identity",
    "stage": "decided",
@@ -1148,16 +1148,16 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Cold keys are sealed to the owner's archive key, which is itself sealed to the locks of the owner's agents that hold own (for a coop: the agents acting for it with own, AIP-57). Opening the archive follows the owner's own policies. The archive key is not tied to one device. A device may add a local tap as convenience, not as protection.",
-    "why": "The identity owns, never a signer (AIP-2). Ownership of the past follows the same policies as ownership of the present.",
-    "supersedes": "AIP-37"
+    "text": "Cold keys are sealed to the owner's archive key, which is itself sealed to the locks of the owner's agents that hold own (for a coop: the agents acting for it with own, OLD-AIP-57). Opening the archive follows the owner's own policies. The archive key is not tied to one device. A device may add a local tap as convenience, not as protection.",
+    "why": "The identity owns, never a signer (OLD-AIP-2). Ownership of the past follows the same policies as ownership of the present.",
+    "supersedes": "OLD-AIP-37"
    },
    "slides": [
     "time-1"
    ]
   },
   {
-   "id": "AIP-41",
+   "id": "OLD-AIP-41",
    "n": 41,
    "title": "Words: archive and retain",
    "stage": "decided",
@@ -1175,7 +1175,7 @@
    ]
   },
   {
-   "id": "AIP-42",
+   "id": "OLD-AIP-42",
    "n": 42,
    "title": "Erase: delete, cut, shred",
    "stage": "decided",
@@ -1203,7 +1203,7 @@
    ]
   },
   {
-   "id": "AIP-43",
+   "id": "OLD-AIP-43",
    "n": 43,
    "title": "Retain: an owner event at any time",
    "stage": "decided",
@@ -1230,7 +1230,7 @@
    ]
   },
   {
-   "id": "AIP-44",
+   "id": "OLD-AIP-44",
    "n": 44,
    "title": "An identity's policies and data policies never overlap",
    "stage": "decided",
@@ -1239,7 +1239,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "An identity's own policies answer who speaks for it: policies on the identity, given to its roles or its own agents, with act and own; conditions may name which data an agent acts on. A piece of data's policies answer what an identity may do with it: policies on the data, given to roles, with data operations. Signature counts appear only on identity policies (AIP-48, AIP-49). A change is valid only if both hold. A coop is like a small DAO: roles, a guardian, assets, nesting.",
+    "text": "An identity's own policies answer who speaks for it: policies on the identity, given to its roles or its own agents, with act and own; conditions may name which data an agent acts on. A piece of data's policies answer what an identity may do with it: policies on the data, given to roles, with data operations. Signature counts appear only on identity policies (OLD-AIP-48, OLD-AIP-49). A change is valid only if both hold. A coop is like a small DAO: roles, a guardian, assets, nesting.",
     "why": "Agency and access are different questions; mixing them made the coop example ambiguous."
    },
    "slides": [
@@ -1248,7 +1248,7 @@
    ]
   },
   {
-   "id": "AIP-45",
+   "id": "OLD-AIP-45",
    "n": 45,
    "title": "Canonical CBOR for everything signed or hashed",
    "stage": "decided",
@@ -1275,7 +1275,7 @@
    ]
   },
   {
-   "id": "AIP-46",
+   "id": "OLD-AIP-46",
    "n": 46,
    "title": "Agents: owned by one human or coop, acting by its policies",
    "stage": "decided",
@@ -1285,14 +1285,14 @@
    "proposal": null,
    "decision": {
     "text": "An agent identity (phone, laptop, watch, server, AI assistant) is owned by exactly one human or coop and acts only through policies its owner gives it: who = the agent, on what = the owner, operations act / own / govern, with conditions (which data, limits, expiry). The owner and its first agent are born together in one record signed by the agent's key. Losing a device means revoking its agent's policy.",
-    "why": "Devices are owned, not members; acting on behalf is delegation by policies (AIP-48). One genesis record removes the chicken-and-egg problem.",
+    "why": "Devices are owned, not members; acting on behalf is delegation by policies (OLD-AIP-48). One genesis record removes the chicken-and-egg problem.",
     "supersedes": "the earlier “device is a member of” model",
-    "superseded_by": "AIP-58"
+    "superseded_by": "OLD-AIP-58"
    },
    "slides": []
   },
   {
-   "id": "AIP-47",
+   "id": "OLD-AIP-47",
    "n": 47,
    "title": "Policy-writing is delegated through share, narrowing only",
    "stage": "decided",
@@ -1303,7 +1303,7 @@
    "decision": {
     "text": "A role holding share may write policies for other roles, but only within its own operations, conditions and expiry; it may end only policies it issued itself; when its own policy ends, every policy issued under it ends too (cascade); writes by a removed delegate that never saw the ending are dropped. The owner's policies are the root and never fall this way.",
     "why": "Gives teams day-to-day delegation without the problems of admin roles: no granting more than you hold, no policy wars between delegates, no backdated revokes.",
-    "superseded_by": "AIP-54",
+    "superseded_by": "OLD-AIP-54",
     "sources": [
      {
       "label": "UCAN specification (delegation and attenuation)",
@@ -1318,7 +1318,7 @@
    "slides": []
   },
   {
-   "id": "AIP-48",
+   "id": "OLD-AIP-48",
    "n": 48,
    "title": "One policy shape, one plugin system",
    "stage": "decided",
@@ -1327,9 +1327,9 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Every policy has one shape: who, on what, operations, conditions, expiry. An identity's policies have one of its roles or one of its own agents as who and the identity itself as target, with operations act and own. A piece of data's policies have a role as who and the data as target. Operations and conditions (at, where, limit …; later signature counts, AIP-49) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so signature conditions stay on identities (AIP-44).",
+    "text": "Every policy has one shape: who, on what, operations, conditions, expiry. An identity's policies have one of its roles or one of its own agents as who and the identity itself as target, with operations act and own. A piece of data's policies have a role as who and the data as target. Operations and conditions (at, where, limit …; later signature counts, OLD-AIP-49) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so signature conditions stay on identities (OLD-AIP-44).",
     "why": "One language and one engine for all policies, with the separation between agency and access kept by the target.",
-    "supersedes": "AIP-38"
+    "supersedes": "OLD-AIP-38"
    },
    "slides": [
     "identity-5",
@@ -1339,7 +1339,7 @@
    ]
   },
   {
-   "id": "AIP-49",
+   "id": "OLD-AIP-49",
    "n": 49,
    "title": "One signature by default; counts come later as plugins",
    "stage": "decided",
@@ -1348,7 +1348,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "For now, every act and own of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of an identity in one of its roles (1 of 1). Behind them stands the identity's one guardian (AIP-91). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (AIP-48), and devices that do not know them treat them as not satisfied.",
+    "text": "For now, every act and own of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of an identity in one of its roles (1 of 1). Behind them stands the identity's one guardian (OLD-AIP-91). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (OLD-AIP-48), and devices that do not know them treat them as not satisfied.",
     "why": "Keeps the first version simple while the plugin system leaves room to grow."
    },
    "slides": [
@@ -1357,7 +1357,7 @@
    ]
   },
   {
-   "id": "AIP-50",
+   "id": "OLD-AIP-50",
    "n": 50,
    "title": "Record conventions",
    "stage": "decided",
@@ -1366,7 +1366,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Every stored or sent thing is a record: {\"type\": <schema ref of its kind>, …fields, \"after\", \"seq\", \"sig\"} (AIP-90) in canonical CBOR (shown as JSON), decoded strictly; examples omit after and seq except where they matter (AIP-61). IDs are typed: human:, coop:, agent:, data:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record without its signature; value: b3: is the hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). A birth record (genesis) holds a random nonce or the keys it creates, so no two share an ID. A record cannot contain its own hash, so inside a birth record the identities it creates are named by kind (“this human”, “this agent”); their IDs are b3(kind ‖ record). One genesis record can create a human or coop and its first agent. A schema is pinned as its data ID, @ and the hash of the frozen version (AIP-66): data:b3:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}; every record is signed by an agent, except guardian acts, which are signed by a guardian key (AIP-91). A proof is the ordered list of record IDs from a birth record to the acting agent; examples always show a policy's proof. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation, lens, migration. Lenses and migrations have lens: and migration: IDs. Identity policies do not expire unless they say so.",
+    "text": "Every stored or sent thing is a record: {\"type\": <schema ref of its kind>, …fields, \"after\", \"seq\", \"sig\"} (OLD-AIP-90) in canonical CBOR (shown as JSON), decoded strictly; examples omit after and seq except where they matter (OLD-AIP-61). IDs are typed: human:, coop:, agent:, data:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record without its signature; value: b3: is the hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). A birth record (genesis) holds a random nonce or the keys it creates, so no two share an ID. A record cannot contain its own hash, so inside a birth record the identities it creates are named by kind (“this human”, “this agent”); their IDs are b3(kind ‖ record). One genesis record can create a human or coop and its first agent. A schema is pinned as its data ID, @ and the hash of the frozen version (OLD-AIP-66): data:b3:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}; every record is signed by an agent, except guardian acts, which are signed by a guardian key (OLD-AIP-91). A proof is the ordered list of record IDs from a birth record to the acting agent; examples always show a policy's proof. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation, lens, migration. Lenses and migrations have lens: and migration: IDs. Identity policies do not expire unless they say so.",
     "why": "Slides and code use the same shapes and names, so the examples are drafts of the real schema, not illustrations.",
     "sources": [
      {
@@ -1382,7 +1382,7 @@
    "slides": []
   },
   {
-   "id": "AIP-51",
+   "id": "OLD-AIP-51",
    "n": 51,
    "title": "Only roles and policies; no members",
    "stage": "decided",
@@ -1391,7 +1391,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop has no members, only roles; policies on the coop say what each role may do, for example act and own for a home's “family”, only act for a street's “homes”; the coop's guardian is its root (AIP-91), and may give own to a role so its holders manage roles and policies.",
+    "text": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop has no members, only roles; policies on the coop say what each role may do, for example act and own for a home's “family”, only act for a street's “homes”; the coop's guardian is its root (OLD-AIP-91), and may give own to a role so its holders manage roles and policies.",
     "why": "One mechanism for everything: who is in which group (roles) and what that group may do (policies).",
     "supersedes": "membership as its own record kind"
    },
@@ -1402,7 +1402,7 @@
    ]
   },
   {
-   "id": "AIP-52",
+   "id": "OLD-AIP-52",
    "n": 52,
    "title": "No data without a schema",
    "stage": "decided",
@@ -1413,7 +1413,7 @@
    "decision": {
     "text": "Every piece of data names a schema in its genesis; a Value's metadata Doc names one for the Value and one for itself. A schema is a JSON Schema stored as a Loro Doc with its own birth record, owner and policies. Data pins an exact schema version (the hash of the schema Doc's state); moving to a new version is an owner's change. Every peer validates every change against the schema and drops what does not fit. Paths (JSON Pointer, * for any index or key) give every part of the data an address for policies and operations.",
     "why": "Typed data makes policies and operations precise and keeps every copy well-formed without a server.",
-    "superseded_by": "AIP-66",
+    "superseded_by": "OLD-AIP-66",
     "sources": [
      {
       "label": "JSON Schema",
@@ -1428,7 +1428,7 @@
    "slides": []
   },
   {
-   "id": "AIP-53",
+   "id": "OLD-AIP-53",
    "n": 53,
    "title": "Engine operations are specific and typed",
    "stage": "decided",
@@ -1446,7 +1446,7 @@
    ]
   },
   {
-   "id": "AIP-54",
+   "id": "OLD-AIP-54",
    "n": 54,
    "title": "Only the owner writes policies: no passing on, no hand-over yet",
    "stage": "decided",
@@ -1457,8 +1457,8 @@
    "decision": {
     "text": "Only the owner writes and ends policies on its data, through its own agents. No role can pass a policy on (there is no share operation), and ownership is never handed over: whoever needs to work on the data gets a policy. Delegated, narrowing-only policy-writing may come back later as its own decision.",
     "why": "One author for a piece of data's policies keeps every check simple: no cascades, no revokes by other issuers, no backdating by a removed delegate. Policies already cover everything a hand-over would.",
-    "rejected": "Share with attenuation and cascading ends (AIP-9, AIP-47), for now.",
-    "supersedes": "AIP-9 and AIP-47",
+    "rejected": "Share with attenuation and cascading ends (OLD-AIP-9, OLD-AIP-47), for now.",
+    "supersedes": "OLD-AIP-9 and OLD-AIP-47",
     "sources": [
      {
       "label": "UCAN specification (delegation and attenuation)",
@@ -1479,7 +1479,7 @@
    ]
   },
   {
-   "id": "AIP-55",
+   "id": "OLD-AIP-55",
    "n": 55,
    "title": "Read is an operation like any other",
    "stage": "decided",
@@ -1490,7 +1490,7 @@
    "decision": {
     "text": "Read carries the same conditions as every other operation (at, where, limit) and covers specific engine operations (get, find, walk, search, near, count). The data key opens a whole piece of data, so read's conditions are kept by the reader's own engine on honest devices; anything that must stay unseen is its own data, with its own key. Changes are checked by every peer.",
     "why": "One query logic for every operation: a policy always says what, where and how much. Keys still mark the hard boundary of what can be opened at all.",
-    "supersedes": "AIP-11"
+    "supersedes": "OLD-AIP-11"
    },
    "slides": [
     "policies-3",
@@ -1500,7 +1500,7 @@
    ]
   },
   {
-   "id": "AIP-56",
+   "id": "OLD-AIP-56",
    "n": 56,
    "title": "One operation shape everywhere",
    "stage": "decided",
@@ -1530,7 +1530,7 @@
    ]
   },
   {
-   "id": "AIP-57",
+   "id": "OLD-AIP-57",
    "n": 57,
    "title": "Keys follow agents: no shared identity key",
    "stage": "decided",
@@ -1539,9 +1539,9 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "There is no key shared by all of an identity's agents. Each agent has its own lock, published in its own history (AIP-19). A data key is sealed to the role keys of the roles that may read it and to the locks of the owner's agents whose policies cover reading it; a role key is sealed to the locks of the agents of each identity in the role whose policies cover reading for that identity. So an agent gets exactly the keys both layers give it: the data's policies (which identity may read) and the identity's policies (which of its agents reads for it, AIP-58). Carriers get none. Any current reader that has seen a change in the reader set may turn a key; every peer checks that envelopes go only to current readers. When two key turns are concurrent, the next key is sealed only to the readers both allowed, and nobody encrypts under a generation older than an ending it knows. Adding someone: envelopes for their reading agents; a newcomer starts from today's snapshot unless the owner opens older history. Removing someone or losing an agent: it gets nothing new, and every role key and data key it could open turns (role keys now, data keys on the next write; data keys now when read is taken).",
+    "text": "There is no key shared by all of an identity's agents. Each agent has its own lock, published in its own history (OLD-AIP-19). A data key is sealed to the role keys of the roles that may read it and to the locks of the owner's agents whose policies cover reading it; a role key is sealed to the locks of the agents of each identity in the role whose policies cover reading for that identity. So an agent gets exactly the keys both layers give it: the data's policies (which identity may read) and the identity's policies (which of its agents reads for it, OLD-AIP-58). Carriers get none. Any current reader that has seen a change in the reader set may turn a key; every peer checks that envelopes go only to current readers. When two key turns are concurrent, the next key is sealed only to the readers both allowed, and nobody encrypts under a generation older than an ending it knows. Adding someone: envelopes for their reading agents; a newcomer starts from today's snapshot unless the owner opens older history. Removing someone or losing an agent: it gets nothing new, and every role key and data key it could open turns (role keys now, data keys on the next write; data keys now when read is taken).",
     "why": "Reading must follow the same delegation as writing: a watch limited to health data, or a backup with only want and keep, must not be able to decrypt everything, and removing someone from a coop's role must stop their reading without a cascade of identity-key turns. Keyhive does the same: every individual with Read is a leaf of the key tree, one with only Relay is not.",
-    "supersedes": "AIP-16 and AIP-18",
+    "supersedes": "OLD-AIP-16 and OLD-AIP-18",
     "sources": [
      {
       "label": "Keyhive design: convergent capabilities",
@@ -1569,7 +1569,7 @@
    ]
   },
   {
-   "id": "AIP-58",
+   "id": "OLD-AIP-58",
    "n": 58,
    "title": "An agent has two parts: who it is, and what it may do",
    "stage": "decided",
@@ -1578,9 +1578,9 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "An agent is its own identity, owned by exactly one human or coop, with its own signer; on phones the signer is derived from the passkey, which is the single source of truth for now (stolen devices and recovery are out of scope). Owning an agent gives it nothing. What it may do comes only from policies on the identity it acts for, given by that identity: your phone gets act and own on you; a coop's always-on server gets act on the coop only to carry one list. Act's one condition is data: a map from data ID to an ordinary Operations object (AIP-56), conditions included: {\"act\": {\"data\": {\"data:b3:7Hq…#house-list\": {\"want\": {}, \"keep\": {}}}}}. Without data, act covers all of the owner's data. Agents are never in roles and never get data policies; data policies go to roles of humans and coops (AIP-6, AIP-44). A change or a read is allowed only if both layers allow it. A policy belongs to the identity that gave it, not to the agent that signed it; it ends only by that identity's ending or its expiry. The owner and its first agent are born together in one record. Acting for an identity is a chain of policies, one per hop: an agent acts for its owner; an identity acts for a coop through the coop's policy to a role that lists it; the chain is as long as needed (phone → you → home → street; home's server → home). Agent policies on an identity are written by that identity's guardian (AIP-70).",
-    "why": "Two clean layers: who speaks for an identity, and what an identity may do with data. The same two layers decide which keys an agent gets (AIP-57).",
-    "supersedes": "AIP-46",
+    "text": "An agent is its own identity, owned by exactly one human or coop, with its own signer; on phones the signer is derived from the passkey, which is the single source of truth for now (stolen devices and recovery are out of scope). Owning an agent gives it nothing. What it may do comes only from policies on the identity it acts for, given by that identity: your phone gets act and own on you; a coop's always-on server gets act on the coop only to carry one list. Act's one condition is data: a map from data ID to an ordinary Operations object (OLD-AIP-56), conditions included: {\"act\": {\"data\": {\"data:b3:7Hq…#house-list\": {\"want\": {}, \"keep\": {}}}}}. Without data, act covers all of the owner's data. Agents are never in roles and never get data policies; data policies go to roles of humans and coops (OLD-AIP-6, OLD-AIP-44). A change or a read is allowed only if both layers allow it. A policy belongs to the identity that gave it, not to the agent that signed it; it ends only by that identity's ending or its expiry. The owner and its first agent are born together in one record. Acting for an identity is a chain of policies, one per hop: an agent acts for its owner; an identity acts for a coop through the coop's policy to a role that lists it; the chain is as long as needed (phone → you → home → street; home's server → home). Agent policies on an identity are written by that identity's guardian (OLD-AIP-70).",
+    "why": "Two clean layers: who speaks for an identity, and what an identity may do with data. The same two layers decide which keys an agent gets (OLD-AIP-57).",
+    "supersedes": "OLD-AIP-46",
     "sources": [
      {
       "label": "Keyhive design: threat model",
@@ -1597,7 +1597,7 @@
    ]
   },
   {
-   "id": "AIP-59",
+   "id": "OLD-AIP-59",
    "n": 59,
    "title": "One top: one owner per piece of data, one guardian per coop",
    "stage": "decided",
@@ -1606,7 +1606,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "Authority has exactly one top and flows only downward: a piece of data has one owner (AIP-5), and every identity has one guardian (AIP-91). Nobody can give more than it holds, and nobody below can touch the guardian. When two holders below the top remove each other at the same moment, both removals stand and the guardian repairs, for example by adding one back; there is no seniority and no coin flip. The top cannot clash with itself because it is one.",
+    "text": "Authority has exactly one top and flows only downward: a piece of data has one owner (OLD-AIP-5), and every identity has one guardian (OLD-AIP-91). Nobody can give more than it holds, and nobody below can touch the guardian. When two holders below the top remove each other at the same moment, both removals stand and the guardian repairs, for example by adding one back; there is no seniority and no coin flip. The top cannot clash with itself because it is one.",
     "why": "Without a total order, peers with equal power can remove each other at once and leave nobody, and with one signature anyone in a coop's role could take it over. Keyhive's Keyline calls this mutual destruction in the root role; its mitigation is a single owner at the top, with every layer below repairable from above. Gnosis Safes avoid it with a blockchain's total order, which a local-first system does not have.",
     "sources": [
      {
@@ -1626,7 +1626,7 @@
    ]
   },
   {
-   "id": "AIP-60",
+   "id": "OLD-AIP-60",
    "n": 60,
    "title": "Only the owner ends policies; expiry is checked on every change",
    "stage": "decided",
@@ -1649,9 +1649,9 @@
    },
    "proposal": null,
    "decision": {
-    "text": "Every change carries the time its author signed it and counts only if that time is before the expiry of the policy it relies on; devices reject times far ahead of their own clock. Only the owner's agents write endings into the history: a revoke at any time, a lapse once the date has passed. An ending drops only the ended holder's own changes that it did not list as seen (AIP-61), never anyone else's. Policies expire after 30 days unless set otherwise; the owner renews unchanged policies a week before they end, and a renewal names the policy it renews, so ending one ends the chain. renew is its own operation, so a coop can give one always-on agent only that job. Other peers may stop handing out keys and chunks once a date has passed by their own clock: a local choice, never written into the history. An owner who is offline never causes a wipe. An ending turns the data key if the ended policy gave read, and is the delete trigger on honest devices.",
+    "text": "Every change carries the time its author signed it and counts only if that time is before the expiry of the policy it relies on; devices reject times far ahead of their own clock. Only the owner's agents write endings into the history: a revoke at any time, a lapse once the date has passed. An ending drops only the ended holder's own changes that it did not list as seen (OLD-AIP-61), never anyone else's. Policies expire after 30 days unless set otherwise; the owner renews unchanged policies a week before they end, and a renewal names the policy it renews, so ending one ends the chain. renew is its own operation, so a coop can give one always-on agent only that job. Other peers may stop handing out keys and chunks once a date has passed by their own clock: a local choice, never written into the history. An owner who is offline never causes a wipe. An ending turns the data key if the ended policy gave read, and is the delete trigger on honest devices.",
     "why": "If any reader could write a lapse, a fast clock would end policies early, and a lapse claiming to have seen nothing would drop weeks of everyone's work. Keyhive has no expiry for this reason; Willow checks each entry's own timestamp. We combine both: per-change time checks, and endings only from the owner.",
-    "supersedes": "AIP-12 and AIP-13",
+    "supersedes": "OLD-AIP-12 and OLD-AIP-13",
     "sources": [
      {
       "label": "Willow: Timestamps, really?",
@@ -1679,7 +1679,7 @@
    ]
   },
   {
-   "id": "AIP-61",
+   "id": "OLD-AIP-61",
    "n": 61,
    "title": "Every record says what it had seen",
    "stage": "decided",
@@ -1703,7 +1703,7 @@
    ]
   },
   {
-   "id": "AIP-62",
+   "id": "OLD-AIP-62",
    "n": 62,
    "title": "History keeps everything; what you see is computed",
    "stage": "decided",
@@ -1712,7 +1712,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "No change is ever removed from the sealed history. What you see is computed: the valid changes always form one causally complete version, which every device computes the same way and Loro can open. An ending invalidates the ended holder's own changes that it did not see, and with them every change built on them. Honest changes that fell only because they built on an invalid one come back to their authors as a conflict view, and their devices apply them again as new changes, as for late writers after a cut (AIP-39). The next cut removes invalid changes for good.",
+    "text": "No change is ever removed from the sealed history. What you see is computed: the valid changes always form one causally complete version, which every device computes the same way and Loro can open. An ending invalidates the ended holder's own changes that it did not see, and with them every change built on them. Honest changes that fell only because they built on an invalid one come back to their authors as a conflict view, and their devices apply them again as new changes, as for late writers after a cut (OLD-AIP-39). The next cut removes invalid changes for good.",
     "why": "An op-based CRDT cannot skip an operation: Loro keeps a change whose dependencies are missing as pending. Keyhive lists what happens to a revoked writer's content as an open question (whiteout).",
     "sources": [
      {
@@ -1731,7 +1731,7 @@
    ]
   },
   {
-   "id": "AIP-63",
+   "id": "OLD-AIP-63",
    "n": 63,
    "title": "One writer can't make devices disagree",
    "stage": "decided",
@@ -1740,7 +1740,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "A change's Loro peer ID is derived from its agent, epoch and data ID (AIP-69), so nobody can write under another's ID. Two different changes with the same peer and counter prove the signer lied: both are invalid and its policy is ended. On arrival, each change is checked on its own: signature, policy, the schema's shape. Rules that span concurrent changes (limits, required entries across a list, loops of coops inside coops) are settled when the view is built, in one fixed order (causal order, then hash). A change that uses an unknown plugin waits until the plugin is known; it is not rejected.",
+    "text": "A change's Loro peer ID is derived from its agent, epoch and data ID (OLD-AIP-69), so nobody can write under another's ID. Two different changes with the same peer and counter prove the signer lied: both are invalid and its policy is ended. On arrival, each change is checked on its own: signature, policy, the schema's shape. Rules that span concurrent changes (limits, required entries across a list, loops of coops inside coops) are settled when the view is built, in one fixed order (causal order, then hash). A change that uses an unknown plugin waits until the plugin is known; it is not rejected.",
     "why": "Otherwise one authorised writer could split devices for good: by signing two versions of one change, by two changes that are valid alone but not together, or by a plugin old devices don't know.",
     "sources": [
      {
@@ -1755,7 +1755,7 @@
    ]
   },
   {
-   "id": "AIP-64",
+   "id": "OLD-AIP-64",
    "n": 64,
    "title": "Data is named by the hash of its birth record",
    "stage": "decided",
@@ -1765,8 +1765,8 @@
    "proposal": null,
    "decision": {
     "text": "A piece of data is born with a birth record: its schema, its first policy naming the owner (own, no expiry) and a random nonce, signed by an agent acting for the owner with own. The data ID is data:b3: and the BLAKE3 hash of the record without its signature. There is no seal: nothing has to be kept or destroyed, and a second birth record is simply different data. A proof starts at a birth record, whose ID names it. New data born inside another piece of data (an item of a list) is born under the parent's create policy and follows the parent's owner and policies by link.",
-    "why": "A data ID that is a key's public half trusts the creator to destroy the key; one who keeps it can sign a second birth and become a second owner. Keyhive warns of the same: a retained subject key can re-root a document. Naming by hash is what AIP-50 already does for identities.",
-    "supersedes": "AIP-4",
+    "why": "A data ID that is a key's public half trusts the creator to destroy the key; one who keeps it can sign a second birth and become a second owner. Keyhive warns of the same: a retained subject key can re-root a document. Naming by hash is what OLD-AIP-50 already does for identities.",
+    "supersedes": "OLD-AIP-4",
     "sources": [
      {
       "label": "Keyhive design: Keyline",
@@ -1784,7 +1784,7 @@
    ]
   },
   {
-   "id": "AIP-65",
+   "id": "OLD-AIP-65",
    "n": 65,
    "title": "Carriers see who may carry, never what is inside",
    "stage": "decided",
@@ -1793,9 +1793,9 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "The policies, roles and endings of a piece of data are signed but not encrypted for the peers that carry it, with pseudonymous IDs; content and keyrings stay sealed. A carrier checks every want against them and learns endings, so it stops serving an ended holder. A want is signed over the carrier's fresh challenge, so it cannot be replayed elsewhere. Peers forward news and run set summaries only for data both sides may want. What a carrier learns is stated plainly: chunk hashes, sizes and links, the signing agents, who may carry and read the data (pseudonymously), and when it changes. A relay (AIP-28) is different: it only forwards encrypted packets between two devices and holds nothing.",
+    "text": "The policies, roles and endings of a piece of data are signed but not encrypted for the peers that carry it, with pseudonymous IDs; content and keyrings stay sealed. A carrier checks every want against them and learns endings, so it stops serving an ended holder. A want is signed over the carrier's fresh challenge, so it cannot be replayed elsewhere. Peers forward news and run set summaries only for data both sides may want. What a carrier learns is stated plainly: chunk hashes, sizes and links, the signing agents, who may carry and read the data (pseudonymously), and when it changes. A relay (OLD-AIP-28) is different: it only forwards encrypted packets between two devices and holds nothing.",
     "why": "A carrier cannot check proofs against policies it cannot see, nor stop serving a revoked holder if endings are hidden from it. Keyhive's relays see the membership graph for the same reason and list it as unprotected metadata.",
-    "supersedes": "AIP-27",
+    "supersedes": "OLD-AIP-27",
     "sources": [
      {
       "label": "Keyhive design: threat model",
@@ -1818,7 +1818,7 @@
    ]
   },
   {
-   "id": "AIP-66",
+   "id": "OLD-AIP-66",
    "n": 66,
    "title": "Schema versions are frozen and travel with the data",
    "stage": "decided",
@@ -1829,7 +1829,7 @@
    "decision": {
     "text": "Every piece of data names a schema version in its birth record; a Value's metadata Doc names one for the Value and one for itself. A schema is a JSON Schema edited as a Loro Doc with its own birth record, owner and policies. Each published version is frozen: its ID is the BLAKE3 hash of its canonical CBOR, and the frozen version is a Value carried with every piece of data that pins it, so no schema owner can take it away. Every change names the version it was written in and is checked against that version; a change naming a version or lens a device doesn't have yet waits. Paths (JSON Pointer, * for any index or key) give every part of the data an address for policies and operations. Every reference to a schema, a plugin's specification or input shape, or the registry of operation names is a data ID with @ and a version hash; never a bare name. The #label after it is only for people.",
     "why": "A live schema Doc read under its owner's policies would let that owner block every list that uses it, and a Loro state has no content hash to pin. Frozen, carried versions fix both.",
-    "supersedes": "AIP-52",
+    "supersedes": "OLD-AIP-52",
     "sources": [
      {
       "label": "Jazz 2 SPEC: lenses and migrations",
@@ -1845,7 +1845,7 @@
    ]
   },
   {
-   "id": "AIP-67",
+   "id": "OLD-AIP-67",
    "n": 67,
    "title": "Lenses between versions; moving on rewrites nothing",
    "stage": "decided",
@@ -1854,7 +1854,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "A new version comes with a lens: a list of operations (rename, add with a default, remove with a value for old readers, copy, convert by registered two-way conversions, wrap, hoist) that runs both ways, is named by its hash and can be checked by anyone: applied to the old version it must give exactly the new one. Ambiguous lenses are refused. Each version maps its paths to stored keys; a rename keeps the stored key, an added field gets a new one, a removed field's key stays. The owner moves the data to a new version with one signed migration record (an ownership act, AIP-30) that rewrites nothing; the data then accepts changes in every version along its lenses, until the owner retires one. Every device merges first, then projects the merged state along the lens path (shortest, ties to the smaller lens ID) into its own version. Policies and operations name the version their paths use; the data is projected into that version, and policies are never translated. Two concurrent migrations both stand until the owner writes a version with a lens from each.",
+    "text": "A new version comes with a lens: a list of operations (rename, add with a default, remove with a value for old readers, copy, convert by registered two-way conversions, wrap, hoist) that runs both ways, is named by its hash and can be checked by anyone: applied to the old version it must give exactly the new one. Ambiguous lenses are refused. Each version maps its paths to stored keys; a rename keeps the stored key, an added field gets a new one, a removed field's key stays. The owner moves the data to a new version with one signed migration record (an ownership act, OLD-AIP-30) that rewrites nothing; the data then accepts changes in every version along its lenses, until the owner retires one. Every device merges first, then projects the merged state along the lens path (shortest, ties to the smaller lens ID) into its own version. Policies and operations name the version their paths use; the data is projected into that version, and policies are never translated. Two concurrent migrations both stand until the owner writes a version with a lens from each.",
     "why": "Old and new apps keep working on the same data at the same time, with no flag day and nothing rewritten. Jazz 2 and Cambria show the shape; stored keys make it fit a CRDT, where Cambria's op-by-op translation on Automerge was abandoned.",
     "sources": [
      {
@@ -1875,7 +1875,7 @@
    ]
   },
   {
-   "id": "AIP-68",
+   "id": "OLD-AIP-68",
    "n": 68,
    "title": "Breaking changes go through a Loro branch",
    "stage": "decided",
@@ -1884,7 +1884,7 @@
    "learn": null,
    "proposal": null,
    "decision": {
-    "text": "A change that a lens cannot run both ways (splitting a field, a list becoming a map) is a rewrite. The owner's agent takes the frontier F of the valid view, forks the Doc at F (fork_at), applies the lens there and takes the diff; on the main Doc it checks out F, edits detached under its derived peer ID (AIP-63), applies the diff and commits one change that depends on F, signed with a migration record. Ops made on the fork are never signed. Every peer verifies by repeating the rewrite at F; a mismatch is dropped. Old-version changes that never saw the rewrite go back to their authors, who apply them again through the lens (AIP-62). A total break starts a successor instead (AIP-71).",
+    "text": "A change that a lens cannot run both ways (splitting a field, a list becoming a map) is a rewrite. The owner's agent takes the frontier F of the valid view, forks the Doc at F (fork_at), applies the lens there and takes the diff; on the main Doc it checks out F, edits detached under its derived peer ID (OLD-AIP-63), applies the diff and commits one change that depends on F, signed with a migration record. Ops made on the fork are never signed. Every peer verifies by repeating the rewrite at F; a mismatch is dropped. Old-version changes that never saw the rewrite go back to their authors, who apply them again through the lens (OLD-AIP-62). A total break starts a successor instead (OLD-AIP-71).",
     "why": "Loro has no branch object, but fork_at, checkout and apply_diff give a deterministic branch-and-merge that every peer can recompute, so nobody has to trust the migrating device.",
     "sources": [
      {
@@ -1902,7 +1902,7 @@
    ]
   },
   {
-   "id": "AIP-69",
+   "id": "OLD-AIP-69",
    "n": 69,
    "title": "Joining by invite; agent epochs",
    "stage": "decided",
@@ -1912,7 +1912,7 @@
     "chapter": "identity",
     "concept": "Agents: who it is, and what it may do",
     "severity": "high",
-    "weakness": "An honest restore from a backup currently looks like a lying signer (AIP-61, AIP-63), and pairing needs a manual exchange with one specific agent online.",
+    "weakness": "An honest restore from a backup currently looks like a lying signer (OLD-AIP-61, OLD-AIP-63), and pairing needs a manual exchange with one specific agent online.",
     "strengths": [
      "Every device is its own identity with its own scope; most systems give all devices one key (Classic Jazz shares one agent secret, Holochain has one key per app, Keet attests devices without scopes)."
     ],
@@ -1932,7 +1932,7 @@
    },
    "proposal": {
     "text": "Every agent record header names its signer revision and a continuity epoch; a restored or reinstalled device starts a new epoch, so it never reuses a running number or a CRDT op ID. New agents pair through invite records: a one-time key, an expiry and the agent policy it will create, written into the identity's history so any of its agents with govern can answer.",
-    "why": "An honest restore from a backup currently looks like a lying signer (AIP-61, AIP-63), and pairing needs a manual exchange with one specific agent online.",
+    "why": "An honest restore from a backup currently looks like a lying signer (OLD-AIP-61, OLD-AIP-63), and pairing needs a manual exchange with one specific agent online.",
     "sources": []
    },
    "decision": {
@@ -1962,7 +1962,7 @@
    ]
   },
   {
-   "id": "AIP-70",
+   "id": "OLD-AIP-70",
    "n": 70,
    "title": "One guardian per identity, changed only by succession",
    "stage": "decided",
@@ -1985,14 +1985,14 @@
     "scenarios": []
    },
    "proposal": {
-    "text": "The guardian role stays the one top (AIP-59). When signature counts arrive (AIP-49), govern becomes k of n inside that role, so the rule stays “one top”. Until then a guardian names its successor in a signed succession record before leaving.",
+    "text": "The guardian role stays the one top (OLD-AIP-59). When signature counts arrive (OLD-AIP-49), govern becomes k of n inside that role, so the rule stays “one top”. Until then a guardian names its successor in a signed succession record before leaving.",
     "why": "With one guardian, every change of roles or governance waits for one person's devices.",
     "sources": []
    },
    "decision": {
-    "text": "Every human and every coop has exactly one guardian, the one top of its authority, which alone holds govern on it. A human is its own guardian and acts as one through its own agents with govern (passkeys are the single source of truth for now). A coop's guardian is its guardian role, which always holds exactly one identity. A coop's guardian changes only by succession: the current guardian signs a new guardian role record naming its successor, which must list the previous one as seen. A guardian can't leave or be removed without naming a successor, so no coop ends up without one. If two guardian role records are concurrent (the guardian's own agents disagreed), neither takes effect until a record sees both. Agents have no guardian; their owner governs them. Below the guardian, concurrent removals both stand and the guardian repairs (AIP-59). Several guardians acting by majority, with chained signatures, may come later. The guardian exercises govern through its own chain (your phone → you → the coop); a coop's own agents never hold govern on it.",
+    "text": "Every human and every coop has exactly one guardian, the one top of its authority, which alone holds govern on it. A human is its own guardian and acts as one through its own agents with govern (passkeys are the single source of truth for now). A coop's guardian is its guardian role, which always holds exactly one identity. A coop's guardian changes only by succession: the current guardian signs a new guardian role record naming its successor, which must list the previous one as seen. A guardian can't leave or be removed without naming a successor, so no coop ends up without one. If two guardian role records are concurrent (the guardian's own agents disagreed), neither takes effect until a record sees both. Agents have no guardian; their owner governs them. Below the guardian, concurrent removals both stand and the guardian repairs (OLD-AIP-59). Several guardians acting by majority, with chained signatures, may come later. The guardian exercises govern through its own chain (your phone → you → the coop); a coop's own agents never hold govern on it.",
     "why": "Keeps one top, so no two equals can remove each other at once and a coop can never lock itself out, without signature counts or quorums yet. The word guardian says what the role is for: keeping the coop whole.",
-    "superseded_by": "AIP-91",
+    "superseded_by": "OLD-AIP-91",
     "sources": [
      {
       "label": "NextGraph: types",
@@ -2003,7 +2003,7 @@
    "slides": []
   },
   {
-   "id": "AIP-71",
+   "id": "OLD-AIP-71",
    "n": 71,
    "title": "Successors: data that continues other data",
    "stage": "decided",
@@ -2029,8 +2029,8 @@
     "sources": []
    },
    "decision": {
-    "text": "Data may continue as new data. The owner starts new data whose birth record names a predecessor (the old data ID and the hash of the old valid view's frontier) and signs a successor record on the old data naming the new data, the same frontier and, if the schema changes, a lens. A succession holds only if both name each other with the same frontier. Old and new have the same owner; succession never moves ownership (AIP-54). Data has at most one successor; two concurrent successor records both fail until one sees the other. The new data's first state equals the old valid view at the frontier, through the lens if given, and every peer can recompute it. The successor record ends every create, update and delete on the old data; read, want and keep stay until ended separately. Changes on the old data that didn't see the successor record go back to their authors as a conflict view, to be applied again on the successor (AIP-62). Links to old data resolve forward through the chain.",
-    "why": "A clean way out for breaks too big even for a branch (AIP-68), checkable by everyone, without hand-over and without rewriting history. Hypercore's prologue and Holochain's CloseChain/OpenChain do the same for logs and chains.",
+    "text": "Data may continue as new data. The owner starts new data whose birth record names a predecessor (the old data ID and the hash of the old valid view's frontier) and signs a successor record on the old data naming the new data, the same frontier and, if the schema changes, a lens. A succession holds only if both name each other with the same frontier. Old and new have the same owner; succession never moves ownership (OLD-AIP-54). Data has at most one successor; two concurrent successor records both fail until one sees the other. The new data's first state equals the old valid view at the frontier, through the lens if given, and every peer can recompute it. The successor record ends every create, update and delete on the old data; read, want and keep stay until ended separately. Changes on the old data that didn't see the successor record go back to their authors as a conflict view, to be applied again on the successor (OLD-AIP-62). Links to old data resolve forward through the chain.",
+    "why": "A clean way out for breaks too big even for a branch (OLD-AIP-68), checkable by everyone, without hand-over and without rewriting history. Hypercore's prologue and Holochain's CloseChain/OpenChain do the same for logs and chains.",
     "sources": [
      {
       "label": "Hypercore",
@@ -2048,7 +2048,7 @@
    ]
   },
   {
-   "id": "AIP-72",
+   "id": "OLD-AIP-72",
    "n": 72,
    "title": "Values named by the hash of their sealed bytes",
    "stage": "decided",
@@ -2095,7 +2095,7 @@
    ]
   },
   {
-   "id": "AIP-73",
+   "id": "OLD-AIP-73",
    "n": 73,
    "title": "Acknowledged finality and owner checkpoints",
    "stage": "propose",
@@ -2137,7 +2137,7 @@
    ]
   },
   {
-   "id": "AIP-74",
+   "id": "OLD-AIP-74",
    "n": 74,
    "title": "Lens properties, version negotiation, retiring versions",
    "stage": "propose",
@@ -2178,7 +2178,7 @@
    ]
   },
   {
-   "id": "AIP-75",
+   "id": "OLD-AIP-75",
    "n": 75,
    "title": "Limits counted per author; no remote queries in iroh-blobs",
    "stage": "propose",
@@ -2187,9 +2187,9 @@
     "chapter": "ops",
     "concept": "Local, typed engine operations; limits across changes",
     "severity": "medium",
-    "weakness": "A limit settled when the view is built can flip changes that were already accepted, and Observe is a remote query against AIP-24.",
+    "weakness": "A limit settled when the view is built can flip changes that were already accepted, and Observe is a remote query against OLD-AIP-24.",
     "strengths": [
-     "Peers never answer each other's queries (AIP-24): no remote answerer to trust."
+     "Peers never answer each other's queries (OLD-AIP-24): no remote answerer to trust."
     ],
     "elsewhere": [
      "Holochain rate-limits along the author's own chain, checkable on arrival.",
@@ -2199,7 +2199,7 @@
    },
    "proposal": {
     "text": "Limits such as “20 items” count along each author's own running number, so they are checked on arrival and never flip. iroh-blobs' Observe is disabled except for the owner's agents. Query results are cached per schema version.",
-    "why": "A limit settled when the view is built can flip changes that were already accepted, and Observe is a remote query against AIP-24.",
+    "why": "A limit settled when the view is built can flip changes that were already accepted, and Observe is a remote query against OLD-AIP-24.",
     "sources": [
      {
       "label": "Holochain: validation",
@@ -2218,7 +2218,7 @@
    ]
   },
   {
-   "id": "AIP-76",
+   "id": "OLD-AIP-76",
    "n": 76,
    "title": "Role deltas, invites, and writes imply read",
    "stage": "propose",
@@ -2241,14 +2241,14 @@
      {
       "scenario": "Removal and re-add at the same moment",
       "verdict": "holds",
-      "why": "Removal wins (AIP-14). With role records as full lists, an unrelated add at the same moment is lost too.",
+      "why": "Removal wins (OLD-AIP-14). With role records as full lists, an unrelated add at the same moment is lost too.",
       "fix": "Role records as add and remove deltas; a removal beats a concurrent add of the same identity only."
      },
      {
       "scenario": "A revoke at the same moment as a renewal",
       "verdict": "breaks",
       "why": "Unspecified: the renewal is a new policy the revoke doesn't name.",
-      "fix": "A revoke beats a concurrent renewal of the same policy; a renewal names what it renews (AIP-60)."
+      "fix": "A revoke beats a concurrent renewal of the same policy; a renewal names what it renews (OLD-AIP-60)."
      }
     ]
    },
@@ -2278,7 +2278,7 @@
    ]
   },
   {
-   "id": "AIP-77",
+   "id": "OLD-AIP-77",
    "n": 77,
    "title": "Signer hash chains; endings name chain heads",
    "stage": "propose",
@@ -2289,7 +2289,7 @@
     "severity": "critical",
     "weakness": "Critical: an ending in another history (an agent revoked on its human, a member removed from a coop) can't be listed by the data's records, so backdated changes slip in.",
     "strengths": [
-     "Within one piece of data, “never saw it” is now defined and checked (AIP-61)."
+     "Within one piece of data, “never saw it” is now defined and checked (OLD-AIP-61)."
     ],
     "elsewhere": [
      "Keybase orders all chains through the server's Merkle root; Anytype through a consensus node; NextGraph through a quorum; Peergos through a pointer server. No system reviewed stops cross-history backdating without such a point.",
@@ -2327,7 +2327,7 @@
    ]
   },
   {
-   "id": "AIP-78",
+   "id": "OLD-AIP-78",
    "n": 78,
    "title": "Lies freeze the signer; warrants",
    "stage": "propose",
@@ -2378,7 +2378,7 @@
    ]
   },
   {
-   "id": "AIP-79",
+   "id": "OLD-AIP-79",
    "n": 79,
    "title": "Safe key turns",
    "stage": "propose",
@@ -2436,7 +2436,7 @@
    ]
   },
   {
-   "id": "AIP-80",
+   "id": "OLD-AIP-80",
    "n": 80,
    "title": "Forward-secure envelopes",
    "stage": "propose",
@@ -2478,7 +2478,7 @@
    ]
   },
   {
-   "id": "AIP-81",
+   "id": "OLD-AIP-81",
    "n": 81,
    "title": "An invalid add turns keys; envelopes after acknowledgement",
    "stage": "propose",
@@ -2520,7 +2520,7 @@
    ]
   },
   {
-   "id": "AIP-82",
+   "id": "OLD-AIP-82",
    "n": 82,
    "title": "Endings that hold in time",
    "stage": "propose",
@@ -2580,7 +2580,7 @@
    ]
   },
   {
-   "id": "AIP-83",
+   "id": "OLD-AIP-83",
    "n": 83,
    "title": "Forgetting safely",
    "stage": "propose",
@@ -2621,7 +2621,7 @@
    ]
   },
   {
-   "id": "AIP-84",
+   "id": "OLD-AIP-84",
    "n": 84,
    "title": "A separate network key; no open gossip",
    "stage": "propose",
@@ -2664,7 +2664,7 @@
    ]
   },
   {
-   "id": "AIP-85",
+   "id": "OLD-AIP-85",
    "n": 85,
    "title": "Chunk commitments and policy-first sync",
    "stage": "propose",
@@ -2685,7 +2685,7 @@
      {
       "scenario": "A revoked writer, offline, on the same data",
       "verdict": "holds",
-      "why": "Its changes never listed the ending as seen, so they are dropped everywhere (AIP-60–AIP-62). Until a peer hears the ending, it shows them and may build on them.",
+      "why": "Its changes never listed the ending as seen, so they are dropped everywhere (OLD-AIP-60–OLD-AIP-62). Until a peer hears the ending, it shows them and may build on them.",
       "fix": "Policy-first sync, so peers learn endings before chunks."
      }
     ]
@@ -2716,7 +2716,7 @@
    ]
   },
   {
-   "id": "AIP-86",
+   "id": "OLD-AIP-86",
    "n": 86,
    "title": "Connection-bound wants and carrier freshness",
    "stage": "propose",
@@ -2769,7 +2769,7 @@
    ]
   },
   {
-   "id": "AIP-87",
+   "id": "OLD-AIP-87",
    "n": 87,
    "title": "Ending events and two ways to drop",
    "stage": "propose",
@@ -2791,7 +2791,7 @@
     "scenarios": []
    },
    "proposal": {
-    "text": "For every ending the engine emits the IDs of the changes it invalidates, so apps can show moderation and the conflict view. A schema says how its data drops invalid changes: replayed without them (text, AIP-62) or removed by ID (messages, posts); both converge.",
+    "text": "For every ending the engine emits the IDs of the changes it invalidates, so apps can show moderation and the conflict view. A schema says how its data drops invalid changes: replayed without them (text, OLD-AIP-62) or removed by ID (messages, posts); both converge.",
     "why": "Apps would otherwise recompute what an ending removed, and replaying is costly for simple append-only data.",
     "sources": [
      {
@@ -2807,7 +2807,7 @@
    ]
   },
   {
-   "id": "AIP-88",
+   "id": "OLD-AIP-88",
    "n": 88,
    "title": "One ordering pipeline; delivery apart from processing",
    "stage": "propose",
@@ -2847,7 +2847,7 @@
    ]
   },
   {
-   "id": "AIP-89",
+   "id": "OLD-AIP-89",
    "n": 89,
    "title": "A message mode with forward secrecy, later",
    "stage": "propose",
@@ -2888,7 +2888,7 @@
    ]
   },
   {
-   "id": "AIP-90",
+   "id": "OLD-AIP-90",
    "n": 90,
    "title": "Records follow schemas too; a root manifest with the meta-schema",
    "stage": "decided",
@@ -2912,7 +2912,7 @@
    ]
   },
   {
-   "id": "AIP-91",
+   "id": "OLD-AIP-91",
    "n": 91,
    "title": "The guardian: every identity's root of trust",
    "stage": "decided",
@@ -2935,9 +2935,9 @@
    },
    "proposal": null,
    "decision": {
-    "text": "Every human and coop has exactly one guardian, its root of trust, kept outside the policy engine. A human's guardian is the ed25519 key PRF(passkey, \"theos/guardian\"), the same on every device the passkey syncs to and never stored; its agents' signers come from the same passkey with per-device salts (AIP-31). A coop's guardian is exactly one identity, named in its birth record. Every policy on an identity must trace back to its guardian: signed by the guardian, or along a chain of own the guardian gave. own on an identity covers managing its roles, its agents' policies and its data's policies, within the holder's own. The one act reserved to the guardian is changing the guardian: a coop's guardian changes only by a guardian record the current guardian signs, naming its successor and listing the previous record as seen; a guardian can't leave or be removed without a successor, and two concurrent guardian records both fail until one sees the other. Guardian records are checked by the core verifier, like birth records; no policy, condition or plugin can widen, change or remove a guardian. govern is no longer an operation. Agents have no guardian; their owner's guardian stands behind them.",
+    "text": "Every human and coop has exactly one guardian, its root of trust, kept outside the policy engine. A human's guardian is the ed25519 key PRF(passkey, \"theos/guardian\"), the same on every device the passkey syncs to and never stored; its agents' signers come from the same passkey with per-device salts (OLD-AIP-31). A coop's guardian is exactly one identity, named in its birth record. Every policy on an identity must trace back to its guardian: signed by the guardian, or along a chain of own the guardian gave. own on an identity covers managing its roles, its agents' policies and its data's policies, within the holder's own. The one act reserved to the guardian is changing the guardian: a coop's guardian changes only by a guardian record the current guardian signs, naming its successor and listing the previous record as seen; a guardian can't leave or be removed without a successor, and two concurrent guardian records both fail until one sees the other. Guardian records are checked by the core verifier, like birth records; no policy, condition or plugin can widen, change or remove a guardian. govern is no longer an operation. Agents have no guardian; their owner's guardian stands behind them.",
     "why": "One fixed top per identity, so no clash at the top and no lockout, while own still lets the guardian hand all day-to-day management to others. Keeping the root outside the engine makes it small enough to prove things about.",
-    "supersedes": "AIP-70",
+    "supersedes": "OLD-AIP-70",
     "sources": [
      {
       "label": "WebAuthn: PRF extension",
@@ -2963,168 +2963,6 @@
     "end-4",
     "keys-2"
    ]
-  }
- ],
- "sources": [
-  {
-   "label": "Keyhive: threat model",
-   "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
-  },
-  {
-   "label": "Keyhive: Keyline",
-   "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline/README.md"
-  },
-  {
-   "label": "Keyhive: convergent capabilities",
-   "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
-  },
-  {
-   "label": "Subduction",
-   "url": "https://github.com/inkandswitch/subduction"
-  },
-  {
-   "label": "Cambria",
-   "url": "https://github.com/inkandswitch/cambria-project"
-  },
-  {
-   "label": "local-first-web/auth: CRDX",
-   "url": "https://github.com/local-first-web/auth/blob/main/packages/crdx/README.md"
-  },
-  {
-   "label": "p2panda: group resolver",
-   "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-auth/src/group/resolver.rs"
-  },
-  {
-   "label": "p2panda: encryption",
-   "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-encryption/README.md"
-  },
-  {
-   "label": "Anytype any-sync: ACL",
-   "url": "https://github.com/anyproto/any-sync/blob/main/commonspace/object/acl/list/aclstate.go"
-  },
-  {
-   "label": "NextGraph: types",
-   "url": "https://github.com/nextgraph-org/nextgraph-rs/blob/main/engine/repo/src/types.rs"
-  },
-  {
-   "label": "DXOS HALO: credential graph",
-   "url": "https://github.com/dxos/dxos/blob/main/packages/core/halo/credentials/src/graph/credential-graph.ts"
-  },
-  {
-   "label": "Keybase teams: loader",
-   "url": "https://github.com/keybase/client/blob/master/go/teams/loader2.go"
-  },
-  {
-   "label": "Matrix: room version 12",
-   "url": "https://github.com/matrix-org/matrix-spec/blob/main/content/rooms/v12.md"
-  },
-  {
-   "label": "MLS: RFC 9420",
-   "url": "https://github.com/mlswg/mls-protocol/blob/main/rfc9420.md"
-  },
-  {
-   "label": "Decentralised MLS (draft)",
-   "url": "https://github.com/phnx-im/dmls-spec/blob/main/draft-kohbrok-mls-dmls.md"
-  },
-  {
-   "label": "Distributed MLS (draft)",
-   "url": "https://github.com/germ-mark/distributed-mls-id/blob/main/draft-xue-distributed-mls.md"
-  },
-  {
-   "label": "Peergos",
-   "url": "https://github.com/Peergos/Peergos/blob/master/src/peergos/shared/user/UserContext.java"
-  },
-  {
-   "label": "Willow: Timestamps, really?",
-   "url": "https://github.com/earthstar-project/willowprotocol.org/blob/main/src/pages/more/timestamps_really.tsx"
-  },
-  {
-   "label": "Meadowcap",
-   "url": "https://github.com/earthstar-project/willowprotocol.org/blob/main/src/pages/specs/meadowcap.tsx"
-  },
-  {
-   "label": "Hypercore",
-   "url": "https://github.com/holepunchto/hypercore"
-  },
-  {
-   "label": "Autobase: design",
-   "url": "https://github.com/holepunchto/autobase/blob/main/DESIGN.md"
-  },
-  {
-   "label": "Holepunch blind-pairing",
-   "url": "https://github.com/holepunchto/blind-pairing"
-  },
-  {
-   "label": "Holepunch blind-peer",
-   "url": "https://github.com/holepunchto/blind-peer"
-  },
-  {
-   "label": "Hyperschema",
-   "url": "https://github.com/holepunchto/hyperschema"
-  },
-  {
-   "label": "Keet identity key",
-   "url": "https://github.com/holepunchto/keet-identity-key"
-  },
-  {
-   "label": "Secure Scuttlebutt: group exclusion",
-   "url": "https://github.com/ssbc/ssb-group-exclusion-spec"
-  },
-  {
-   "label": "Urbit: life and rift",
-   "url": "https://github.com/urbit/docs.urbit.org/blob/master/content/urbit-id/life-and-rift.md"
-  },
-  {
-   "label": "Tlon: groups",
-   "url": "https://github.com/tloncorp/tlon-apps/blob/develop/desk/app/groups.hoon"
-  },
-  {
-   "label": "Holochain: validation",
-   "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/7_validation.md"
-  },
-  {
-   "label": "Holochain: capabilities",
-   "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/8_calls_capabilities.md"
-  },
-  {
-   "label": "Jazz 2: lenses and migrations",
-   "url": "https://github.com/garden-co/jazz/blob/main/crates/jazz/SPEC/10_lenses_migrations.md"
-  },
-  {
-   "label": "Jazz: what we learned from Classic Jazz",
-   "url": "https://github.com/garden-co/jazz/blob/main/docs/content/blog/what-we-learned-from-classic-jazz.mdx"
-  },
-  {
-   "label": "Loro",
-   "url": "https://github.com/loro-dev/loro"
-  },
-  {
-   "label": "iroh",
-   "url": "https://github.com/n0-computer/iroh"
-  },
-  {
-   "label": "iroh-blobs",
-   "url": "https://github.com/n0-computer/iroh-blobs"
-  },
-  {
-   "label": "iroh-gossip",
-   "url": "https://github.com/n0-computer/iroh-gossip"
-  },
-  {
-   "label": "iroh-docs",
-   "url": "https://github.com/n0-computer/iroh-docs"
-  },
-  {
-   "label": "p2panda: access control",
-   "url": "https://p2panda.org/2025/07/28/access-control.html"
-  },
-  {
-   "label": "p2panda: group encryption",
-   "url": "https://p2panda.org/2025/02/24/group-encryption.html"
-  },
-  {
-   "label": "DCGKA paper (Weidner, Kleppmann et al.)",
-   "url": "https://eprint.iacr.org/2020/1281.pdf"
   }
  ]
 }

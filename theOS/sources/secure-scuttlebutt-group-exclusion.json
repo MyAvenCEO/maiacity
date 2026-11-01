@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/secure-scuttlebutt-group-exclusion",
+ "title": "Secure Scuttlebutt: group exclusion",
+ "url": "https://github.com/ssbc/ssb-group-exclusion-spec",
+ "read": "yes"
+}

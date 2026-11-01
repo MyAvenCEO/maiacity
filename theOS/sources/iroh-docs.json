@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/iroh-docs",
+ "title": "iroh-docs",
+ "url": "https://github.com/n0-computer/iroh-docs",
+ "read": "yes"
+}

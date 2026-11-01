@@ -1,0 +1,83 @@
+{
+ "type": "reference",
+ "subtype": "protocol",
+ "id": "sources/first",
+ "title": "First principles engineering",
+ "url": "",
+ "read": "yes",
+ "by": "Aristotle's first principles, Socratic questioning, Toyota's Five Whys, and Musk's five-step algorithm.",
+ "summary": "Break a problem down to what is known to be true (laws of nature, measured facts) and reason up from there, instead of by analogy to how it is usually done. Then improve in a strict order: question the requirement, delete, simplify, speed up, automate. Doing the later steps first optimizes or automates things that should not exist.",
+ "steps": [
+  {
+   "n": 1,
+   "name": "Question",
+   "writes": "every requirement, with a name and a why"
+  },
+  {
+   "n": 2,
+   "name": "Delete",
+   "writes": "the parts and steps that aren't needed"
+  },
+  {
+   "n": 3,
+   "name": "Simplify",
+   "writes": "only what remains"
+  },
+  {
+   "n": 4,
+   "name": "Accelerate",
+   "writes": "shorter cycles"
+  },
+  {
+   "n": 5,
+   "name": "Automate",
+   "writes": "last, once it is stable"
+  }
+ ],
+ "bands": [],
+ "gates": [],
+ "loops": [
+  {
+   "from": 5,
+   "to": 1,
+   "when": "the next cycle questions again"
+  }
+ ],
+ "ideas": [
+  "Reason from first principles, not by analogy: what are we sure is true? Then reason up from there.",
+  "Separate truths (laws, measured facts) from assumptions (conventions, how it is usually done).",
+  "Socratic questioning: clarify what you think, challenge the assumptions, look for evidence, consider other views, examine the consequences, question the question itself.",
+  "Five Whys: ask why until you reach the root cause, not the symptom.",
+  "Every requirement carries the name of the person who made it.",
+  "Delete before you simplify: if you never have to add something back, you did not delete enough.",
+  "The most common mistake of a smart engineer is optimizing something that should not exist.",
+  "Automate last: automating a broken process only makes it fail faster."
+ ],
+ "took": [
+  {
+   "idea": "Socratic questions, Five Whys, truths vs assumptions",
+   "where": "Understand"
+  },
+  {
+   "idea": "Every requirement has a person and a why",
+   "where": "Understand, Principles"
+  },
+  {
+   "idea": "Delete first, then simplify",
+   "where": "Shape"
+  },
+  {
+   "idea": "Speed up: small checkpoints, short loops",
+   "where": "Build"
+  },
+  {
+   "idea": "Automate last, after three runs by hand",
+   "where": "Learn, Automate last"
+  }
+ ],
+ "sources": [
+  "sources/farnam-street-what-is-first-principles-thinking",
+  "sources/more-than-digital-first-principles-thinking-a-comprehensive-",
+  "sources/musk-s-five-step-algorithm-starbase-tour-2021-isaacson-elon-"
+ ]
+}

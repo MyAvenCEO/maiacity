@@ -1,0 +1,117 @@
+{
+ "type": "reference",
+ "subtype": "protocol",
+ "id": "sources/claude",
+ "title": "Claude Code team",
+ "url": "",
+ "read": "yes",
+ "by": "Anthropic's Claude Code team, as retold in an AI Labs video. The original article was not read here; the numbers are the video's.",
+ "summary": "Agents build fast and call work done too early, so work is checked by evidence, not by the builder's word. Evals are written and approved before building; a fresh verifier and a fresh reviewer check every change, more deeply where a mistake would hurt more; repeated mistakes become rules; and after release, daily use, a first-time-user agent and fast undo catch what slipped through.",
+ "steps": [
+  {
+   "n": 1,
+   "name": "Evals",
+   "writes": "requirements, evals, a mockup"
+  },
+  {
+   "n": 2,
+   "name": "Build",
+   "writes": "code, checked while building"
+  },
+  {
+   "n": 3,
+   "name": "Verify",
+   "writes": "every eval passed or failed"
+  },
+  {
+   "n": 4,
+   "name": "Review",
+   "writes": "what the evals missed"
+  },
+  {
+   "n": 5,
+   "name": "Ship",
+   "writes": "release, undo in minutes"
+  },
+  {
+   "n": 6,
+   "name": "Use",
+   "writes": "daily use, a first-time user"
+  }
+ ],
+ "bands": [],
+ "gates": [
+  {
+   "id": "A",
+   "after": 1,
+   "what": "A person approves the evals and the mockup; nothing is built before."
+  },
+  {
+   "id": "✓",
+   "after": 4,
+   "what": "Done only when every eval passes and the review finds nothing new; a hook blocks it otherwise."
+  }
+ ],
+ "loops": [
+  {
+   "from": 3,
+   "to": 2,
+   "when": "an eval fails"
+  },
+  {
+   "from": 4,
+   "to": 2,
+   "when": "findings, 3 rounds max"
+  },
+  {
+   "from": 6,
+   "to": 1,
+   "when": "a missed bug becomes a rule"
+  }
+ ],
+ "ideas": [
+  "Ask \"what could go wrong with this change, and how would we catch it?\" instead of \"did someone read the code?\".",
+  "Checks run while building, so a person only sees work that was already checked once.",
+  "Proof, not a claim: run something that proves it works and show the result.",
+  "Evals are fixed checks strict enough that bad work fails them, written and approved before building.",
+  "The reviewer is never the builder: a fresh agent with written review rules.",
+  "Risk decides depth: looks wrong, breaks, or can't be undone (money, lockout, someone else's data).",
+  "Stopping rules: after three rounds, rethink the approach; after round one, review only what changed; every finding names its kind.",
+  "A mistake that keeps coming back becomes a one-line rule, approved by a person.",
+  "After release: use it daily, send a first-time-user agent that can't read the code, and undo in minutes.",
+  "Reported: more than twice the changes shipped, about 40% fewer undone; changes to review grew from 2,500 to 30,000 a day in four months."
+ ],
+ "took": [
+  {
+   "idea": "Evals approved before any work",
+   "where": "Shape: claims, Gate A"
+  },
+  {
+   "idea": "Proof shown, never stated",
+   "where": "Prove, Principles"
+  },
+  {
+   "idea": "A fresh verifier and a fresh reviewer",
+   "where": "Prove, Build"
+  },
+  {
+   "idea": "Risk decides depth",
+   "where": "Risk decides depth"
+  },
+  {
+   "idea": "Stopping rules",
+   "where": "Rules in every step"
+  },
+  {
+   "idea": "Repeated mistakes become rules",
+   "where": "Learn"
+  },
+  {
+   "idea": "Daily use, a first-time user, fast undo",
+   "where": "Ship, Learn"
+  }
+ ],
+ "sources": [
+  "sources/claude-code-team-s-review-process-as-retold-in-an-ai-labs-vi"
+ ]
+}

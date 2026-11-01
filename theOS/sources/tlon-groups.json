@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/tlon-groups",
+ "title": "Tlon: groups",
+ "url": "https://github.com/tloncorp/tlon-apps/blob/develop/desk/app/groups.hoon",
+ "read": "yes"
+}

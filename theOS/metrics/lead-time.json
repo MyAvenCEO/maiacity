@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "metrics/lead-time",
+ "name": "Lead time",
+ "what": "from inbox to measured",
+ "want": "falling, never by skipping a gate",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

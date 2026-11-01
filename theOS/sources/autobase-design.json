@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/autobase-design",
+ "title": "Autobase: design",
+ "url": "https://github.com/holepunchto/autobase/blob/main/DESIGN.md",
+ "read": "yes"
+}

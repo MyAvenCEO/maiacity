@@ -1,0 +1,16 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/term",
+ "name": "term",
+ "file": "avenCEO/terms/<word>.json",
+ "what": "One word and what it means here.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "word, means",
+   "means": "the definition"
+  }
+ ],
+ "written_by": "the orchestrator",
+ "links_to": []
+}

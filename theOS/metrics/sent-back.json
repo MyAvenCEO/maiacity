@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "metrics/sent-back",
+ "name": "Sent back",
+ "what": "rounds per checkpoint; intents sent back to Specify",
+ "want": "falling",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

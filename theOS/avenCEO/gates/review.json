@@ -1,0 +1,10 @@
+{
+ "type": "gate",
+ "subtype": "checkpoint",
+ "id": "avenCEO/gates/review",
+ "name": "Review gate",
+ "after": "avenCEO/steps/3-build",
+ "who": "two checkers and a worker",
+ "what": "Two fresh checkers per round, each with one lens, that see only the record, the work and what they link, never the conversation that made it. For a spec: paraphrase and zoom out; for a checkpoint: a critic and a code reviewer. Findings are Blocker, Major or Nit, each named by kind. The worker fixes, contests with evidence the checker could read, escalates what only you know, or declines a Nit. The gate passes on a clean round: no open Blocker or Major. Wherever it can, a finding becomes a new mechanical check.",
+ "when": "the spec before Gate A, and every checkpoint; with a screen, the checkers also judge how it looks and behaves"
+}

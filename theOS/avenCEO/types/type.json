@@ -1,0 +1,30 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/type",
+ "name": "type",
+ "file": "avenCEO/types/<name>.json",
+ "what": "One kind of doc: where it lives, its fields, its subtypes, who writes it and what it links to.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "folder",
+   "means": "where its docs live"
+  },
+  {
+   "name": "fields",
+   "means": "what each holds"
+  },
+  {
+   "name": "subtypes",
+   "means": "its kinds"
+  },
+  {
+   "name": "links_to",
+   "means": "the types it points at"
+  }
+ ],
+ "written_by": "Samuel, through avenCEO intents",
+ "links_to": [
+  "avenCEO/types/type"
+ ]
+}

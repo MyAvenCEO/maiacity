@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/anytype-any-sync-acl",
+ "title": "Anytype any-sync: ACL",
+ "url": "https://github.com/anyproto/any-sync/blob/main/commonspace/object/acl/list/aclstate.go",
+ "read": "yes"
+}

@@ -1,0 +1,9 @@
+{
+ "type": "lesson",
+ "id": "lessons/a-check-measures-something-other-than-what-the-person-sees",
+ "status": "kept",
+ "cue": "A check measures something other than what the person sees.",
+ "lesson": "Check the rendered page at the person's window sizes.",
+ "evidence": "The fit test passed while the nav was cut off.",
+ "confidence": "high"
+}

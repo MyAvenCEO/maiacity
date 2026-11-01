@@ -1,0 +1,31 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/step",
+ "name": "step",
+ "file": "avenCEO/steps/<n>-<name>.json",
+ "what": "One of avenCEO's four steps: its question, what to do, what it writes, its gate, who does it, and where it goes back.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "question, do, output",
+   "means": "the work"
+  },
+  {
+   "name": "gate",
+   "means": "the gate after it"
+  },
+  {
+   "name": "back",
+   "means": "where it goes back to, and when"
+  },
+  {
+   "name": "from",
+   "means": "the sources it comes from"
+  }
+ ],
+ "written_by": "Samuel, through avenCEO intents",
+ "links_to": [
+  "avenCEO/types/gate",
+  "avenCEO/types/reference"
+ ]
+}

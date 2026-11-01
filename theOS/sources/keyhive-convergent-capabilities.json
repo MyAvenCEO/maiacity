@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/keyhive-convergent-capabilities",
+ "title": "Keyhive: convergent capabilities",
+ "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md",
+ "read": "yes"
+}

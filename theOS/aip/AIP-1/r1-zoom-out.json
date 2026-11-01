@@ -1,0 +1,103 @@
+{
+ "type": "review",
+ "id": "aip/AIP-1/r1-zoom-out",
+ "intent": "aip/AIP-1",
+ "round": 1,
+ "lens": "zoom-out",
+ "commit": "b42f1201d",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer with the persona of a skeptical architect: a fresh reader with no history of this project, who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/ceo/CEO-1.json\n\nIt is the record of planned work: building \"avenCEO\", an agent harness that runs inside Claude Code. Its definition is theOS/docs/avenceo.json (skip its \"protocols\" array).\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Reuse: SEARCH the repository (for example aven/ops/devx, .claude/, CLAUDE.md, .claude/skills/devx-speed, aven/DB2/brain) for things that already do part of what is proposed, beyond what the record's \"reuse\" list already names. Name files and what they do.\n3. Root problem: does the plan address the root cause it states, or a symptom?\n4. Order: is the checkpoint order really smallest-first, with each one useful on its own? Propose a smaller first slice if there is one.\n5. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part (field or claim/checkpoint id), and the reasoning, with a concrete simpler alternative where you have one. At most 800 words, plain text, no praise, lead with what is wrong.",
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "whys",
+   "text": "None of the ten came from lost context; whys 3 and 4 restate the solution as the cause. A record, router and stage function would have caught none of them.",
+   "answer": "fix",
+   "note": "The root cause stops at why 2."
+  },
+  {
+   "sev": "Major",
+   "scope": "checkpoint order",
+   "text": "The parts that address the evidence come last; a smaller first slice exists: a render check, one checker, one file per new intent, then measure.",
+   "answer": "fix",
+   "note": "Adopted as checkpoints 1 to 3."
+  },
+  {
+   "sev": "Major",
+   "scope": "checkpoint 1, c9",
+   "text": "Migrating the 91 intents would invent fields; c9 solves a conflict nobody has seen.",
+   "answer": "fix",
+   "note": "Deferred; intents.json stays the log."
+  },
+  {
+   "sev": "Major",
+   "scope": "c2",
+   "text": "With release manual, there is no release to refuse.",
+   "answer": "fix",
+   "note": "Deferred."
+  },
+  {
+   "sev": "Major",
+   "scope": "c6",
+   "text": "A global Stop hook blocks every thread, may loop, and must never block on your gates.",
+   "answer": "fix",
+   "note": "Deferred with those three constraints written down."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome, c10",
+   "text": "Corrections reach a record only by self-reporting.",
+   "answer": "fix",
+   "note": "Correction events by Samuel plus a hand tally; no metrics script before three records."
+  },
+  {
+   "sev": "Major",
+   "scope": "question 1",
+   "text": "Moving the devx tools touches 37 files and gains nothing (verified: 37).",
+   "answer": "fix",
+   "note": "Dropped; avenCEO uses them where they are."
+  },
+  {
+   "sev": "Major",
+   "scope": "question 2",
+   "text": "Generating DECISIONS.md contradicts aven/DB2/CLAUDE.md, where avenMAIA writes the log (verified), and breaks decisions.mjs.",
+   "answer": "fix",
+   "note": "Dropped."
+  },
+  {
+   "sev": "Major",
+   "scope": "reuse",
+   "text": "Not named: app-scroll.mjs, check.mjs's plan(), the spec-compliance agent and workflow, the devx-speed improvement cycle with docs/devx/cycles.md, the viewer's stageOf().",
+   "answer": "fix",
+   "note": "Verified and added to what exists already; lessons live in the improvement cycle."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c1",
+   "text": "A property test for a five-branch function is premature.",
+   "answer": "fix",
+   "note": "Deleted."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c8",
+   "text": "Store the checker's prompt in its review entry instead of a dispatch log.",
+   "answer": "fix",
+   "note": "Done (c4)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c7",
+   "text": "c7 restates the schema.",
+   "answer": "fix",
+   "note": "Deleted."
+  },
+  {
+   "sev": "Nit",
+   "scope": "checkpoint 5",
+   "text": "The first version needs one checker pair.",
+   "answer": "fix",
+   "note": "Done."
+  }
+ ]
+}

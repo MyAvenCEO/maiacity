@@ -11,7 +11,7 @@
    "text": "Your phone runs an {agent}: an identity that acts on your behalf. Inside it sits a {signer}: a {key}, a secret only the phone holds, that can say “this really comes from this agent.” The agent belongs to you: you are its {owner}, and it owns nothing itself.",
    "deep": "An agent identity is owned by exactly one human or coop. Its signer is just its current key; how the key is kept is up to the device it runs on: derived from the passkey's PRF plus a salt on a phone, the keychain on a laptop, an environment variable, secret manager or HSM on a server.",
    "spec": {
-    "summary": "An agent is an identity owned by exactly one human or coop. Its record says who it is; what it may do comes only from policies (AIP-58).",
+    "summary": "An agent is an identity owned by exactly one human or coop. Its record says who it is; what it may do comes only from policies (OLD-AIP-58).",
     "records": [
      {
       "name": "identity record (an agent)",
@@ -20,7 +20,7 @@
        [
         "id",
         "agent ID",
-        "agent:b3: and the hash of the agent's birth record (AIP-50)"
+        "agent:b3: and the hash of the agent's birth record (OLD-AIP-50)"
        ],
        [
         "owner",
@@ -35,7 +35,7 @@
        [
         "lock",
         "x25519 public key",
-        "the agent's own lock; envelopes are sealed to it (AIP-57)"
+        "the agent's own lock; envelopes are sealed to it (OLD-AIP-57)"
        ],
        [
         "rev",
@@ -55,7 +55,7 @@
        [
         "seq",
         "integer ≥ 1",
-        "the signer's running number within this epoch (AIP-61)"
+        "the signer's running number within this epoch (OLD-AIP-61)"
        ],
        [
         "sig",
@@ -110,19 +110,19 @@
      },
      {
       "id": "agent.record_key",
-      "text": "A record is identified by (agent, epoch, seq); two different records with the same triple prove the signer lied (AIP-61)."
+      "text": "A record is identified by (agent, epoch, seq); two different records with the same triple prove the signer lied (OLD-AIP-61)."
      },
      {
       "id": "agent.peer_id",
-      "text": "The agent's Loro peer ID for a piece of data is the first 8 bytes of b3(\"theos/loro-peer\" ‖ agent ID ‖ epoch ‖ data ID), so a restore never reuses an op ID (AIP-63)."
+      "text": "The agent's Loro peer ID for a piece of data is the first 8 bytes of b3(\"theos/loro-peer\" ‖ agent ID ‖ epoch ‖ data ID), so a restore never reuses an op ID (OLD-AIP-63)."
      }
     ],
     "intents": [
-     "AIP-31",
-     "AIP-58",
-     "AIP-61",
-     "AIP-63",
-     "AIP-69"
+     "OLD-AIP-31",
+     "OLD-AIP-58",
+     "OLD-AIP-61",
+     "OLD-AIP-63",
+     "OLD-AIP-69"
     ]
    }
   },
@@ -134,7 +134,7 @@
     "phone's signer": "PRF(passkey, phone's salt) → ed25519:Fp2…",
     "laptop's signer": "PRF(passkey, laptop's salt) → ed25519:Lp4…"
    },
-   "deep": "A passkey's PRF extension returns the same secret for the same input on every device it syncs to, so the guardian key exists only while you unlock the passkey. Guardians are checked by the core verifier, like birth records, not by the operations engine: no policy, condition or plugin can reach them (AIP-91).",
+   "deep": "A passkey's PRF extension returns the same secret for the same input on every device it syncs to, so the guardian key exists only while you unlock the passkey. Guardians are checked by the core verifier, like birth records, not by the operations engine: no policy, condition or plugin can reach them (OLD-AIP-91).",
    "spec": {
     "summary": "The root of trust of every identity: one key or one identity, outside the policy engine, changed only by its own succession.",
     "records": [
@@ -150,7 +150,7 @@
        [
         "agent signers",
         "ed25519 public keys",
-        "PRF(passkey, per-device salt), one per device (AIP-31)"
+        "PRF(passkey, per-device salt), one per device (OLD-AIP-31)"
        ]
       ]
      },
@@ -212,9 +212,9 @@
      }
     ],
     "intents": [
-     "AIP-31",
-     "AIP-59",
-     "AIP-91"
+     "OLD-AIP-31",
+     "OLD-AIP-59",
+     "OLD-AIP-91"
     ]
    }
   },
@@ -251,7 +251,7 @@
      "value": "…"
     }
    },
-   "deep": "One genesis record creates the human and its first agent together: no chicken-and-egg. It commits to the agent's next key in advance (KERI-style pre-rotation). Both IDs are its hash, typed once as human and once as agent (AIP-50); a record can't contain its own hash, so inside it the two are “this human” and “this agent”.",
+   "deep": "One genesis record creates the human and its first agent together: no chicken-and-egg. It commits to the agent's next key in advance (KERI-style pre-rotation). Both IDs are its hash, typed once as human and once as agent (OLD-AIP-50); a record can't contain its own hash, so inside it the two are “this human” and “this agent”.",
    "spec": {
     "summary": "One record creates a human (or coop) and its first agent, names the guardian, and gives the agent its first policy.",
     "records": [
@@ -266,7 +266,7 @@
        [
         "guardian",
         "key or identity",
-        "a human's guardian key; for a coop, one identity (AIP-91)"
+        "a human's guardian key; for a coop, one identity (OLD-AIP-91)"
        ],
        [
         "agent.signer",
@@ -315,10 +315,10 @@
      }
     ],
     "intents": [
-     "AIP-50",
-     "AIP-58",
-     "AIP-69",
-     "AIP-91"
+     "OLD-AIP-50",
+     "OLD-AIP-58",
+     "OLD-AIP-69",
+     "OLD-AIP-91"
     ]
    }
   },
@@ -351,7 +351,7 @@
      "value": "…"
     }
    },
-   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only policies on the identity it acts for, traced back to that identity's guardian. Acting for a coop adds hops: your phone → you → home. Ownership alone gives nothing (AIP-57, AIP-58, AIP-91).",
+   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only policies on the identity it acts for, traced back to that identity's guardian. Acting for a coop adds hops: your phone → you → home. Ownership alone gives nothing (OLD-AIP-57, OLD-AIP-58, OLD-AIP-91).",
    "spec": {
     "summary": "Every further agent gets one policy from the identity it acts for, with conditions on act.",
     "records": [
@@ -370,7 +370,7 @@
        ],
        [
         "operations",
-        "Operations (AIP-56)",
+        "Operations (OLD-AIP-56)",
         "keyed by name: act, own"
        ],
        [
@@ -381,7 +381,7 @@
        [
         "expires",
         "time or null",
-        "identity policies don't expire unless they say so (AIP-50)"
+        "identity policies don't expire unless they say so (OLD-AIP-50)"
        ],
        [
         "proof",
@@ -394,7 +394,7 @@
     "rules": [
      {
       "id": "policy.agent.issuer",
-      "text": "A policy on an identity is valid only if signed by its guardian, or along a chain that carries own on it, within that own (AIP-91)."
+      "text": "A policy on an identity is valid only if signed by its guardian, or along a chain that carries own on it, within that own (OLD-AIP-91)."
      },
      {
       "id": "policy.chain",
@@ -402,26 +402,26 @@
      },
      {
       "id": "policy.agent.no_widening",
-      "text": "Its operations and conditions are within the signing agent's own (AIP-59)."
+      "text": "Its operations and conditions are within the signing agent's own (OLD-AIP-59)."
      },
      {
       "id": "policy.agent.both_layers",
-      "text": "An agent may do an operation on data only if its policy on its owner covers it and the owner's roles and policies on the data cover it (AIP-58)."
+      "text": "An agent may do an operation on data only if its policy on its owner covers it and the owner's roles and policies on the data cover it (OLD-AIP-58)."
      },
      {
       "id": "policy.agent.scope",
-      "text": "act without data covers all of the owner's data; act with data covers only the listed data, and for each only its Operations object, checked exactly like a data policy's (AIP-56)."
+      "text": "act without data covers all of the owner's data; act with data covers only the listed data, and for each only its Operations object, checked exactly like a data policy's (OLD-AIP-56)."
      },
      {
       "id": "policy.no_guardian_change",
-      "text": "No policy can change or remove a guardian; own covers roles, agents' policies and data policies, never the guardian (AIP-91)."
+      "text": "No policy can change or remove a guardian; own covers roles, agents' policies and data policies, never the guardian (OLD-AIP-91)."
      }
     ],
     "intents": [
-     "AIP-56",
-     "AIP-58",
-     "AIP-59",
-     "AIP-69"
+     "OLD-AIP-56",
+     "OLD-AIP-58",
+     "OLD-AIP-59",
+     "OLD-AIP-69"
     ]
    }
   },
@@ -446,7 +446,7 @@
      "value": "…"
     }
    },
-   "deep": "The laptop's birth record names the invite and carries a second signature by the one-time key; together they are its policy, exactly as granted. Two births citing one invite are both invalid. An invite can't grant more than the agent that signed it holds (AIP-69).",
+   "deep": "The laptop's birth record names the invite and carries a second signature by the one-time key; together they are its policy, exactly as granted. Two births citing one invite are both invalid. An invite can't grant more than the agent that signed it holds (OLD-AIP-69).",
    "spec": {
     "summary": "Pairing without a second device online: the invite is the policy, signed in advance; the birth record proves possession of the one-time secret.",
     "records": [
@@ -472,7 +472,7 @@
        [
         "grants",
         "operations object",
-        "exactly what the new agent gets (AIP-56, act conditions AIP-58)"
+        "exactly what the new agent gets (OLD-AIP-56, act conditions OLD-AIP-58)"
        ],
        [
         "proof",
@@ -517,7 +517,7 @@
        [
         "time",
         "RFC 3339",
-        "the author's signed time (AIP-60)"
+        "the author's signed time (OLD-AIP-60)"
        ],
        [
         "invite_sig",
@@ -535,7 +535,7 @@
     "rules": [
      {
       "id": "invite.issuer",
-      "text": "An invite is valid only if signed by the guardian of invite.on, or by an agent with own on it whose own covers the grants (AIP-91)."
+      "text": "An invite is valid only if signed by the guardian of invite.on, or by an agent with own on it whose own covers the grants (OLD-AIP-91)."
      },
      {
       "id": "invite.join",
@@ -543,7 +543,7 @@
      },
      {
       "id": "invite.policy",
-      "text": "A valid birth by invite gives the new agent exactly invite.grants on invite.on, as a policy of invite.on; it ends like any policy (AIP-58, AIP-60)."
+      "text": "A valid birth by invite gives the new agent exactly invite.grants on invite.on, as a policy of invite.on; it ends like any policy (OLD-AIP-58, OLD-AIP-60)."
      },
      {
       "id": "invite.single_use",
@@ -551,7 +551,7 @@
      },
      {
       "id": "invite.cancel",
-      "text": "The owner may end an unused invite with an ending; a birth that didn't see the ending loses (AIP-60)."
+      "text": "The owner may end an unused invite with an ending; a birth that didn't see the ending loses (OLD-AIP-60)."
      },
      {
       "id": "invite.secret",
@@ -559,10 +559,10 @@
      }
     ],
     "intents": [
-     "AIP-56",
-     "AIP-58",
-     "AIP-60",
-     "AIP-69"
+     "OLD-AIP-56",
+     "OLD-AIP-58",
+     "OLD-AIP-60",
+     "OLD-AIP-69"
     ]
    }
   },
@@ -601,7 +601,7 @@
      "value": "…"
     }
    },
-   "deep": "Members' act and own need one signature each (AIP-49). Two holders of own who undo each other at the same moment both stand, and the guardian repairs (AIP-59). Succession: the guardian signs a new guardian record naming its successor; it can't leave without one (AIP-91).",
+   "deep": "Members' act and own need one signature each (OLD-AIP-49). Two holders of own who undo each other at the same moment both stand, and the guardian repairs (OLD-AIP-59). Succession: the guardian signs a new guardian record naming its successor; it can't leave without one (OLD-AIP-91).",
    "spec": {
     "summary": "A coop's guardian is one identity, its root of trust; its roles get act and, if the guardian gives it, own.",
     "records": [
@@ -645,7 +645,7 @@
        ],
        [
         "operations",
-        "Operations (AIP-56)",
+        "Operations (OLD-AIP-56)",
         "act; own if the guardian delegates management"
        ],
        [
@@ -671,14 +671,14 @@
      },
      {
       "id": "guardian.below",
-      "text": "Below the guardian, concurrent removals both stand, and the guardian repairs (AIP-59)."
+      "text": "Below the guardian, concurrent removals both stand, and the guardian repairs (OLD-AIP-59)."
      }
     ],
     "intents": [
-     "AIP-49",
-     "AIP-51",
-     "AIP-59",
-     "AIP-91"
+     "OLD-AIP-49",
+     "OLD-AIP-51",
+     "OLD-AIP-59",
+     "OLD-AIP-91"
     ]
    }
   },
@@ -701,7 +701,7 @@
      "value": "…"
     }
    },
-   "deep": "The street's role “homes” lists home coops; this policy gives that role act on the street, and the street's guardian stays its root. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for “family”, the street's policy for “homes”. Roles are checked whenever they change; loops of coops are settled when the view is built (AIP-63)."
+   "deep": "The street's role “homes” lists home coops; this policy gives that role act on the street, and the street's guardian stays its root. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for “family”, the street's policy for “homes”. Roles are checked whenever they change; loops of coops are settled when the view is built (OLD-AIP-63)."
   },
   {
    "title": "Losing your phone.",

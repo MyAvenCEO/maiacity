@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/meadowcap",
+ "title": "Meadowcap",
+ "url": "https://github.com/earthstar-project/willowprotocol.org/blob/main/src/pages/specs/meadowcap.tsx",
+ "read": "yes"
+}

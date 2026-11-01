@@ -1,0 +1,8 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/local-first-web-auth-crdx",
+ "title": "local-first-web/auth: CRDX",
+ "url": "https://github.com/local-first-web/auth/blob/main/packages/crdx/README.md",
+ "read": "yes"
+}

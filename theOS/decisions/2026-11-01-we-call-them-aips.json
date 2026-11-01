@@ -1,0 +1,13 @@
+{
+ "type": "decision",
+ "subtype": "answer",
+ "id": "decisions/2026-11-01-we-call-them-aips",
+ "by": "Samuel",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "quote": "we still call them AIPs so AIP 1 not CEO-1",
+ "means": "Intents keep the name AIP.",
+ "intents": [
+  "aip/AIP-1"
+ ]
+}
