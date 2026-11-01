@@ -1,0 +1,148 @@
+{
+ "type": "review",
+ "id": "aip/AIP-2/c3-review",
+ "intent": "aip/AIP-2",
+ "checkpoint": 3,
+ "lens": "critic",
+ "checker": "a fresh agent (Agent tool, general-purpose), seeing only the record, avenCEO's Review gate, the diff and the files",
+ "rounds": [
+  {
+   "round": 1,
+   "commit": "649608d55 (+ test.sh and round 2's tag.sh, uncommitted)",
+   "reviewed": "git diff 9558209^ -- theOS/sandbox/{run,cloud-setup,environment-setup,environment-setup.previous,test,tag}.sh, and the files",
+   "prompt": "You are a \"goldfish\" critic: a fresh reader with no history of this project, doing avenCEO's Review gate on one checkpoint. You are strictly read-only: do not edit, write or create any file in the repository, do not run git commands that change anything, do not push or call GitHub. You may run read-only commands, and you may run theOS/sandbox/test.sh --no-box (it works in a temporary folder of its own).\n\nThe project is theOS, in /home/user/maiacity/theOS/. Code outside theOS/ is legacy, except what this intent moves. theOS keeps one JSON doc per thing; a path like \"aip/AIP-2\" is the file theOS/aip/AIP-2.json.\n\nRead the record /home/user/maiacity/theOS/aip/AIP-2.json (focus: claim c4, checkpoint 3, its events, and the Gate B question) and avenCEO's Review gate /home/user/maiacity/theOS/avenCEO/gates/review.json. Then review checkpoint 3's work:\n- the diff: <scratchpad>/c3.diff\n- the files: /home/user/maiacity/theOS/sandbox/run.sh, cloud-setup.sh, environment-setup.sh, environment-setup.previous.sh, test.sh, tag.sh (and the image workflow .github/workflows/avensandbox-image.yml for how the tag is built).\n\nQuestions: Does the work keep c4's promise (run.sh runs any command inside the image the same way in a cloud session, on a runner and on a Mac with OrbStack; a new cloud session finds the image already pulled; a warm-up that fails or hangs never stops a session) and does test.sh really check it? Bugs: quoting, set -e/pipefail traps, exit codes passed through, the time limit (what happens to child processes when it fires, before the disk snapshot), dockerd started in the background, running as non-root, a Mac (bash 3.2, BSD tools, no sha256sum, arm64), paths with spaces, the environment script run from different working directories. Is the undo (pasting environment-setup.previous.sh back) real? Is anything heavier than needed?\n\nFor each finding give: Severity (Blocker | Major | Nit), kind (one of: bug, wrong fact, unclear, contradiction, YAGNI, security, missing check), the affected file and line, the reasoning, and a concrete fix. Give evidence a reader can verify. At most 600 words, plain text, no praise, lead with what is wrong. If there is no Blocker or Major, say so plainly.",
+   "result": "2 Blocker, 2 Major, 6 Nit: not clean",
+   "findings": [
+    {
+     "sev": "Blocker",
+     "kind": "bug",
+     "scope": "run.sh: an empty array under set -u on bash 3.2",
+     "text": "On a Mac, /bin/bash is 3.2, where \"${tty[@]}\" of an empty array is unbound under set -u; with no terminal (test.sh, a workflow, any script) run.sh exits 1 before docker.",
+     "answer": "fix",
+     "note": "${tty[@]+\"${tty[@]}\"}: expands to nothing on every bash; tried under set -u here."
+    },
+    {
+     "sev": "Blocker",
+     "kind": "bug",
+     "scope": "test.sh on a Mac: no timeout",
+     "text": "macOS has no GNU timeout: the environment cases gave a false pass (the hang 'cut' at 0 s) and a red 'finds' case.",
+     "answer": "fix",
+     "note": "test.sh runs the environment cases only where timeout exists, and says it skips them otherwise (the environment's script runs only in cloud sessions); the hang case now asserts the planted warm-up started, and took at least the limit."
+    },
+    {
+     "sev": "Major",
+     "kind": "missing check",
+     "scope": "test.sh: the absolute glob",
+     "text": "The environment script's third glob, /home/user/*/theOS/..., found the real cloud-setup.sh, so the 'no setup file' case never tested a missing file and ran the real warm-up.",
+     "answer": "fix",
+     "note": "The root is AVENSANDBOX_HOME (default /home/user); test.sh points it inside its scratch folder."
+    },
+    {
+     "sev": "Major",
+     "kind": "missing check",
+     "scope": "test.sh: dockerd's start never exercised",
+     "text": "c4's check says run.sh starts dockerd when it is down; the test ran run.sh only where Docker already answered.",
+     "answer": "fix",
+     "note": "test.sh --cold (as root, with dockerd): stops dockerd as after a snapshot, then asserts run.sh started it and ran the command."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "environment-setup.sh: no kill, dockerd at the snapshot",
+     "text": "timeout without -k never kills; dockerd keeps running into the snapshot.",
+     "answer": "fix",
+     "note": "timeout -k 30; cloud-setup.sh stops the dockerd it started, waits for it and syncs. If the limit fires, dockerd may still be running: the next session's run.sh finds it gone and starts it again."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "run.sh: every pull failure read as 'not published'",
+     "text": "Network, disk and auth failures were all reported as 'push the change', and the first multi-GB pull was silent.",
+     "answer": "fix",
+     "note": "run.sh asks the registry for the tag first; only that failure says 'not published (or the registry is out of reach)'; the pull then shows its progress and errors."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "run.sh: non-root on Linux told to start OrbStack",
+     "text": "",
+     "answer": "fix",
+     "note": "A separate message: only root can start dockerd here, start it yourself."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "run.sh: the box runs as root",
+     "text": "Files the check writes into theOS/ are root's on a non-root Linux host.",
+     "answer": "decline",
+     "note": "Deliberate: the tools live in root's /opt and cargo writes to CARGO_HOME=/opt/cargo (theOS/sandbox/box/Dockerfile), so another user breaks cargo; cloud sessions run as root; said in run.sh's header."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "run.sh: no .git in the box; HEAD's tag",
+     "text": "Only theOS/ is mounted; uncommitted box/ edits run the old image.",
+     "answer": "fix",
+     "note": "Both said in run.sh's header. Whether the check needs .git is checkpoint 4's to settle with AIP-1's check command."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "the undo",
+     "text": "Pasting environment-setup.previous.sh back restores an un-timed warm-up whose bun run up no longer works, not the old state.",
+     "answer": "fix",
+     "note": "Said in the record's risk: the undo restores the previous script, which still exits 0 but has no time limit, and its avenDB warm-up fails since the box moved."
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "commit": "473c9994f",
+   "reviewed": "round 1's fixes (git diff c2d6c8e4c 473c9994f -- theOS/sandbox) and the files at 473c9994f",
+   "prompt": "You are a \"goldfish\" critic: a fresh reader with no history of this project, doing avenCEO's Review gate on one checkpoint. You are strictly read-only: do not edit, write or create any file in the repository, do not run git commands that change anything, do not push or call GitHub. You may run read-only commands, and you may run theOS/sandbox/test.sh --no-box (it works in a temporary folder of its own). Do not run test.sh --cold, run.sh, or the environment script against the real repository.\n\nThe project is theOS, in /home/user/maiacity/theOS/. Code outside theOS/ is legacy, except what this intent moves. theOS keeps one JSON doc per thing; a path like \"aip/AIP-2\" is the file theOS/aip/AIP-2.json.\n\nRead the record /home/user/maiacity/theOS/aip/AIP-2.json (focus: claim c4, checkpoint 3, its events, the risk and the Gate B question) and avenCEO's Review gate /home/user/maiacity/theOS/avenCEO/gates/review.json. Round 1 of this review is /home/user/maiacity/theOS/aip/AIP-2/c3-review.json, with an answer to every finding: those findings are settled; raise one again only if the fix did not actually happen or is wrong. Then review checkpoint 3's work as it stands at commit 473c9994f:\n- round 1's fixes: <scratchpad>/c3-round2.diff\n- the files: /home/user/maiacity/theOS/sandbox/run.sh, cloud-setup.sh, environment-setup.sh, environment-setup.previous.sh, test.sh, tag.sh.\n\nQuestions: Do the fixes work, and did any fix cause a new problem (bash 3.2 on a Mac, set -u, the registry check before the pull, docker buildx or docker manifest being absent, timeout -k, AVENSANDBOX_HOME, cloud-setup.sh stopping the dockerd it started, test.sh --cold)? Does the work keep c4's promise, and does test.sh check it?\n\nFor each finding give: Severity (Blocker | Major | Nit), kind (one of: bug, wrong fact, unclear, contradiction, YAGNI, security, missing check), the affected file and line, the reasoning, and a concrete fix. Give evidence a reader can verify. At most 400 words, plain text, no praise, lead with what is wrong. If there is no Blocker or Major, say so plainly.",
+   "result": "0 Blocker, 0 Major, 5 Nit: clean. The Review gate of checkpoint 3 passes.",
+   "findings": [
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "the real cloud-setup.sh is never tested",
+     "text": "Only planted warm-ups ran in test.sh; stopping dockerd and having the box after the warm-up were checked by hand.",
+     "answer": "fix",
+     "note": "test.sh --cold runs the real cloud-setup.sh with dockerd down and asserts exit 0, dockerd stopped after, the box present."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "run.sh's 'not published' path untested",
+     "text": "",
+     "answer": "fix",
+     "note": "AVENSANDBOX_IMAGE (test only) names a tag that does not exist; test.sh asserts exit 1 and 'is not published'."
+    },
+    {
+     "sev": "Nit",
+     "kind": "wrong fact",
+     "scope": "600 s",
+     "text": "The worst case is 630 s.",
+     "answer": "fix",
+     "note": "The script's header and Gate B's step 1 say 600 s, killed at 630 s."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "cloud-setup.sh could kill a dockerd it did not start",
+     "text": "A slow-answering dockerd read as down would be killed.",
+     "answer": "fix",
+     "note": "run.sh writes the pid of the dockerd it starts to /var/run/avensandbox-dockerd.pid; cloud-setup.sh stops only that pid."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "--cold stops every container",
+     "text": "",
+     "answer": "fix",
+     "note": "Said in test.sh's header."
+    }
+   ]
+  }
+ ]
+}

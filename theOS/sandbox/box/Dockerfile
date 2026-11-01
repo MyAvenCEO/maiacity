@@ -1,14 +1,17 @@
 # avenSANDBOX's image, owned by theOS (theOS/aip/AIP-2.json, D-24, D-33): every tool theOS's checks are built and run
-# with, never our code. Every version is pinned. Its build context is this folder alone, and its tag is the hash of this
-# folder and of .github/workflows/avensandbox-image.yml, which builds it on every push that changes either; theOS/sandbox/
-# run.sh pulls it and runs a command inside it with theOS/ mounted, the same in a cloud session, on a runner and on a Mac.
+# with, never our code. The base images are pinned by digest and every tool by version; the apt packages (the base's
+# Ubuntu noble) and the rustup and elan installers are not, so a rebuild may take their newer patches. Its build context
+# is this folder alone, and its tag (theOS/sandbox/tag.sh) is the hash of this folder, the image workflow
+# (.github/workflows/avensandbox-image.yml, which builds it on every push that changes them) and tag.sh itself;
+# theOS/sandbox/run.sh pulls it and runs a command inside it with theOS/ mounted, the same in a cloud session, on a
+# runner and on a Mac.
 # avenDB's own step (compiling its third-party crates into the image) stayed behind: it comes back for theOS's own
 # crates when theOS has a Cargo workspace.
 
 FROM ghcr.io/versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316 AS versitygw
 RUN cp "$(command -v versitygw)" /versitygw
 
-FROM mcr.microsoft.com/playwright:v1.64.1-noble
+FROM mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
 
 ARG RUST_VERSION=1.99.1
 ARG WASM_BINDGEN_VERSION=0.2.130
@@ -47,20 +50,20 @@ RUN arch=$(uname -m) \
     && elan toolchain install "leanprover/lean4:${LEAN_VERSION}" \
     && lean --version
 
-# versitygw: S3 over a folder, with conditional writes on PUT and DELETE (If-Match, If-None-Match), which avenDB's
-# store relies on. compose.yml runs it as the service `s3`. The build fails here if the binary can't run on this base.
+# versitygw: S3 over a folder, with conditional writes on PUT and DELETE (If-Match, If-None-Match). Kept with every tool
+# (D-33), for a store tested against S3 in the box. The build fails here if the binary can't run on this base.
 COPY --from=versitygw /versitygw /usr/local/bin/versitygw
 RUN versitygw --help > /dev/null
 
-# clang and llvm: ring, under iroh, compiles C for the Peer-Light's wasm32 target, which gcc can't. A layer of its own
-# at the end, so the layers above stay cached.
+# clang and llvm: crates that compile C for the wasm32 target (ring, under iroh) need clang, which gcc can't replace.
+# Kept with every tool (D-33). A layer of its own near the end, so the layers above stay cached.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends clang llvm \
     && rm -rf /var/lib/apt/lists/* \
     && clang --version > /dev/null && llvm-ar --version > /dev/null
 
-# The fuzzer (db/docs/README.md, "Importing"): libFuzzer's sanitizers need a nightly, pinned by date, used only by
-# `cargo fuzz` (sandbox/fuzz.sh); every build and test stays on the stable toolchain above. cargo-fuzz itself builds on
+# The fuzzer: libFuzzer's sanitizers need a nightly, pinned by date, used only by `cargo fuzz`; every build and test
+# stays on the stable toolchain above. Kept with every tool (D-33). cargo-fuzz itself builds on
 # stable. A layer of its own near the end, so the layers above stay cached.
 ENV AVEN_NIGHTLY=${RUST_NIGHTLY}
 RUN rustup toolchain install "${RUST_NIGHTLY}" --profile minimal \
