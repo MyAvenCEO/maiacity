@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "D-44",
+ "n": 44,
+ "title": "Threads for AIP-1, AIP-2, AIP-4 and AIP-5",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "threads",
+  "intents"
+ ],
+ "quote": "AIP-4 runs in its own thread, and AIP-1, AIP-2 and AIP-5 should each have their own thread too.",
+ "means": "AIP-1 (build), AIP-2 (build), AIP-4 (Understand) and AIP-5 (Understand) each get a thread of their own, as AIP-3 has. AIP-6 gets its own when it continues.",
+ "intents": [
+  "aip/AIP-1",
+  "aip/AIP-2",
+  "aip/AIP-4",
+  "aip/AIP-5"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-43"
+ ],
+ "reflection": {
+  "checked": "every decision before D-44 that held",
+  "result": "supersedes nothing"
+ }
+}

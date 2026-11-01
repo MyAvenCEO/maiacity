@@ -37,6 +37,17 @@
    "writes": [],
    "reads": [],
    "task": "t1"
+  },
+  {
+   "at": "2026-11-01T10:00Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "This intent runs in its own thread; avenMAIA orchestrates.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-44"
+   ],
+   "reads": []
   }
  ],
  "reviews": [],
