@@ -621,7 +621,7 @@
    "title": "Only the owner changes policies",
    "status": "decided",
    "decision": "The owner writes and ends all policies on its data; ownership acts (retain, erase, open the archive, migrate to a new schema version) stay with the owner alone. Nobody else writes policies, and ownership is never handed over (D54).",
-   "why": "Identities work like Gnosis Safes: agents of its members sign under the identity's own policies (one signature for now, D49), with one governor at the top of a coop (D59). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
+   "why": "Identities work like Gnosis Safes: agents of its members sign under the identity's own policies (one signature for now, D49), with one guardian at the top of a coop (D59). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
    "supersedes": "D15; removes admin from the role do-list in D8",
    "sources": [
     {
@@ -985,7 +985,7 @@
    "title": "One signature by default; counts come later as plugins",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "For now, every act, own and govern of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of a member (1 of 1). Govern goes to the coop's one governor (D59). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (D48), and devices that do not know them treat them as not satisfied.",
+   "decision": "For now, every act, own and govern of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of a member (1 of 1). Govern goes to the coop's one guardian (D59). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (D48), and devices that do not know them treat them as not satisfied.",
    "why": "Keeps the first version simple while the plugin system leaves room to grow.",
    "sources": [],
    "slides": [
@@ -1016,7 +1016,7 @@
    "id": "D51",
    "title": "Only roles and policies",
    "status": "decided",
-   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role; policies on the coop say what that role may do, act and own for a home's members, only act for the homes of a street; govern goes to the coop's one governor (D59).",
+   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role; policies on the coop say what that role may do, act and own for a home's members, only act for the homes of a street; govern goes to the coop's one guardian (D59).",
    "why": "One mechanism for everything: who is in which group (roles) and what that group may do (policies).",
    "supersedes": "membership as its own record kind",
    "sources": [],
@@ -1184,8 +1184,8 @@
   },
   {
    "id": "D59",
-   "title": "One top: one owner per piece of data, one governor per coop",
-   "decision": "Authority has exactly one top and flows only downward. A piece of data has one owner (D5). A coop has one governor: its govern policy goes to a governor role that holds exactly one identity; its members role gets act and own, one signature each (D49). Nobody can give more than it holds, and nobody can remove the one above it. When two holders below the top remove each other at the same moment, both removals stand and the top repairs, for example by adding one back; there is no seniority and no coin flip. The top cannot clash with itself because it is one. A governor hands govern on before stepping down. Signature counts for govern come later as condition plugins.",
+   "title": "One top: one owner per piece of data, one guardian per coop",
+   "decision": "Authority has exactly one top and flows only downward. A piece of data has one owner (D5). A coop has one guardian: its govern policy goes to a guardian role that holds exactly one identity; its members role gets act and own, one signature each (D49). Nobody can give more than it holds, and nobody can remove the one above it. When two holders below the top remove each other at the same moment, both removals stand and the top repairs, for example by adding one back; there is no seniority and no coin flip. The top cannot clash with itself because it is one. A guardian hands govern on before stepping down. Signature counts for govern come later as condition plugins.",
    "why": "Without a total order, peers with equal power can remove each other at once and leave nobody, and with one signature any member could take a coop over. Keyhive's Keyline calls this mutual destruction in the root role; its mitigation is a single owner at the top, with every layer below repairable from above. Gnosis Safes avoid it with a blockchain's total order, which a local-first system does not have.",
    "sources": [
     {
@@ -1444,11 +1444,11 @@
   },
   {
    "id": "D70",
-   "title": "Govern becomes k of n inside the one governor role",
-   "status": "proposed",
+   "title": "One guardian per identity, changed only by succession",
+   "status": "decided",
    "date": "2026-10-31",
-   "decision": "The governor role stays the one top (D59). When signature counts arrive (D49), govern becomes k of n inside that role, so the rule stays “one top”. Until then a governor names its successor in a signed succession record before leaving.",
-   "why": "With one governor, every change of roles or governance waits for one person's devices.",
+   "decision": "Every human and every coop has exactly one guardian, the one top of its authority, which alone holds govern on it. A human is its own guardian and acts as one through its own agents with govern (passkeys are the single source of truth for now). A coop's guardian is its guardian role, which always holds exactly one identity. A coop's guardian changes only by succession: the current guardian signs a new guardian role record naming its successor, which must list the previous one as seen. A guardian can't leave or be removed without naming a successor, so no coop ends up without one. If two guardian role records are concurrent (the guardian's own agents disagreed), neither takes effect until a record sees both. Agents have no guardian; their owner governs them. Below the guardian, concurrent removals both stand and the guardian repairs (D59). Several guardians acting by majority, with chained signatures, may come later.",
+   "why": "Keeps one top, so no two equals can remove each other at once and a coop can never lock itself out, without signature counts or quorums yet. The word guardian says what the role is for: keeping the coop whole.",
    "sources": [
     {
      "label": "NextGraph: types",
@@ -1456,7 +1456,8 @@
     }
    ],
    "slides": [
-    "identity-7"
+    "identity-7",
+    "identity-10"
    ]
   },
   {

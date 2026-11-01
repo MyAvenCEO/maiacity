@@ -152,7 +152,7 @@
     },
     "result": "removal wins, c40b11:9 dropped"
    },
-   "deep": "Concurrency is resolved toward less authority (D14): a removal and a change that didn't list it as seen count as concurrent, and the removal wins over the removed member's own changes, even if the change claims an older place in the history. Nothing wins by being latest. If two members remove each other at once, both removals stand and the governor repairs (D59)."
+   "deep": "Concurrency is resolved toward less authority (D14): a removal and a change that didn't list it as seen count as concurrent, and the removal wins over the removed member's own changes, even if the change claims an older place in the history. Nothing wins by being latest. If two members remove each other at once, both removals stand and the guardian repairs (D59)."
   },
   {
    "title": "Checking, in short.",

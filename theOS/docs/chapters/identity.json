@@ -477,10 +477,10 @@
   },
   {
    "title": "A coop decides by its own policies.",
-   "text": "A policy on the coop says what its “members” role may do for it: act, ordinary changes for the coop, and own, writing and ending the policies on the coop's data. The third kind, govern, changing the coop's own roles and policies, goes to a {governor}: a role with exactly one identity, for now you. One top, so nobody can remove each other at the same moment. Before you step down, you hand govern on.",
+   "text": "A policy on the coop says what its “members” role may do for it: act, ordinary changes for the coop, and own, writing and ending the policies on the coop's data. The third kind, govern, changing the coop's own roles and policies, belongs to its {guardian}: a role with exactly one identity, for now you. One top, so nobody can remove each other at the same moment. Before you step down, you name the next guardian.",
    "code": {
     "type": "data:b3:R9f…@b3:00f…#policy",
-    "to": "role:b3:h9g…#home/governor",
+    "to": "role:b3:h9g…#home/guardian",
     "on": "coop:b3:c7n2…#home",
     "operations": {
      "govern": {}
@@ -494,7 +494,100 @@
      "value": "…"
     }
    },
-   "deep": "Same shape as every policy. The members role gets act and own, one signature each (1 of 1, D49). Govern goes only to the governor role, which holds exactly one identity (D59). Below the top, if two members undo each other at the same moment, both stand and the governor repairs. Counts like 2 of 3 come later as condition plugins."
+   "deep": "Same shape as every policy. The members role gets act and own, one signature each (1 of 1, D49). Govern goes only to the guardian role, which always holds exactly one identity (D59, D70). Below the guardian, if two members undo each other at the same moment, both stand and the guardian repairs. Several guardians acting by majority may come later.",
+   "spec": {
+    "summary": "Every identity has exactly one guardian, the one top of its authority. A human is its own; a coop's is its guardian role, changed only by succession.",
+    "records": [
+     {
+      "name": "policy record (govern, on a coop)",
+      "fields": [
+       [
+        "to",
+        "role ID",
+        "the coop's guardian role"
+       ],
+       [
+        "on",
+        "coop ID",
+        "the coop"
+       ],
+       [
+        "operations",
+        "Operations (D56)",
+        "{\"govern\": {}}"
+       ],
+       [
+        "proof",
+        "record IDs",
+        "from the coop's birth record"
+       ]
+      ]
+     },
+     {
+      "name": "role record (the guardian role)",
+      "about": "A succession is simply a new version of this record, signed by the current guardian.",
+      "fields": [
+       [
+        "id",
+        "role ID",
+        "role:b3:…#home/guardian"
+       ],
+       [
+        "of",
+        "coop ID",
+        "the coop"
+       ],
+       [
+        "identities",
+        "list of one",
+        "exactly one human or coop"
+       ],
+       [
+        "after",
+        "heads",
+        "must include the previous guardian role record"
+       ],
+       [
+        "sig",
+        "signature",
+        "by an agent of the current guardian with govern on it"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "guardian.one",
+      "text": "Every human and coop has exactly one guardian: a human is its own; a coop's guardian role holds exactly one identity at all times, and a guardian role record with zero or several identities is invalid. Agents have none; their owner governs them."
+     },
+     {
+      "id": "guardian.govern_only",
+      "text": "Only the guardian holds govern on the coop: changing the coop's roles and identity policies, including the members role."
+     },
+     {
+      "id": "guardian.succession",
+      "text": "Only the current guardian may write a new guardian role record, and it must list the previous one as seen; the new record names its successor."
+     },
+     {
+      "id": "guardian.concurrent",
+      "text": "If two guardian role records are concurrent (the guardian's own agents disagreed), neither takes effect: the previous guardian stays until a record sees both."
+     },
+     {
+      "id": "guardian.no_exit_without_successor",
+      "text": "A guardian can't leave or be removed; it can only be replaced by a successor it names."
+     },
+     {
+      "id": "guardian.below",
+      "text": "Below the guardian, concurrent removals both stand and the guardian repairs (D59)."
+     }
+    ],
+    "decisions": [
+     "D49",
+     "D51",
+     "D59",
+     "D70"
+    ]
+   }
   },
   {
    "title": "Coops can hold coops.",
@@ -515,7 +608,7 @@
      "value": "…"
     }
    },
-   "deep": "The street's members role lists home coops; this policy gives that role act on the street, and the street's governor keeps govern. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for its members role, the street's policy for its members role. Roles are checked whenever they change; loops of coops are settled when the view is built (D63)."
+   "deep": "The street's members role lists home coops; this policy gives that role act on the street, and the street's guardian keeps govern. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for its members role, the street's policy for its members role. Roles are checked whenever they change; loops of coops are settled when the view is built (D63)."
   },
   {
    "title": "Losing your phone.",
@@ -533,7 +626,7 @@
     "Humans and coops are identities that own and decide.",
     "Agents act for exactly one owner, each with its own signer, and only by its policies.",
     "A role is a named set of identities; a coop's members are its “members” role.",
-    "A coop's members act and own; one governor governs, for now.",
+    "Every identity has one guardian: a human is its own; a coop names one, changed only by succession.",
     "Policies say what a role or an agent may do for an identity: act, own, govern."
    ],
    "deep": "Three identity types: human, coop, agent. Ownership points from humans and coops to agents and data; authority to act flows back only through policies."

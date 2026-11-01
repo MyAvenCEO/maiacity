@@ -38,7 +38,7 @@
      ]
     },
     {
-     "concept": "One top: one governor per coop",
+     "concept": "One top: one guardian per coop",
      "refs": [
       "D59",
       "D49",
@@ -51,7 +51,7 @@
      ],
      "weaknesses": [
       "Every change of roles or governance waits for one person's devices.",
-      "With stolen devices out of scope, a governor's phone in the wrong hands owns the coop."
+      "With stolen devices out of scope, a guardian's phone in the wrong hands owns the coop."
      ],
      "elsewhere": [
       "NextGraph puts removals behind a threshold signature of a quorum.",
@@ -59,8 +59,8 @@
       "Gnosis Safe: k of n owners, ordered by a chain."
      ],
      "proposal": [
-      "Keep one top object (the governor role); when signature counts arrive (D49), govern becomes k of n inside it, so the rule stays “one top”.",
-      "A signed succession record: the governor names the next governor before leaving."
+      "Keep one top object (the guardian role); when signature counts arrive (D49), govern becomes k of n inside it, so the rule stays “one top”.",
+      "A signed succession record: the guardian names the next guardian before leaving."
      ],
      "proposals": [
       "D70"
