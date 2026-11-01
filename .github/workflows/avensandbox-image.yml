@@ -9,8 +9,18 @@ name: avenSANDBOX image
 
 on:
   push:
-    # Every change to theOS: a change to the box builds it; any other change finds it built and only runs theOS's check
-    # inside it (the last job), so the check runs on every commit that changes what it judges.
+    # Only a change to the box itself: the inputs of its tag (theOS/sandbox/tag.sh). It builds and smokes the new box,
+    # then runs theOS's check inside it once.
+    paths:
+      - theOS/sandbox/box/**
+      - theOS/sandbox/tag.sh
+      - theOS/package.json
+      - .github/workflows/avensandbox-image.yml
+  # theOS's check runs once per goal (Samuel, 1 Nov, d-47c5; the repository's rule, CLAUDE.md): on the goal's pull request to
+  # main once it is ready for review, never on a draft (the plan job's guard), finding the box built.
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - theOS/**
       - .github/workflows/avensandbox-image.yml
@@ -27,6 +37,8 @@ concurrency:
 jobs:
   plan:
     name: Plan
+    # A draft pull request runs nothing; every other job needs this one, so they skip with it.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
