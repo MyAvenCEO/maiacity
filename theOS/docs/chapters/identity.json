@@ -248,7 +248,7 @@
      "value": "…"
     }
    },
-   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only what policies from the identity it acts for say, here act for you on your health data. Owning an agent gives it nothing. The same policy decides which keys it gets (Keys chapter, D57, D58).",
+   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only policies from the identity it acts for, written by that identity's guardian (for you: you). Acting for a coop adds hops: your phone → you → home. Ownership alone gives nothing (D57, D58, D70).",
    "spec": {
     "summary": "Every further agent gets one policy from the identity it acts for, with conditions on act.",
     "records": [
@@ -291,7 +291,11 @@
     "rules": [
      {
       "id": "policy.agent.issuer",
-      "text": "An agent policy is valid only if signed by an agent of on whose own policy includes govern."
+      "text": "A policy on an identity is valid only if signed along a chain that carries govern on it: for a human, one of its own agents with govern; for a coop, an agent acting for the coop's guardian (D70)."
+     },
+     {
+      "id": "policy.chain",
+      "text": "Acting for an identity is a chain of policies, one per hop: agent → its owner (the owner's policy to the agent), then identity → coop (the coop's policy to a role listing that identity), as many hops as needed. Ownership itself grants nothing."
      },
      {
       "id": "policy.agent.no_widening",
@@ -304,6 +308,10 @@
      {
       "id": "policy.agent.scope",
       "text": "act without data covers all of the owner's data; act with data covers only the listed data, and for each only its Operations object, checked exactly like a data policy's (D56)."
+     },
+     {
+      "id": "policy.agent.no_govern_for_coop_agents",
+      "text": "An agent owned by a coop never holds govern on it; only the coop's guardian governs."
      }
     ],
     "decisions": [
@@ -579,6 +587,10 @@
      {
       "id": "guardian.below",
       "text": "Below the guardian, concurrent removals both stand and the guardian repairs (D59)."
+     },
+     {
+      "id": "guardian.signs_through_chain",
+      "text": "The guardian exercises govern through its own chain: for a coop guarded by you, your phone → you → the coop as guardian. The coop's own agents (servers) get act and own at most."
      }
     ],
     "decisions": [
