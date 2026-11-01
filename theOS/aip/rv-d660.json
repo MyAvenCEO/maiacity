@@ -18,7 +18,7 @@
      "kind": "security",
      "scope": "theos.yml 12, 34-40; from-main.sh",
      "text": "Under pull_request GitHub runs the workflow and the script from the pull request's own merge commit, so a branch (or an approved fork) that edits from-main.sh or the job's if reports 'Only from main' green.",
-     "answer": "fix",
+     "answer": "fix, superseded in round 2",
      "note": "In two steps, because production holds no copy of the workflow yet and pull_request_target runs production's copy: checkpoint 1 bootstraps with pull_request for the one first merge, which comes from main (avenMAIA opens it from main); checkpoint 2 moves 'Only from main' into its own workflow, .github/workflows/theos-from-main.yml, on pull_request_target with no checkout and the test inline, so production's copy decides, removes the job from theos.yml (a skipped job of that name would count as passed), and test.sh asserts both. Written into c1 and checkpoint 2."
     },
     {
@@ -60,6 +60,39 @@
      "text": "GitHub keeps one waiting run per concurrency group, so a third push to production cancels the second's waiting run.",
      "answer": "fix",
      "note": "Written in the workflow and in c3: the newest commit holds every earlier change and is the one checked and deployed."
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "commit": "fc4b66f9a",
+   "reviewed": "git diff dbe0202d6 fc4b66f9a -- .github theOS/release/test.sh theOS/aip/aip-59ad.json, and the files",
+   "prompt": "Round 2 of the same critic lens, read-only: do round 1's fixes hold; is the two-step answer to round 1's Major sound (bootstrap with pull_request, then 'Only from main' on pull_request_target from production's copy, with no same-named job left in theos.yml); anything wrong about how GitHub runs pull_request_target or required checks; any new bug. Findings with severity, kind, file and line, reasoning, fix; at most 400 words.",
+   "result": "0 Blocker, 2 Major, 1 Nit: not clean. Round 1's Nits hold.",
+   "findings": [
+    {
+     "sev": "Major",
+     "kind": "wrong fact",
+     "scope": "c1, checkpoint 2, rv-d660 round 1's answer",
+     "text": "Since GitHub's change of 8 Dec 2025, pull_request_target takes its workflow from the default branch (main), not the base branch, so 'production's own copy' never decides.",
+     "answer": "fix",
+     "note": "The pull_request_target step is dropped (see the next finding); c1 no longer says it."
+    },
+    {
+     "sev": "Major",
+     "kind": "security",
+     "scope": "c1",
+     "text": "A required check is matched by name and source only; a pull request can add a workflow with a job named 'Only from main' (or 'avenSANDBOX', 'theOS') that passes, so no workflow-level fix stops someone who can open a pull request with workflows.",
+     "answer": "escalate",
+     "note": "c1 and the assumptions now say the checks catch mistakes, not someone with write access, and that merging into production takes write access. A guard no pull request can fake is Samuel's choice: the question in aip-59ad's questions (accept, an organization ruleset 'Require workflows to pass', or approval for outside contributors' runs). Not tested on GitHub: the spoof is not tried."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "test.sh 5-6",
+     "text": "The header still cites d-70.",
+     "answer": "fix",
+     "note": "d-c219."
     }
    ]
   }
