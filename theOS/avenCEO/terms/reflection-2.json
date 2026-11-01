@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/reflection-2",
+ "word": "Reflection",
+ "means": "brain's step on every new doc, of every type: check it against the docs of its type that still hold, and write on the new one what it supersedes or merges; what it left unchecked is recorded, and the reviewer judges it.",
+ "supersedes": [
+  {
+   "term": "avenCEO/terms/reflection",
+   "how": "redefined: every type, not only decisions and terms (D-32); the reviewer judges it (D-50)"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes reflection (redefined)"
+ }
+}

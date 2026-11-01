@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "D-59",
+ "n": 59,
+ "title": "production's ruleset is set",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "release"
+ ],
+ "quote": "All set.",
+ "means": "production's ruleset is set as SANDBOX.md writes it; theOS's release workflow reports its own checks, and you put them into the ruleset in place of the old ones at AIP-5's Gate B.",
+ "intents": [
+  "aip/AIP-5"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-24"
+ ],
+ "reflection": {
+  "checked": "every decision before D-59 that held",
+  "result": "supersedes nothing"
+ }
+}

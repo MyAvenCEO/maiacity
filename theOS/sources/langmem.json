@@ -1,0 +1,45 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/langmem",
+ "title": "LangMem: LangChain's memory SDK",
+ "about": [
+  "agent memory",
+  "consolidation",
+  "memory types"
+ ],
+ "url": "https://github.com/langchain-ai/langmem",
+ "by": "LangChain's open-source Python SDK. Read: the README, the Core Concepts guide (docs/docs/concepts/conceptual_guide.md) and the manage-memory tool and memory manager source, via raw.githubusercontent.com.",
+ "summary": "LangMem lets agents extract, update and consolidate long-term memories. Every operation has one shape: take the conversation and the current memory state, ask an LLM how to expand or consolidate it, and return the new state. Memory can be written in the hot path by the agent itself through a tool, or in the background after the conversation by a memory manager.",
+ "ideas": [
+  "Three memory types: semantic (facts), episodic (past experiences as observation, thoughts, action, result) and procedural (rules and the prompt itself, refined by a prompt optimizer).",
+  "Profiles versus collections: a profile is one schema-bound document that is always the current state and is updated in place; a collection is many records that must be reconciled by inserting, updating or deleting.",
+  "Hot path versus background: the agent writing during the conversation is immediate but slow and distracting; a background manager reflects afterwards and gets higher recall.",
+  "The write tool has a fixed action set, create, update or delete, which can be narrowed with actions_permitted; create must not carry an id and update or delete must.",
+  "The background manager has explicit switches enable_inserts, enable_updates and enable_deletes (deletes off by default).",
+  "Memories live in namespaces such as (org, user_id, app), filled from runtime config.",
+  "Recall should weigh similarity together with importance and strength (how recently and often a memory was used)."
+ ],
+ "took": [
+  {
+   "idea": "Profile for what holds now, collection for what only grows",
+   "where": "holds() and the reflection"
+  },
+  {
+   "idea": "A fixed action set on the write tool with an allow-list per caller",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "Deletes off by default; a newer doc supersedes instead",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Background reflection after a step, separate from writes in the hot path",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Semantic, episodic and procedural as a check on which brain type a note belongs to",
+   "where": "theOS/CLAUDE.md"
+  }
+ ]
+}

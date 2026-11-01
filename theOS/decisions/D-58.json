@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-58",
+ "n": 58,
+ "title": "Green: the check passes in the box",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "release",
+  "checks"
+ ],
+ "quote": "Yes.",
+ "means": "A theOS release is green when theOS's check command passes inside avenSANDBOX's image on the commit released.",
+ "intents": [
+  "aip/AIP-5"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-30"
+ ],
+ "reflection": {
+  "checked": "every decision before D-58 that held",
+  "result": "supersedes nothing"
+ }
+}

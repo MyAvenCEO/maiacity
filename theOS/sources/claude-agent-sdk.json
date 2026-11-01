@@ -1,0 +1,22 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/claude-agent-sdk",
+ "title": "Claude Agent SDK overview",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/agent-sdk/overview.md",
+ "by": "Anthropic",
+ "summary": "The Agent SDK runs Claude Code's agent loop as a Python or TypeScript library: built-in tools, hooks, subagents, MCP, permissions, sessions that resume or fork, skills, commands, memory and plugins loaded by path. A mod's hooks run under the SDK but nothing is drawn. Third-party products may not offer claude.ai login; they use API keys.",
+ "ideas": [
+  "The orchestrator as a program over the records (avenCEO's later) could be an SDK program.",
+  "It is not an interface: no pane, and it needs an API key rather than Samuel's plan."
+ ],
+ "took": [
+  {
+   "idea": "Not now: the SDK is for a program, not the view",
+   "where": "aip/AIP-4/research: pattern agent-sdk (later)"
+  }
+ ]
+}

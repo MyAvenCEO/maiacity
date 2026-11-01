@@ -1,0 +1,21 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/claude-code-output-styles",
+ "title": "Claude Code: Output styles",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/output-styles.md",
+ "by": "Anthropic",
+ "summary": "An output style is a set of instructions sent with every request that sets Claude's role, tone and response format (Default, Proactive, Concise, Explanatory, Learning, or a custom Markdown file; plugins can ship one and force it). It is an instruction, not a guarantee, and changes nothing in the interface.",
+ "ideas": [
+  "avenMAIA's plain, clear English could be an output style, but it shows nothing about intents."
+ ],
+ "took": [
+  {
+   "idea": "Not adopted for the interface",
+   "where": "aip/AIP-4/research: pattern output-style (no)"
+  }
+ ]
+}

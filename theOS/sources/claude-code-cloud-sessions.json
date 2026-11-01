@@ -1,0 +1,23 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/claude-code-cloud-sessions",
+ "title": "Claude Code: Use Claude Code in the cloud",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/claude-code-on-the-web.md",
+ "by": "Anthropic",
+ "summary": "A cloud session runs Claude Code on Anthropic's infrastructure, keeps running when the laptop closes and is steered from the browser, the phone, the Desktop app or the terminal. claude --cloud starts one per task; claude -p \"msg\" --cloud <session-id> queues a follow-up into an existing one from any machine; --teleport pulls one into the terminal. The session rail beside the chat shows Environment, Changes (with PR and CI), what is running and Context. Commands that open a terminal picker or panel behave differently, and /plugin is not available. Sessions stop after inactivity and are restored on reopen without their background work.",
+ "ideas": [
+  "Starting a thread per intent and messaging it are both one CLI command today.",
+  "A cloud session's transcript is read at claude.ai/code; it cannot answer a cross-machine message with SendMessage.",
+  "Nothing a mod draws shows in a cloud session."
+ ],
+ "took": [
+  {
+   "idea": "One cloud session per intent, linked from its record",
+   "where": "aip/AIP-4/research: pattern thread-per-intent"
+  }
+ ]
+}

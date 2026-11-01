@@ -1,0 +1,1 @@
+{"type": "decision", "id": "D-4", "n": 4, "title": "Fourth, holds, with a free-text part", "means": "four", "supersedes": [{"decision": "decisions/D-5", "part": "how a link is written", "what": "links"}]}

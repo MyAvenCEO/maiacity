@@ -95,7 +95,40 @@
   "decisions/D-41",
   "decisions/D-42",
   "decisions/D-43",
-  "decisions/D-44"
+  "decisions/D-44",
+  "decisions/D-45",
+  "decisions/D-46",
+  "decisions/D-47",
+  "decisions/D-48",
+  "decisions/D-49",
+  "decisions/D-50",
+  "decisions/D-51",
+  "decisions/D-52",
+  "decisions/D-53",
+  "decisions/D-54",
+  "decisions/D-55",
+  "decisions/D-56",
+  "decisions/D-57",
+  "decisions/D-58",
+  "decisions/D-59",
+  "decisions/D-60",
+  "decisions/D-61",
+  "decisions/D-62",
+  "decisions/D-63",
+  "decisions/D-64",
+  "decisions/D-65",
+  "decisions/D-66",
+  "decisions/D-67",
+  "decisions/D-68",
+  "decisions/D-69",
+  "decisions/D-70",
+  "decisions/D-71",
+  "decisions/D-72",
+  "decisions/D-73",
+  "decisions/D-74",
+  "decisions/D-75",
+  "decisions/D-76",
+  "decisions/D-77"
  ],
  "corrections": [
   {
@@ -137,6 +170,12 @@
   {
    "text": "Decisions were listed oldest first.",
    "commit": ""
+  },
+  {
+   "text": "avenMAIA recorded \"from production\" as deploys started by hand (D-60); Samuel had said in AIP-5's thread that production starts them by itself (D-62)."
+  },
+  {
+   "text": "avenMAIA read \"a - no migrate them too\" as keeping D-n and AIP-n as names (D-75); Samuel meant no numbers: reference by the hash and the title (D-76)."
   }
  ],
  "intents": [
@@ -145,6 +184,10 @@
   "aip/AIP-3",
   "aip/AIP-4",
   "aip/AIP-5",
-  "aip/AIP-6"
+  "aip/AIP-6",
+  "aip/AIP-7",
+  "aip/AIP-8",
+  "aip/AIP-9",
+  "aip/AIP-10"
  ]
 }

@@ -1,0 +1,36 @@
+{
+ "type": "reference",
+ "subtype": "code",
+ "id": "sources/mem0",
+ "title": "Mem0",
+ "about": [
+  "agent memory",
+  "memory operations",
+  "benchmarks"
+ ],
+ "url": "https://github.com/mem0ai/mem0",
+ "by": "Mem0 (mem0ai), a Y Combinator company. Read from its README, its prompts (mem0/configs/prompts.py), the add/update/delete/history code in mem0/memory/main.py, and its v2-to-v3 migration guide. The paper 'Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory' (arXiv 2504.19413) was not read: arxiv.org was blocked; only a search summary of its abstract was seen.",
+ "summary": "A memory layer that extracts facts from conversations. Its classic design let a model choose one of four operations for each new fact against similar old ones: ADD, UPDATE, DELETE or NONE (the paper calls it NOOP). In April 2026 the open-source version moved to ADD-only extraction: nothing is overwritten, new memories link to related old ones, and retrieval ranks the right dated memory. Every change is written to a history table.",
+ "ideas": [
+  "The classic update step: a model compares each new fact with similar stored ones and returns an event per memory: ADD, UPDATE (with old_memory), DELETE or NONE.",
+  "v3 is ADD-only: one model call, no UPDATE or DELETE; a new memory lists linked_memory_ids of the older ones it continues or changes.",
+  "The project reports large benchmark gains from going ADD-only (LoCoMo 71.4 to 92.5, LongMemEval 67.8 to 94.4 on its managed platform), so letting a model overwrite memory cost accuracy.",
+  "Each memory has a history of events (ADD, UPDATE, DELETE) with old and new value, read with history(memory_id).",
+  "Memories are scoped by user_id, agent_id and run_id; facts the agent itself confirms are stored with the same weight as the user's.",
+  "Retrieval fuses semantic, keyword (BM25) and entity matches, and handles time by picking the right dated instance."
+ ],
+ "took": [
+  {
+   "idea": "Append only: a new doc never edits an old one; it links to what it changes",
+   "where": "brain's write command, the reflection"
+  },
+  {
+   "idea": "A closed set of operation names returned for every write",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "A per-doc history of events with old and new value",
+   "where": "the intent's event trace"
+  }
+ ]
+}

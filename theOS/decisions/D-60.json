@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "D-60",
+ "n": 60,
+ "title": "Deploys run from production",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "release"
+ ],
+ "quote": "From production.",
+ "means": "theOS deploys only from the branch production, started by hand in the environment production, as before.",
+ "intents": [
+  "aip/AIP-5"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-30"
+ ],
+ "reflection": {
+  "checked": "every decision before D-60 that held",
+  "result": "supersedes nothing"
+ }
+}

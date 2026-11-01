@@ -157,7 +157,7 @@
    "fails": "It checks something a person does not see, or is tuned to the known bug.",
    "check": "Its rule (every scroll container whose content is taller than it can scroll; the page never scrolls sideways; boxes made to scroll sideways are fine) is committed before the replay, then run at 390x844 and 1280x720: it fails at the parent of faf266961 in the one app there (theOS/docs), and passes on the current commit in the three apps.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "pass: red at faf266961's parent (59 states at 1280x720 whose box can't scroll), green on the current commit (1238 states, 232 view types, 69 s), 1 Nov"
   },
   {
    "id": "c2",
@@ -289,7 +289,8 @@
     "Round 4 after the three proposed fixes (recommended): each is a few lines, the time limit c4 is measured again",
     "Build checkpoint 2 with round 3's findings open",
     "Back to Specify: narrow c1's rule first"
-   ]
+   ],
+   "answered": "decisions/D-77"
   }
  ],
  "events": [
@@ -1145,6 +1146,36 @@
    "what": "verified",
    "text": "After round 4's fixes: current commit green, 977 states checked (213 view types) in 45 s; faf266961's parent red, 59 states at 1280x720 whose box can't scroll, in 9 s; --fixtures green (fixed-box and body-clip red, clean green).",
    "how": "node theOS/avenCEO/checks/check.mjs, with --root <worktree>/theOS and --fixtures; Playwright 1.63.0",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T12:16Z",
+   "by": "authors/avenmaia",
+   "what": "merged",
+   "text": "claude/avendb-architect (220403c) merged into AIP-1's branch: AIP-3's shared-app helpers and brain; brain's line kept first in theOS/CLAUDE.md, the done rule below it. On the merged tree: check green, 1238 states checked (232 view types) in 69 s; --fixtures green, 3 of 3.",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:16Z",
+   "by": "authors/avenmaia",
+   "what": "gate",
+   "text": "Checkpoint 1 passed its Mechanical gate (c1 red at faf266961's parent, green now, the test pages right) and its Review gate by D-77: the check catches every planted page and passes on theOS's apps. Round 4, which Samuel asked for besides, had 2 Major and 3 Nit, all fixed; the fixes had no fifth round.",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": [
+    "decisions/D-77"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:16Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 1 built and through both gates. Not done by this thread: the undo of a republish, avenMAIA's (it publishes the artifact).",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
    "writes": [],
    "reads": [],
    "task": "t5"

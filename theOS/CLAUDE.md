@@ -1,3 +1,5 @@
+Read what holds first with brain prime: `node brain/brain.mjs prime` (a session-start hook runs it for you). Act on what it lists, never on a superseded doc; `node brain/brain.mjs get <id>` shows one doc, `node brain/brain.mjs holds <type>` the rest (AIP-3).
+
 # theOS: working rules for agents
 
 theOS is a standalone project: everything is built in theOS/, from scratch. Code outside theOS/ is legacy: read it if

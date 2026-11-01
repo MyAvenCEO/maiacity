@@ -1,16 +1,18 @@
 // Sources: one doc per source theOS and avenCEO learned from. A protocol is drawn as its flow. "Used by" follows every
 // path from avenCEO's definition, the AIPs and their reviews to this source; who read it, when and how, is the trace of
 // the intents that read it. Reads only.
-const HERE = 'sources';
+// this app is brain's (in brain/) after AIP-3's migration, the Sources app (in sources/) before it
+const HERE = location.pathname.includes('/brain/') ? 'brain' : 'sources';
 const $ = (s) => document.querySelector(s);
-const e = W.esc;
+// text people see names every doc it mentions (D-75); a path shown as a path is escaped with W.esc alone
+const e = (t) => W.esc(W.named(t));
 let G = null;
 
 const GROUPS = [['protocol', 'Protocols'], ['article', 'Articles'], ['paper', 'Papers'], ['spec', 'Specifications'], ['docs', 'Design docs'], ['code', 'Code'], ['repo', 'Repositories'], ['retelling', 'Retellings']];
 const topics = () => [...new Set(refs().flatMap(([, d]) => d.about || []))].sort().map((t) => [t, refs().filter(([, d]) => (d.about || []).includes(t)).length]);
 const tagChips = (d) => (d.about || []).map((t) => `<span class="chip">${e(t)}</span>`).join('');
 const sec = (h, body, note = '') => (body ? `<section class="sec"><h2>${h}</h2>${note ? `<p class="note">${note}</p>` : ''}${body}</section>` : '');
-const readIn = (p) => [...new Set((G.trace.get(p) || []).filter((t) => t.did === 'read').map((t) => t.p.split('/').pop()))];
+const readIn = (p) => [...new Set((G.trace.get(p) || []).filter((t) => t.did === 'read').map((t) => W.name(G.docs.get(t.p), t.p)))];
 const readChip = (p) => (readIn(p).length ? `<span class="chip sage">read in ${e(readIn(p).join(', '))}</span>` : '');
 const refs = () => G.items.map((p) => [p, G.docs.get(p)]).filter(([, d]) => d);
 const usedBy = (p) => [...(G.back.get(p) || [])].filter((q) => !q.endsWith('/index'));
@@ -26,7 +28,7 @@ function page(p, d) {
   return `<article class="doc">
     <header><div class="top"><span class="chip dark">${e(d.type)}</span><span class="chip">${e(d.subtype)}</span>${readChip(p)}${tagChips(d)}</div><h1>${e(d.title)}</h1>
       ${d.by ? `<p class="by">${e(d.by)}</p>` : ''}${d.summary ? `<p class="lead">${e(d.summary)}</p>` : ''}
-      ${d.url ? `<p><a class="wl" href="${e(d.url)}" target="_blank" rel="noopener">${e(d.url)}</a></p>` : ''}<p class="path">theOS/${e(p)}.json</p></header>
+      ${d.url ? `<p><a class="wl" href="${e(d.url)}" target="_blank" rel="noopener">${e(d.url)}</a></p>` : ''}<p class="path">theOS/${W.esc(W.file(p))}.json</p></header>
     ${d.subtype === 'protocol' ? `<div class="svgwrap">${flowSvg({ steps: d.steps, bands: d.bands, gates: d.gates, loops: d.loops }, 'p')}</div>` : ''}
     ${d.steps ? sec('Its steps', `<ol>${d.steps.map((s) => `<li><b>${e(s.name)}</b> ${e(s.writes)}</li>`).join('')}</ol>`) : ''}
     ${d.gates?.length ? sec('Its gates', `<ul>${d.gates.map((g) => `<li><b>${e(g.id)}</b> after ${e(d.steps[g.after - 1].name)}: ${e(g.what)}</li>`).join('')}</ul>`) : ''}
@@ -40,18 +42,19 @@ function page(p, d) {
 
 function show() {
   const route = decodeURIComponent(location.hash.slice(1)) || 'all';
-  if (route && !route.startsWith('sources/') && W.isPath(route)) { location.href = `../avenCEO/index.html#${route}`; return; }
+  if (route && W.isPath(route) && W.appOf(route) === 'avenCEO') { location.href = `../avenCEO/index.html#${route}`; return; }
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route));
   const d = G.docs.get(route);
   $('#main').innerHTML = route === 'all' ? list() : route.startsWith('topic/') ? list(null, route.slice(6)) : GROUPS.some(([k]) => k === route) ? list(route)
-    : d ? page(route, d) : `<article class="doc"><h1>Not found</h1><p class="path">${e(route)}</p></article>`;
+    : d ? page(route, d) : `<article class="doc"><h1>Not found</h1><p class="path">${W.esc(route)}</p></article>`;
   $('#main').scrollTo(0, 0);
 }
 
 async function start() {
-  const index = await W.get('sources/index');
-  const def = await W.get('avenCEO/avenCEO');
-  G = { ...(await W.crawl(['sources/index', 'avenCEO/avenCEO', ...def.indexes.filter((p) => !p.startsWith('sources/'))])), items: index.items };
+  await W.ready();
+  const index = await W.get(W.indexOf('sources'));
+  const def = await W.get(W.DEF);
+  G = { ...(await W.crawl([W.indexOf('sources'), W.DEF, ...def.indexes])), items: index.items };
   G.trace = W.trace(G.docs);
   $('#nav').innerHTML = `<a href="#all" data-r="all">All<span>${refs().length}</span></a><span class="gap"></span>`
     + GROUPS.map(([k, t]) => [k, t, refs().filter(([, d]) => d.subtype === k).length]).filter(([, , n]) => n).map(([k, t, n]) => `<a href="#${k}" data-r="${k}">${t}<span>${n}</span></a>`).join('')

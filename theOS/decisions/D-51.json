@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-51",
+ "n": 51,
+ "title": "AIP-2: checkpoint 2's review gate passes",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "sandbox",
+  "gates"
+ ],
+ "quote": "Do it: pass checkpoint 2's review gate.",
+ "means": "Checkpoint 2's Review gate passes on its fourth fix, proven by the image workflow's run, after three rounds.",
+ "intents": [
+  "aip/AIP-2"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-38"
+ ],
+ "reflection": {
+  "checked": "every decision before D-51 that held",
+  "result": "supersedes nothing"
+ }
+}

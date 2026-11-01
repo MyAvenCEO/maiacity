@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "D-67",
+ "n": 67,
+ "title": "AIP-3: link versions stay (c5)",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "brain",
+  "links"
+ ],
+ "quote": "Don't defer.",
+ "means": "c5 stays in AIP-3: a link's version is computed from the commit that added the citing line, and brain get, brain check and the apps flag a link whose target changed since.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-12",
+  "decisions/D-48"
+ ],
+ "reflection": {
+  "checked": "every decision before D-67 that held",
+  "result": "supersedes nothing; keeps D-12's pin by commit, computed instead of written"
+ }
+}

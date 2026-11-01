@@ -1,0 +1,51 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/graphiti",
+ "title": "Graphiti (Zep)",
+ "about": [
+  "agent memory",
+  "temporal validity",
+  "provenance",
+  "benchmarks"
+ ],
+ "url": "https://github.com/getzep/graphiti",
+ "by": "Zep Software; open source. Read from the Graphiti README, its edge schema (graphiti_core/edges.py) and its edge resolution and invalidation code (graphiti_core/utils/maintenance/edge_operations.py), and the getzep/zep README. Then from help.getzep.com (v4): the llms.txt index, Facts, How Graph Creation Works, Source traceability and Manually Updating the Graph; and two Zep blog posts: 'How Zep Context Graphs keep two timelines for every fact' (2026-10-29) and 'How Zep tracks provenance in agent memory' (2026-07-14). The paper 'Zep: A Temporal Knowledge Graph Architecture for Agent Memory' (arXiv 2501.13956) was not read; only search summaries of its abstract were seen.",
+ "summary": "A framework for a temporal knowledge graph of entities and facts, built from episodes (the raw data, kept verbatim). Every fact edge has valid_at and invalid_at (when it was true in the world) and created_at and expired_at (when the system learned it and when it learned it had ended), and lists every episode that produced, reaffirmed or invalidated it. A model decides whether a new fact contradicts an old one; then a date rule closes the older fact instead of deleting it. Zep, the hosted product, runs Graphiti in production.",
+ "ideas": [
+  "Episodes are the ground truth, kept byte for byte. A fact's episode list grows with every episode that extracted, reaffirmed or invalidated it; when two entities merge, the node keeps both sides' episodes. Zep warns that this records where a fact came from, not that it is true.",
+  "Two timelines, four timestamps: valid_at and invalid_at (event time) and created_at and expired_at (system time). Asking 'what was true on date T' and 'what did the graph hold on date T' are separate queries.",
+  "Contradiction in two steps: a model compares the new fact with related facts; if it finds a contradiction, a date rule decides. When the new fact starts later, the old one gets invalid_at equal to the new valid_at and expired_at equal to now, and stays in the graph.",
+  "Order of arrival does not change the event timeline: if a backfill brings an older fact after the one that replaced it, the incoming fact is ended at the later fact's start. Only created_at and expired_at show the reading order. A fact arriving with an end date is stored already ended.",
+  "Dates come from each episode's reference_time, which resolves 'last week' in the text. A plan or deadline does not end a fact. Without reference_time the ingestion time is used, and on loaded history that can close the newer fact instead of the older.",
+  "Removing an episode deletes a fact or node only when no remaining episode supports it. Metadata set on an episode is projected onto everything derived from it, for search filters and access control.",
+  "Entity resolution prefers to under-merge: two nodes for one person are recoverable, a wrong merge is not. Entity and edge types can be declared up front (Pydantic models in Graphiti, a custom ontology in Zep). Manually added edges are compared with the graph only when deduplicate is true.",
+  "Per the paper's abstract as summarised in search results: Zep scores 94.8% on Deep Memory Retrieval (DMR) against MemGPT's 93.4%, and reports gains on LongMemEval."
+ ],
+ "took": [
+  {
+   "idea": "Every derived doc names all the raw records it came from, and the list only grows",
+   "where": "brain's write command, the trace"
+  },
+  {
+   "idea": "Keep 'when it held' apart from 'when we wrote it'",
+   "where": "holds()"
+  },
+  {
+   "idea": "A fixed date rule decides which of two conflicting docs holds once a conflict is named; a model may only propose the conflict",
+   "where": "the reflection, holds()"
+  },
+  {
+   "idea": "What holds depends on when things held, not on the order docs were written, so a late backfill gives the same answer",
+   "where": "holds()"
+  },
+  {
+   "idea": "A derived doc goes away only when none of its sources remain",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Types declared as schemas",
+   "where": "the check"
+  }
+ ]
+}

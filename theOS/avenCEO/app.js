@@ -2,7 +2,8 @@
 // doc, drawn by its type; "Linked from" comes from following every path from avenCEO's definition and the indexes.
 const HERE = 'avenCEO';
 const $ = (s) => document.querySelector(s);
-const e = W.esc;
+// text people see names every doc it mentions (D-75); a path shown as a path is escaped with W.esc alone
+const e = (t) => W.esc(W.named(t));
 let G = null; // { docs, back, def }
 
 const LISTS = [['aips', 'AIPs', 'intent'], ['waiting', 'Waiting for you', null], ['gap'], ['decisions', 'Decisions', 'decision'], ['sessions', 'Sessions', 'session'],
@@ -14,6 +15,7 @@ const L = (p) => W.link(p, HERE, G.docs);
 const sec = (h, body, note = '') => (body ? `<section class="sec"><h2>${h}</h2>${note ? `<p class="note">${note}</p>` : ''}${body}</section>` : '');
 const ul = (xs) => (xs?.length ? `<ul>${xs.map((v) => `<li>${T(v)}</li>`).join('')}</ul>` : '');
 const table = (heads, rows) => (rows.length ? `<table class="t"><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, k) => `<td>${k ? c : `<b>${c}</b>`}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '');
+const tally = (fs) => ['Blocker', 'Major', 'Nit'].map((v) => [v, fs.filter((f) => f.sev === v).length]).filter(([, c]) => c).map(([v, c]) => `${c} ${v}`).join(', ') || 'clean';
 const commit = (h) => (h ? `<a class="path" href="https://github.com/myavenceo/maiacity/commit/${e(h)}" target="_blank" rel="noopener">${e(h)}</a>` : '');
 const current = () => decodeURIComponent(location.hash.slice(1));
 const who = (b) => W.who(b, HERE, G.docs);
@@ -22,8 +24,9 @@ const chips = (xs, cls = '') => (xs || []).map((t) => `<span class="chip ${cls}"
 // The Specify label reads the review rounds (derived, never stored).
 function stageOf(I) {
   const ev = I.events || [], n = W.stepAt(ev, ev.length);
+  if (n === 5 && ev.some((x) => x.what === 'dropped')) return [5, 'Closed: dropped'];
   if (n !== 2) return [n, W.STEPS[n - 1]];
-  const reviews = (I.reviews || []).map((p) => G.docs.get(p)).filter(Boolean);
+  const reviews = (I.reviews || []).map((p) => G.docs.get(p)).filter((r) => r?.findings);
   const last = Math.max(0, ...reviews.map((r) => r.round));
   const lastKind = [...ev].reverse().find((x) => ['review', 'revised', 'stopped'].includes(x.what))?.what;
   const clean = last && !reviews.filter((r) => r.round === last).some((r) => r.findings.some((f) => f.sev !== 'Nit'));
@@ -58,10 +61,10 @@ function tasks(I) {
 function stepper(I) {
   const [at, label] = stageOf(I), ev = I.events || [];
   const passed = (g) => ev.some((x) => x.what === `gate-${g}`);
-  const step = (n) => { const s = G.def.steps.find((q) => q.startsWith(`avenCEO/steps/${n}-`)); const cls = n < at ? 'done' : n === at ? 'at' : '';
+  const step = (n) => { const s = W.stepOf(n, G.docs); const cls = n < at ? 'done' : n === at ? 'at' : '';
     return `<a class="st ${cls}" href="#${s}"><span class="n">${n < at ? '✓' : n}</span>${W.STEPS[n - 1]}</a>`; };
   const gate = (g) => `<span class="gt ${passed(g) ? 'done' : ''}" title="Gate ${g}"><span>${g}</span></span>`;
-  return `<nav class="stepper" aria-label="Where ${e(I.id)} stands">${step(1)}<span class="ln"></span>${step(2)}<span class="ln"></span>${gate('A')}<span class="ln"></span>${step(3)}<span class="ln"></span>${gate('B')}<span class="ln"></span>${step(4)}<span class="where"><b>${e(I.id)}</b> ${e(label)}</span></nav>`;
+  return `<nav class="stepper" aria-label="Where ${e(W.idOf(I, current()))} stands">${step(1)}<span class="ln"></span>${step(2)}<span class="ln"></span>${gate('A')}<span class="ln"></span>${step(3)}<span class="ln"></span>${gate('B')}<span class="ln"></span>${step(4)}<span class="where"><b>${e(W.idOf(I, current()))}</b> ${e(label)}</span></nav>`;
 }
 
 // Every page with four or more sections gets a nav of them on the right; the one in view is marked.
@@ -94,25 +97,23 @@ function toc() {
 // The trace (shared with Sources): the events of every intent that wrote or read a doc.
 const traceOf = (path) => sec('Trace', W.traceTable(path, HERE, G.docs, G.trace ??= W.trace(G.docs)), "The events that wrote or read this doc, from the intents' lifecycles.");
 
-// brain's reflection: a decision or term holds until a later one supersedes it; superseded in part, the rest still holds. Derived, never stored.
-function supersededBy(path) {
-  return [...ofType('decision'), ...ofType('term')].flatMap(([p, d]) => (d.supersedes || []).filter((s) => (s.decision || s.term) === path).map((s) => ({ p, ...s })));
-}
-function holds(path) { const by = supersededBy(path); return by.some((s) => s.part !== 'part') ? 'superseded' : by.length ? 'holds in part' : 'holds'; }
+// brain's reflection (ui/wiki.js, shared with brain.mjs): a doc holds until a newer one supersedes it; superseded in part, the rest still holds.
+const supersededBy = (path) => W.supersededBy(G.docs, path);
+const holds = (path) => W.holds(G.docs, path);
 const holdChip = (path) => { const h = holds(path); return `<span class="chip ${h === 'holds' ? 'sage' : h === 'superseded' ? 'blocker' : 'ochre'}">${h}</span>`; };
 function reflection(d, path) {
   const by = supersededBy(path), word = d.type === 'term' ? 'Term' : 'Decision';
   return sec('Superseded by', by.length ? table([word, 'Part', 'What changed'], by.map((s) => [L(s.p), e(s.part || 'whole'), T(s.what || s.how)])) : '')
-    + sec('Supersedes', d.supersedes?.length ? table([word, 'Part', 'What changed'], d.supersedes.map((s) => [L(s.decision || s.term), e(s.part || 'whole'), T(s.what || s.how)])) : '')
+    + sec('Supersedes', d.supersedes?.length ? table([word, 'Part', 'What changed'], d.supersedes.map((s) => [L(W.target(s)), e(s.part || 'whole'), T(s.what || s.how)])) : '')
     + sec('Builds on', d.relates?.length ? `<p>${d.relates.map(L).join(' · ')}</p>` : '')
     + sec("brain's reflection", d.reflection ? `<p>Checked against ${T(d.reflection.checked)}: ${T(d.reflection.result)}.</p>` : '');
 }
 function reflected(title, type) {
   const xs = ofType(type).sort((a, b) => (b[1].n ?? 0) - (a[1].n ?? 0) || W.label(a[1], a[0]).localeCompare(W.label(b[1], b[0])));
   const card = ([p, d]) => {
-    const part = supersededBy(p).filter((s) => s.part === 'part').map((s) => `${s.p.split('/').pop()}: ${s.what}`).join(' ');
-    return `<a class="card" href="#${p}"><span class="top">${holdChip(p)}${chips(d.about)}</span><b>${e(type === 'decision' ? `${d.id} · ${d.title || d.means}` : W.label(d, p))}</b>
-      <small>${e(d.means)}</small>${part ? `<small><b>Changed by</b> ${e(part)}</small>` : ''}</a>`;
+    const part = supersededBy(p).filter((s) => !W.whole(s)).map((s) => `${W.name(G.docs.get(s.p), s.p)}: ${s.what || s.how}`).join(' ');
+    return `<a class="card" href="#${p}"><span class="top">${holdChip(p)}${chips(d.about)}</span><b>${e(W.name(d, p))}</b>
+      <small>${e(d.means)}</small>${d.intents?.length ? `<small><b>For</b> ${e(d.intents.map((r) => W.name(G.docs.get(r), r)).join(' · '))}</small>` : ''}${part ? `<small><b>Changed by</b> ${e(part)}</small>` : ''}</a>`;
   };
   const now = xs.filter(([p]) => holds(p) !== 'superseded'), old = xs.filter(([p]) => holds(p) === 'superseded');
   return `<article class="doc"><header><h1>${title}</h1><p class="lead">${type === 'decision' ? 'Your decisions, newest first.' : 'The glossary.'} What holds is computed by brain's reflection: one holds until a later one supersedes ${type === 'decision' ? 'it' : 'or merges it'}; superseded in part, the rest still holds.</p></header>
@@ -124,7 +125,7 @@ function reflected(title, type) {
 function flowDef(at) {
   const steps = G.def.steps.map((p) => G.docs.get(p)).filter(Boolean);
   const nOf = Object.fromEntries(steps.map((s) => [s.id, s.n]));
-  const gates = G.def.gates.map((p) => G.docs.get(p)).filter((g) => g?.subtype === 'human').map((g) => ({ id: g.id.split('/').pop(), after: nOf[g.after], what: g.what }));
+  const gates = G.def.gates.map((p) => G.docs.get(p)).filter((g) => g?.subtype === 'human').map((g) => ({ id: (g.name || g.id).replace(/^Gate /, ''), after: nOf[g.after], what: g.what }));
   const loops = steps.flatMap((s) => s.back.map((b) => ({ from: s.n, to: nOf[b.to], when: b.when })));
   return { steps, bands: G.def.bands, gates, loops, at };
 }
@@ -137,7 +138,7 @@ function typeMap() {
   const H = top + 4 * (bh + gy) + 6;
   const count = (t) => (t === 'reference' ? (G.sources?.items.length ?? 0) : ofType(t).length);
   const types = Object.fromEntries(ofType('type').map(([, d]) => [d.name, d]));
-  const edges = Object.values(types).flatMap((d) => d.links_to.map((p) => [d.name, p.split('/').pop()])).filter(([a, b]) => pos[a] && pos[b] && a !== b);
+  const edges = Object.values(types).flatMap((d) => d.links_to.map((p) => [d.name, G.docs.get(p)?.name ?? p.split('/').pop()])).filter(([a, b]) => pos[a] && pos[b] && a !== b);
   const path = ([a, b]) => { const A = pos[a], B = pos[b]; const ax = A.x + (B.x > A.x ? bw : B.x < A.x ? 0 : bw / 2), ay = A.y + (B.x === A.x ? (B.y > A.y ? bh : 0) : bh / 2);
     const bx = B.x + (A.x > B.x ? bw : A.x < B.x ? 0 : bw / 2), by = B.y + (A.x === B.x ? (A.y > B.y ? bh : 0) : bh / 2), mx = (ax + bx) / 2;
     return `<path class="tedge" d="M${ax} ${ay} C${mx} ${ay} ${mx} ${by} ${bx} ${by}"/>`; };
@@ -151,7 +152,7 @@ function typeMap() {
 }
 
 function waiting() {
-  return ofType('intent').flatMap(([p, I]) => (I.questions || []).filter((q) => !q.answered).map((q) => `<div class="wait"><span class="path">${L(p)}</span><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`)).join('');
+  return ofType('intent').flatMap(([p, I]) => (I.questions || []).filter((q) => !q.answered && !q.replaced_by).map((q) => `<div class="wait"><span class="path">${L(p)}</span><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`)).join('');
 }
 
 function home() {
@@ -184,7 +185,7 @@ function board() {
   const cols = ['Understand', 'Specify', 'Build', 'Learn', 'Closed'];
   const cards = ofType('intent').map(([p, I]) => ({ p, I, s: stageOf(I) }));
   return `<article class="doc"><header><h1>AIPs</h1><p class="lead">Every intent of avenCEO's sequence, in the step its record says. The 91 legacy intents are the <a href="../docs/index.html#intents-0">OLD-AIPs</a>, until they are consolidated.</p></header>
-    <div class="cols">${cols.map((c, k) => { const xs = cards.filter((x) => x.s[0] === k + 1); return `<section class="col"><h2>${c}<span>${xs.length}</span></h2>${xs.map(({ p, I, s }) => `<a class="card" href="#${p}"><span class="top"><b>${e(I.id)}</b><span class="chip clay">${e(s[1].replace(/^\w+: /, ''))}</span></span><b>${e(I.title)}</b><small>${e(I.kind)} · ${(I.claims || []).length} claims · ${(I.tasks || []).filter((t) => taskStatus(I, t.id) === 'done').length} of ${(I.tasks || []).length} tasks done · ${(I.reviews || []).length} reviews</small></a>`).join('') || '<p class="note">Nothing here.</p>'}</section>`; }).join('')}</div></article>`;
+    <div class="cols">${cols.map((c, k) => { const xs = cards.filter((x) => x.s[0] === k + 1); return `<section class="col"><h2>${c}<span>${xs.length}</span></h2>${xs.map(({ p, I, s }) => `<a class="card" href="#${p}"><span class="top"><b>${e(W.idOf(I, p))}</b><span class="chip clay">${e(s[1].replace(/^\w+: /, ''))}</span></span><b>${e(W.title(I))}</b><small>${e(I.kind)} · ${(I.claims || []).length} claims · ${(I.tasks || []).filter((t) => taskStatus(I, t.id) === 'done').length} of ${(I.tasks || []).length} tasks done · ${(I.reviews || []).length} reviews</small></a>`).join('') || '<p class="note">Nothing here.</p>'}</section>`; }).join('')}</div></article>`;
 }
 
 function list(kind, title, type) {
@@ -197,21 +198,22 @@ function list(kind, title, type) {
 }
 
 function backlinks(path) {
-  const from = [...(G.back.get(path) || [])].filter((p) => !p.endsWith('/index'));
+  const from = [...(G.back.get(path) || [])].filter((p) => G.docs.get(p)?.type !== 'index');
   return from.length ? sec('Linked from', `<p>${from.map(L).join(' · ')}</p>`) : '';
 }
 
 function head(d, chips = [], sub = '') {
-  return `<header><div class="top"><span class="chip dark">${e(d.type)}</span>${chips.join('')}${d.at ? `<span class="when">${e(d.at)}</span>` : ''}</div><h1>${e(W.label(d, d.id))}</h1>${sub}<p class="path">theOS/${e(current())}.json</p></header>`;
+  return `<header><div class="top"><span class="chip dark">${e(d.type)}</span>${chips.join('')}${d.at ? `<span class="when">${e(d.at)}</span>` : ''}</div><h1>${W.esc(W.name(d, current()))}</h1>${sub}<p class="path">theOS/${W.esc(W.file(current()))}.json</p></header>`;
 }
 
 const PAGES = {
   intent(I) {
     const [at, stage] = stageOf(I); const p = I.problem || {};
-    const reviews = (I.reviews || []).map((x) => G.docs.get(x)).filter(Boolean);
+    const all = (I.reviews || []).map((x) => G.docs.get(x)).filter(Boolean);
+    const reviews = all.filter((r) => r.findings), cpReviews = all.filter((r) => r.rounds);
     const rounds = [...new Set(reviews.map((r) => r.round))];
     return `${head(I, [`<span class="chip">${e(I.kind)}</span>`, `<span class="chip clay">${e(stage)}</span>`], `<p class="lead">${T(I.source?.text)} ${I.source?.ref ? L(I.source.ref) : ''}</p>${I.note ? `<p class="note">${T(I.note)}</p>` : ''}`)}
-      ${sec('Waiting for you', (I.questions || []).filter((q) => !q.answered).map((q) => `<div class="wait"><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`).join(''), 'Asked here in chat; your answers become decision docs.')}
+      ${sec('Waiting for you', (I.questions || []).filter((q) => !q.answered && !q.replaced_by).map((q) => `<div class="wait"><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`).join(''), 'Asked here in chat; your answers become decision docs.')}
       ${tasks(I)}
       ${sec('1 · Understand: the problem', p.who ? `<p><b>Who</b></p>${ul(p.who)}<p><b>What they experience</b> ${T(p.experience)}</p><p><b>Evidence</b> ${T(p.baseline)}</p>
         ${(p.evidence || []).map((g) => `<span class="label">${e(g.group)}</span><ul>${g.items.map((x) => `<li>${T(x.text)} ${x.commit ? `<span class="note">fixed in</span> ${commit(x.commit)}` : ''}</li>`).join('')}</ul>`).join('')}
@@ -227,32 +229,38 @@ const PAGES = {
       ${sec('Deferred, on purpose', table(['What', 'Until'], (I.deferred || []).map((d) => [e(d.what), T(d.until)])))}
       ${sec('Deleted', ul(I.deleted))}
       ${sec('Spec review', rounds.map((n) => `<p><b>Round ${n}</b> ${reviews.filter((r) => r.round === n).map((r) => `${L(r.id)} <span class="note">${['Blocker', 'Major', 'Nit'].map((v) => [v, r.findings.filter((f) => f.sev === v).length]).filter(([, c]) => c).map(([v, c]) => `${c} ${v}`).join(', ') || 'clean'}</span>`).join(' · ')}</p>`).join(''), 'Fresh checkers that saw only the record and what it links. Each review is its own doc.')}
+      ${sec('Checkpoint reviews', cpReviews.map((r) => `<p><b>Checkpoint ${e(r.checkpoint)}</b> ${L(r.id)} <span class="note">${r.rounds.map((x, i) => `round ${i + 1}: ${tally(x.findings || [])}`).join(' · ')}</span></p>`).join(''), 'One fresh critic per round, on the checkpoint\'s diff.')}
       ${sec('Your decisions', table(['Decision', 'Holds', 'Means'], ofType('decision').filter(([, d]) => d.intents.includes(current())).sort((a, b) => b[1].n - a[1].n).map(([q, d]) => [L(q), holdChip(q), T(d.means)])), 'Every decision that names this intent, newest first.')}
       ${sec('Trace', table(['When', 'Step', 'Who', 'What', 'How', 'Wrote or read'], (I.events || []).map((x, i) => [e(x.at), W.stepLink(W.stepAt(I.events, i), HERE, G.docs), who(x.by), `<b>${e(x.what)}</b> ${T(x.text)}`, T(x.how || ''), [...(x.writes || []).map(L), ...(x.reads || []).map((r) => `read ${L(r)}`)].join(' · ')]).reverse()),
         "Append-only, newest first: every write of this intent's lifecycle. The step is where the intent stood, computed from the events before it.")}`;
   },
   review(R) {
+    if (R.rounds) {
+      const fin = (fs) => table(['Severity', 'Where', 'Finding', 'Answer'], fs.map((f) => [`<span class="chip ${e(String(f.sev).toLowerCase())}">${e(f.sev)}</span>`, T(f.scope || ''), T(f.text || ''), `<b>${e(f.answer || 'open')}</b> ${T(f.note || '')}`]));
+      return `${head(R, [`<span class="chip">${e(R.lens || 'critic')}</span>`, `<span class="chip clay">${R.rounds.length} rounds</span>`], `<p class="by">Reviewed ${L(R.intent)} by ${e(R.checker || 'a fresh agent')}.</p>`)}
+        ${R.rounds.map((x, i) => sec(`Round ${x.round || i + 1}: ${tally(x.findings || [])}`, `${x.commit ? `<p class="path">at ${e(x.commit)}</p>` : ''}${x.prompt ? `<details><summary>Show the prompt</summary><pre class="code">${e(x.prompt)}</pre></details>` : ''}${fin(x.findings || [])}`)).join('')}`;
+    }
     const count = ['Blocker', 'Major', 'Nit'].map((v) => [v, R.findings.filter((f) => f.sev === v).length]).filter(([, c]) => c).map(([v, c]) => `${c} ${v}`).join(', ') || 'clean';
-    return `${head({ ...R, title: `${R.intent.split('/').pop()}, round ${R.round}: ${R.lens}` }, [`<span class="chip">${e(R.lens)}</span>`, `<span class="chip clay">${count}</span>`], `<p class="by">Reviewed ${L(R.intent)} at commit ${commit(R.commit)}, by ${e(R.checker)}.</p>`)}
+    return `${head(R, [`<span class="chip">${e(R.lens)}</span>`, `<span class="chip clay">${count}</span>`], `<p class="by">Reviewed ${L(R.intent)} at commit ${commit(R.commit)}, by ${e(R.checker)}.</p>`)}
       ${sec('The exact prompt it got', `<details><summary>Show the prompt</summary><pre class="code">${e(R.prompt)}</pre></details>`)}
       ${R.paraphrase ? sec('Its paraphrase', `<div class="para"><div><span class="label">What this proposes</span><p>${T(R.paraphrase.proposes)}</p></div><div><span class="label">How the existing system works, per this record</span><p>${T(R.paraphrase.existing)}</p></div></div>`) : ''}
       ${sec('Findings and their answers', table(['Severity', 'Where', 'Finding', 'Answer'], R.findings.map((f) => [`<span class="chip ${e(f.sev.toLowerCase())}">${e(f.sev)}</span>`, T(f.scope), T(f.text), `<b>${e(f.answer || 'open')}</b> ${T(f.note || '')}`])))}`;
   },
   decision(D) {
-    return `${head({ ...D, title: `${D.id} · ${D.title || D.means}` }, [holdChip(current()), `<span class="chip clay">${e(D.subtype)}</span>`, chips(D.about)], `${D.title ? `<p class="lead">${T(D.means)}</p>` : ''}<p class="by">${who(D.by)}, in ${L(D.session)}</p>`)}
+    return `${head(D, [holdChip(current()), `<span class="chip clay">${e(D.subtype)}</span>`, chips(D.about)], `${D.title ? `<p class="lead">${T(D.means)}</p>` : ''}<p class="by">${who(D.by)}, in ${L(D.session)}</p>`)}
       ${sec('Your words', `<blockquote class="lead">“${e(D.quote)}”</blockquote>`)}
       ${reflection(D, current())}
       ${sec('Affects', `<p>${D.intents.map(L).join(' · ')}</p>`)}`;
   },
   session(S) {
-    return `${head({ ...S, title: `Session ${S.from} to ${S.to}` }, [`<span class="chip">${e(W.label(G.docs.get(S.orchestrator), S.orchestrator))}</span>`, `<span class="chip">${e(S.commits.theOS)} commits</span>`], `<p class="lead">${T(S.summary)}</p>`)}
+    return `${head(S, [`<span class="chip">${e(W.label(G.docs.get(S.orchestrator), S.orchestrator))}</span>`, `<span class="chip">${e(S.commits.theOS)} commits</span>`], `<p class="lead">${T(S.summary)}</p>`)}
       ${sec('What you asked, and what was done', table(['About', 'You asked', 'Done'], S.asks.map((a) => [e(a.about), `“${e(a.quote)}”`, T(a.did)])))}
       ${sec('Your decisions in it', `<ul>${S.decisions.map((d) => `<li>${L(d)}</li>`).join('')}</ul>`)}
       ${sec('Your corrections in it', `<ul>${S.corrections.map((c) => `<li>${T(c.text)} ${commit(c.commit)}</li>`).join('')}</ul>`, 'The baseline of the Corrections metric.')}
       ${sec('Intents', `<p>${S.intents.map(L).join(' · ')}</p>`)}`;
   },
   step(S) {
-    return `${head({ ...S, title: `${S.n} · ${S.name}` }, S.gate ? [`<span class="chip clay">then ${e(S.gate.split('/').pop() === 'A' || S.gate.split('/').pop() === 'B' ? 'Gate ' + S.gate.split('/').pop() : S.gate)}</span>`] : [], `<p class="lead">${T(S.question)}</p>`)}
+    return `${head({ ...S, title: `${S.n} · ${S.name}` }, S.gate ? [`<span class="chip clay">then ${e(G.docs.get(S.gate)?.name ?? S.gate)}</span>`] : [], `<p class="lead">${T(S.question)}</p>`)}
       <div class="svgwrap">${flowSvg(flowDef(S.n), 's')}</div>
       ${sec('What to do', ul(S.do))}
       ${sec('Writes', `<p>${T(S.output)}</p>`)}
@@ -263,7 +271,7 @@ const PAGES = {
   },
   gate(D) { return `${head(D, [`<span class="chip clay">${e(D.subtype)}</span>`])}${sec('What it checks', `<p>${T(D.what)}</p>`)}${sec('After', `<p>${L(D.after)}</p>`)}${sec('Who', `<p>${W.isPath(D.who) ? who(D.who) : T(D.who)}</p>`)}${sec('How', D.how ? `<p>${T(D.how)}</p>` : D.when ? `<p>${T(D.when)}</p>` : '')}`; },
   type(D) {
-    const docs = D.name === 'reference' ? (G.sources?.items || []).map((p) => `<a class="wl" href="${W.href(p, HERE)}">${e(p.split('/').pop())}</a>`) : ofType(D.name).map(([p]) => L(p));
+    const docs = D.name === 'reference' ? (G.sources?.items || []).map((p) => L(p)) : ofType(D.name).map(([p]) => L(p));
     return `${head(D, D.subtypes.map((s) => `<span class="chip">${e(s)}</span>`), `<p class="lead">${T(D.what)}</p>`)}
       ${sec('Where', `<p class="path">theOS/${e(D.file)}</p>`)}
       ${sec('Fields', table(['Field', 'Holds'], D.fields.map((f) => [e(f.name), T(f.means)])))}
@@ -272,27 +280,35 @@ const PAGES = {
       ${sec('Links to', `<p>${D.links_to.map(L).join(' · ') || '–'}</p>`)}
       ${sec(`Its docs (${docs.length})`, `<p>${docs.join(' · ') || 'None yet.'}</p>`)}`;
   },
+  research(D) {
+    const groups = [['now', 'Adopt now', 'sage'], ['later', 'Later', 'ochre'], ['no', 'Not for us', '']];
+    return `${head(D, [], `<p class="lead">${T(D.question)}</p>`)}
+      ${sec('Recommendation', `<p>${T(D.recommendation)}</p>`)}
+      ${groups.map(([k, h, c]) => sec(`${h} (${D.patterns.filter((p) => p.adopt === k).length})`, table(['Pattern', 'What', 'Seen in', 'Why'], D.patterns.filter((p) => p.adopt === k).map((p) => [e(p.name), T(p.what), p.seen_in.map(L).join(' · '), T(p.why)])))).join('')}
+      ${sec('What only you can answer', ul(D.open_questions))}
+      ${sec('Sources, and how each was read', table(['Source', 'How'], D.reads.map((r) => [L(r.source), e(r.how)])))}`;
+  },
   checker(D) { return `${head(D, [`<span class="chip">${e(D.lens)}</span>`], `<p class="lead">${T(D.what)}</p>`)}${sec('Its prompt', `<p class="note">${e(D.record_placeholder || '')}</p><pre class="code">${e(D.prompt)}</pre>`)}`; },
   metric(D) { return `${head(D, [`<span class="chip">${e(D.how)}</span>`], `<p class="lead">${T(D.what)}. Want: ${T(D.want)}.</p>`)}${sec('Measurements', table(['Session', 'Value', 'Count', 'Commits', 'Note'], (D.measurements || []).map((m) => [L(m.session), String(m.value), String(m.count ?? ''), String(m.commits ?? ''), T(m.note || '')])) || '<p class="note">None yet.</p>')}`; },
   lesson(D) { return `${head({ ...D, title: D.lesson }, [`<span class="chip sage">${e(D.status)}</span>`, `<span class="chip">${e(D.confidence)}</span>`])}${sec('Cue', `<p>${T(D.cue)}</p>`)}${sec('Evidence', `<p>${T(D.evidence)}</p>`)}`; },
   term(D) { return `${head(D, [holdChip(current())])}${sec('Means', `<p class="lead">${T(D.means)}</p>`)}${reflection(D, current())}`; },
   author(D) { return `${head(D, [`<span class="chip">${e(D.kind)}</span>`], `<p class="lead">${T(D.what)}</p>`)}${sec('Wrote', table(['When', 'Intent', 'What'], ofType('intent').flatMap(([p, I]) => (I.events || []).filter((x) => x.by === current()).map((x) => [e(x.at), L(p), `<b>${e(x.what)}</b> ${T(x.text)}`])).reverse()))}`; },
-  index(D) { return `${head(D)}<div class="cards">${D.items.map((p) => `<a class="card" href="${W.href(p, HERE)}"><b>${e(W.label(G.docs.get(p), p))}</b><small class="path">${e(p)}</small></a>`).join('')}</div>`; },
+  index(D) { return `${head(D)}<div class="cards">${D.items.map((p) => `<a class="card" href="${W.href(p, HERE)}"><b>${e(W.label(G.docs.get(p), p))}</b><small class="path">${W.esc(p)}</small></a>`).join('')}</div>`; },
 };
 
 async function show() {
   const h = decodeURIComponent(location.hash.slice(1));
   const route = h || 'home';
-  if (route.startsWith('sources/')) { location.href = `../sources/index.html#${route}`; return; }
-  document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route || (a.dataset.r === 'home' && route === 'avenCEO/avenCEO')));
+  if (W.isPath(route) && W.appOf(route) !== HERE) { location.href = `../${W.appOf(route)}/index.html#${route}`; return; }
+  document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route || (a.dataset.r === 'home' && route === W.DEF)));
   let html;
-  if (route === 'home' || route === 'avenCEO/avenCEO') html = home();
+  if (route === 'home' || route === W.DEF) html = home();
   else if (route === 'aips') html = board();
   else if (route === 'waiting') html = `<article class="doc"><header><h1>Waiting for you</h1><p class="lead">Every open question of every AIP. You answer here in chat; your answer becomes a decision doc.</p></header>${waiting() || '<p class="note">Nothing waits for you.</p>'}</article>`;
   else if (LISTS.some(([k]) => k === route)) { const [k, t, type] = LISTS.find(([x]) => x === route); html = ['decision', 'term'].includes(type) ? reflected(t, type) : list(k, t, type); }
   else {
     const d = G.docs.get(route) || await W.get(route);
-    html = d && PAGES[d.type] ? `${d.type === 'intent' ? stepper(d) : ''}<article class="doc">${PAGES[d.type](d)}${d.type === 'intent' ? '' : traceOf(route)}${backlinks(route)}</article>` : `<article class="doc"><h1>Not found</h1><p class="path">${e(route)}</p></article>`;
+    html = d && PAGES[d.type] ? `${d.type === 'intent' ? stepper(d) : ''}<article class="doc">${PAGES[d.type](d)}${d.type === 'intent' ? '' : traceOf(route)}${backlinks(route)}</article>` : `<article class="doc"><h1>Not found</h1><p class="path">${W.esc(route)}</p></article>`;
   }
   $('#main').innerHTML = html;
   toc();
@@ -300,13 +316,14 @@ async function show() {
 }
 
 async function start() {
-  const def = await W.get('avenCEO/avenCEO');
-  G = { ...(await W.crawl(['avenCEO/avenCEO', ...def.indexes.filter((p) => !p.startsWith('sources/'))])), def };
-  G.sources = await W.get('sources/index');
+  await W.ready();
+  const def = await W.get(W.DEF);
+  const sources = await W.get(W.indexOf('sources'));
+  G = { ...(await W.crawl([W.DEF, ...def.indexes.filter((p) => p !== W.indexOf('sources'))])), def, sources };
   const n = (type) => ofType(type).length;
   $('#nav').innerHTML = `<a href="#home" data-r="home">avenCEO</a>` + LISTS.map(([k, t, type]) => (k === 'gap' ? '<span class="gap"></span>'
-    : `<a href="#${k}" data-r="${k}">${t}<span>${k === 'waiting' ? ofType('intent').reduce((s, [, I]) => s + (I.questions || []).filter((q) => !q.answered).length, 0) : n(type)}</span></a>`)).join('');
-  $('#main').addEventListener('click', (ev) => { const j = ev.target.closest('[data-jump]'); if (j) { const s = G.def.steps.find((p) => p.startsWith(`avenCEO/steps/${j.dataset.jump.split('-')[1]}-`)); if (s) location.hash = s; } });
+    : `<a href="#${k}" data-r="${k}">${t}<span>${k === 'waiting' ? ofType('intent').reduce((s, [, I]) => s + (I.questions || []).filter((q) => !q.answered && !q.replaced_by).length, 0) : n(type)}</span></a>`)).join('');
+  $('#main').addEventListener('click', (ev) => { const j = ev.target.closest('[data-jump]'); if (j) { const s = W.stepOf(+j.dataset.jump.split('-')[1], G.docs); if (s) location.hash = s; } });
   addEventListener('hashchange', show);
   show();
 }

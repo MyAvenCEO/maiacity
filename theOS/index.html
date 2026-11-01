@@ -32,22 +32,28 @@
     <a class="tile" href="sources/index.html"><span class="k">Sources</span><h2>What we learned from</h2><p>One doc per source: protocols drawn as flows, articles, repositories and specifications, with what we took; who read it is in the intent that read it.</p><span class="nums" id="n-src"></span></a>
   </div>
 </main>
+<script src="ui/wiki.js"></script>
 <script>
 // The dashboard only counts and lists; each app reads theOS's docs itself.
 (async () => {
-  const get = (p) => fetch(p).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  W.root = '';
+  await W.ready();
   const chip = (t) => `<span class="chip">${t}</span>`;
-  const [stories, intents, aips, decisions, sessions, sources, authors] = await Promise.all(['docs/stories.json', 'docs/intents.json', 'aip/index.json', 'decisions/index.json', 'sessions/index.json', 'sources/index.json', 'authors/index.json'].map(get));
+  const get = (p) => fetch(p).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const [stories, intents] = await Promise.all(['docs/stories.json', 'docs/intents.json'].map(get));
+  const [aips, decisions, sessions, sources, authors] = await Promise.all(['aip', 'decisions', 'sessions', 'sources', 'authors'].map((f) => W.get(W.indexOf(f))));
   const chapters = (stories?.stories || []).filter((s) => !s.kind).length;
   document.getElementById('n-docs').innerHTML = chip(`${chapters} chapters`) + chip(`${intents?.intents.length ?? 0} OLD-AIPs`);
   document.getElementById('n-ceo').innerHTML = chip(`${aips?.items.length ?? 0} AIPs`) + chip(`${decisions?.items.length ?? 0} decisions`) + chip(`${authors?.items.length ?? 0} authors`) + chip(`${sessions?.items.length ?? 0} sessions`);
-  const refs = await Promise.all((sources?.items || []).map((p) => get(`${p}.json`)));
+  const refs = await Promise.all((sources?.items || []).map((p) => W.get(p)));
   document.getElementById('n-src').innerHTML = chip(`${refs.length} sources`) + chip(`${refs.filter((r) => r?.subtype === 'protocol').length} protocols`);
-  const open = (await Promise.all((aips?.items || []).map((p) => get(`${p}.json`)))).flatMap((I) => (I?.questions || []).filter((q) => !q.answered).map((q) => [I, q]));
-  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  // names for the ids in the questions' text (D-75): the decisions and intents are crawled once
+  await W.crawl([...(aips?.items || []), ...(decisions?.items || [])]);
+  const open = (aips?.items || []).flatMap((p) => (W.all.get(p)?.questions || []).filter((q) => !q.answered && !q.replaced_by).map((q) => [p, W.all.get(p), q]));
+  const esc = W.esc;
   if (open.length) {
     const w = document.getElementById('waiting'); w.hidden = false;
-    w.insertAdjacentHTML('beforeend', open.map(([I, q]) => `<div class="wait"><span class="path"><a class="wl" href="avenCEO/index.html#${esc(I.id.startsWith('aip/') ? I.id : 'aip/' + I.id)}">${esc(I.id)}</a></span><b>${esc(q.q)}</b><ul>${q.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ul></div>`).join(''));
+    w.insertAdjacentHTML('beforeend', open.map(([p, I, q]) => `<div class="wait"><span class="path"><a class="wl" href="avenCEO/index.html#${esc(p)}">${esc(W.name(I, p))}</a></span><b>${esc(W.named(q.q))}</b><ul>${q.options.map((o) => `<li>${esc(W.named(o))}</li>`).join('')}</ul></div>`).join(''));
   }
 })();
 </script>

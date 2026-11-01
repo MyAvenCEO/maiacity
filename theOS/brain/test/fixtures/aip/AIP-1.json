@@ -1,0 +1,83 @@
+{
+ "type": "intent",
+ "id": "AIP-1",
+ "title": "A fixture intent",
+ "questions": [
+  {
+   "q": "Open question?",
+   "options": [
+    "Yes (recommended)",
+    "No"
+   ]
+  },
+  {
+   "q": "Answered question?",
+   "options": [
+    "Yes",
+    "No"
+   ],
+   "answered": "decisions/D-3"
+  },
+  {
+   "q": "Replaced question?",
+   "options": [
+    "Yes",
+    "No"
+   ],
+   "replaced_by": "question 1"
+  }
+ ],
+ "tasks": [
+  {
+   "id": "t0",
+   "what": "Your answer: an earlier question (overdue)",
+   "step": 1,
+   "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t1",
+   "what": "Gate A: approve",
+   "step": 2,
+   "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t2",
+   "what": "Try it (done)",
+   "step": 3,
+   "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t3",
+   "what": "Build it",
+   "step": 3,
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t4",
+   "what": "Gate B: try it (a later step)",
+   "step": 3,
+   "who": "authors/samuel-andert"
+  }
+ ],
+ "events": [
+  {
+   "at": "2026-11-01T08:00Z",
+   "by": "authors/avenmaia",
+   "what": "understood",
+   "text": "Understood.",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:00Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Tried.",
+   "writes": [
+    "decisions/D-3"
+   ],
+   "reads": [],
+   "task": "t2"
+  }
+ ]
+}
