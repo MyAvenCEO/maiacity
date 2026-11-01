@@ -68,31 +68,31 @@
    "commit": "0689d7e",
    "reviewed": "round 1's fixes (git diff 88fe754 0689d7e -- theOS/sandbox .github), the files, and the three reports on ca332a8",
    "prompt": "(the round 1 prompt, with round 1's review settled, the diff of its fixes, same.mjs, and the three reports of the 12:24Z event added)",
-   "result": "1 Major, 3 Nit: not clean. Stopped here at the wrap-up: one round allowed, the findings stay open for the next session. The critic confirmed every comparison on record (same.mjs exits 0 for each pair, 1460 states, 0 failed) and no security issue.",
+   "result": "1 Major, 3 Nit: not clean. Stopped here at the wrap-up: one round allowed, the findings stay open for the next session. The critic confirmed every comparison on record (same.mjs exits 0 for each pair, 1460 states, 0 failed) and no security issue. Answered on resumption (d-93eb): the Major and two Nits fixed.",
    "findings": [
     {
      "sev": "Major",
      "kind": "bug",
      "scope": "the pin assertion only runs when the box is rebuilt",
      "text": "The tag hashes theOS/sandbox/box, the workflow and tag.sh, not theOS/package.json; a push that only bumps the Playwright pin keeps the tag, skips build and smoke, and the check runs on the old box with only a warning. Round 1's answer named exactly this case.",
-     "answer": "open",
-     "note": "Not fixed: stopped at the wrap-up (d-8912). Next: compare the box's Playwright with theOS/package.json at the start of the check job, inside the box, or add HEAD:theOS/package.json to tag.sh's hash."
+     "answer": "fix",
+     "note": "Fixed: theOS/package.json is in tag.sh's hash, so a pin bump changes the tag, rebuilds the box and runs the smoke step's pin assertion."
     },
     {
      "sev": "Nit",
      "kind": "bug",
      "scope": "same.mjs accepts files that are not reports",
      "text": "node theOS/sandbox/same.mjs theOS/package.json theOS/package.json says the same and exits 0; it compares pass or fail, not which rule failed.",
-     "answer": "open",
-     "note": "Next: exit 2 unless results is an array of states' length; compare each state's sorted failing rules."
+     "answer": "fix",
+     "note": "Fixed: same.mjs exits 2 unless results is an array as long as the states reached; it compares each state's failing rules (rule and where), a repeated state by its distinct results, and the check's own test (the fixtures, red or green by design) exactly. Tried: a non-report exits 2, a flipped fixture exits 1."
     },
     {
      "sev": "Nit",
      "kind": "missing check",
      "scope": "nothing ties a report to its commit",
      "text": "report.json has no commit and the artifact name no SHA; 'all on ca332a8' rests on the record (tag.sh on ca332a8 does give the event's tag).",
-     "answer": "open",
-     "note": "Next: the artifact named theos-check-report-<sha>, or the SHA passed into the box and written into the report; same.mjs refuses reports of different commits."
+     "answer": "fix",
+     "note": "Fixed: theOS/sandbox/check.sh writes commit.txt (the commit, -dirty when theOS/ has changes, and where it ran) beside the reports; the artifact is named theos-check-<sha>; same.mjs refuses two commits (tried: exit 1)."
     },
     {
      "sev": "Nit",

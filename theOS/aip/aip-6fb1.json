@@ -1001,6 +1001,29 @@
    "reads": [
     "d-93eb"
    ]
+  },
+  {
+   "at": "2026-11-01T12:49Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Checkpoint 4's round 2 answered (rv-8bd0): theOS/package.json in the box's tag; theOS/sandbox/check.sh runs the check and its own test (the fixtures) in the box or on the host and writes the commit beside the reports; same.mjs refuses non-reports and other commits, compares failing rules on the states both runs reached (the crawl samples since aip-31df's final checkpoint 1, so a state reached by one run only is listed, not counted), and compares the fixtures exactly. check.sh's first runner run (41307490037) could not write commit.txt into the box's root-owned folder and still went green: check.sh now makes the folder as the host's user and fails when commit.txt can't be written.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [
+    "rv-8bd0"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:49Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c3 on commit a95dcb8, three scenarios, each through theOS/sandbox/check.sh, compared by same.mjs: the image workflow's runner (run 41308093546, box theos-9bff04ac20567f0b, built and smoked on both platforms by run 41307324250): green, 1279 states (theos-check-a95dcb8… artifact, commit.txt present); inside the box in this cloud session: green, 1286 states, Playwright 1.64.1; this session outside the box: green, 1286 states, Playwright 1.63.0. Every pair the same: the verdict, the failing rules of the 1236 to 1237 states both reached (38 to 42 reached by one only: the crawl samples), and the check's own test (3 fixtures, body-clip red by design, the others green) in each. Not yet: the Mac and arm64 (Gate B).",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/check.sh",
+    "theOS/sandbox/same.mjs"
+   ]
   }
  ],
  "reviews": [
