@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "D-55",
+ "n": 55,
+ "title": "brain's MCP server moves into AIP-4",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "memory",
+  "interface",
+  "apps"
+ ],
+ "quote": "Do it: move the MCP server into AIP-4.",
+ "means": "AIP-4 builds brain's MCP server; AIP-3 only promises that every verb is a plain function brain.mjs exports.",
+ "intents": [
+  "aip/AIP-3",
+  "aip/AIP-4"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-47"
+ ],
+ "reflection": {
+  "checked": "every decision before D-55 that held",
+  "result": "supersedes nothing"
+ }
+}
