@@ -62,6 +62,47 @@
      "note": "The box's build context is theOS/sandbox/box alone (c2), so theOS's lockfile is not in it; playwright@1.64.1 pins playwright-core to exactly 1.64.1 and has no other dependency, and the smoke step now asserts the version against the pin."
     }
    ]
+  },
+  {
+   "round": 2,
+   "commit": "0689d7e",
+   "reviewed": "round 1's fixes (git diff 88fe754 0689d7e -- theOS/sandbox .github), the files, and the three reports on ca332a8",
+   "prompt": "(the round 1 prompt, with round 1's review settled, the diff of its fixes, same.mjs, and the three reports of the 12:24Z event added)",
+   "result": "1 Major, 3 Nit: not clean. Stopped here at the wrap-up: one round allowed, the findings stay open for the next session. The critic confirmed every comparison on record (same.mjs exits 0 for each pair, 1460 states, 0 failed) and no security issue.",
+   "findings": [
+    {
+     "sev": "Major",
+     "kind": "bug",
+     "scope": "the pin assertion only runs when the box is rebuilt",
+     "text": "The tag hashes theOS/sandbox/box, the workflow and tag.sh, not theOS/package.json; a push that only bumps the Playwright pin keeps the tag, skips build and smoke, and the check runs on the old box with only a warning. Round 1's answer named exactly this case.",
+     "answer": "open",
+     "note": "Not fixed: stopped at the wrap-up (d-8912's D-78 relay). Next: compare the box's Playwright with theOS/package.json at the start of the check job, inside the box, or add HEAD:theOS/package.json to tag.sh's hash."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "same.mjs accepts files that are not reports",
+     "text": "node theOS/sandbox/same.mjs theOS/package.json theOS/package.json says the same and exits 0; it compares pass or fail, not which rule failed.",
+     "answer": "open",
+     "note": "Next: exit 2 unless results is an array of states' length; compare each state's sorted failing rules."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "nothing ties a report to its commit",
+     "text": "report.json has no commit and the artifact name no SHA; 'all on ca332a8' rests on the record (tag.sh on ca332a8 does give the event's tag).",
+     "answer": "open",
+     "note": "Next: the artifact named theos-check-report-<sha>, or the SHA passed into the box and written into the report; same.mjs refuses reports of different commits."
+    },
+    {
+     "sev": "Nit",
+     "kind": "wrong fact",
+     "scope": "the 12:24Z event",
+     "text": "It records results written at 12:28 and 12:29.",
+     "answer": "fix",
+     "note": "An erratum event restamps it: the session run ended 12:28:41, the runner's report was read 12:29:02."
+    }
+   ]
   }
  ]
 }

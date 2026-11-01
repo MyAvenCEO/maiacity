@@ -936,6 +936,26 @@
    "how": "AIP-2's thread (D-44), by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T12:31Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 4's Review gate, round 2: c4-review (1 Major, 3 Nit). Not clean: a push that only bumps theOS/package.json's Playwright pin keeps the tag, so the box is not rebuilt and the pin assertion does not run. Stopped here, as the wrap-up asks: the findings stay open.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "aip/AIP-2/c4-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:31Z",
+   "by": "authors/avenmaia",
+   "what": "erratum",
+   "text": "The 12:24Z event records results written later: the session run outside the box ended 12:28:41 and the runner's report was read at 12:29:02; both before commit 0689d7e (12:29:15).",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
