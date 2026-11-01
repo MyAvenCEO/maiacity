@@ -1,0 +1,33 @@
+{
+ "type": "decision",
+ "id": "D-79",
+ "n": 79,
+ "title": "The check presses buttons once per view type",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "checks",
+  "intents"
+ ],
+ "quote": "Start simpler: check the page layout states, one per view type. We can fine-tune it later; now we want speed.",
+ "means": "theOS's check still checks every state it reaches for layout, but presses buttons only in the first state of each view type, one button of each kind, so a run stays fast (1,243 states, 228 view types, about 80 s). Identical buttons that open different content are not all pressed: that case is written into AIP-1's gaps, to be tuned later. Samuel also had review round 4 run, whose findings are fixed.",
+ "intents": [
+  "aip/AIP-1"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-77",
+   "part": "buttons told apart by state, position and markup; no fourth round",
+   "what": "Buttons are pressed once per view type, and a fourth review round ran at Samuel's word."
+  }
+ ],
+ "relates": [
+  "decisions/D-39"
+ ],
+ "reflection": {
+  "checked": "every decision before D-79 that held",
+  "result": "supersedes D-77 in part (how buttons are pressed; the fourth round)"
+ }
+}
