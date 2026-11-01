@@ -39,7 +39,8 @@
     "Change: tell me what",
     "Send it back"
    ],
-   "answer": "'ok' (D-68): approval only if round 6 came back clean; it did not, so Gate A is asked again as question 15."
+   "answer": "'ok' (D-68): approval only if round 6 came back clean; it did not, so Gate A is asked again as question 15. Replaced by question 15.",
+   "replaced_by": "question 15"
   },
   {
    "q": "Decision ids: with many threads at once, keep D-n numbers, or switch to hash ids with D-n as a label?",
@@ -128,7 +129,7 @@
    "answered": "decisions/D-66"
   },
   {
-   "q": "Gate A for AIP-3: round 6 was not clean (8 Major, 8 Nit), and revision 10 answers every finding: the migration now opens checkpoint 2 so everything is built once on flat hash ids; the skill is a real Claude Code skill; supersede 'in part' is defined. Approve revision 10's claims, outcome and mockup as what must be true, or run one more round first?",
+   "q": "Gate A for AIP-3: round 6 was not clean (8 Major, 8 Nit), and revision 10 answers every finding: the migration now opens checkpoint 2 so everything is built once on flat hash ids; the skill is a real Claude Code skill; supersede 'in part' is defined; and, from D-72, brain's MCP server comes back as checkpoint 4. Approve revision 10's claims, outcome and mockup as what must be true, or run one more round first?",
    "options": [
     "Approve revision 10 at Gate A (recommended: the round-6 findings were order and definitions, all answered without a new direction)",
     "One more review round first",
@@ -314,6 +315,14 @@
    "check": "A planted citation made before the migration of a doc changed after it is flagged by brain get, brain check and in the app's file; seeing the chip is part of Gate B's try.",
    "kind": "mechanical",
    "result": "open"
+  },
+  {
+   "id": "c11",
+   "promise": "brain's MCP server serves every verb of v1 from the same functions brain.mjs exports, so other sessions and tools use the same door (D-47, D-72).",
+   "fails": "A tool reaches brain some other way, or the server answers differently than the command.",
+   "check": "The verb test of c7 runs once more through the MCP server and requires the same answers and error codes.",
+   "kind": "mechanical",
+   "result": "open"
   }
  ],
  "outcome": {
@@ -350,6 +359,13 @@
     "c6",
     "c2",
     "c5"
+   ]
+  },
+  {
+   "n": 4,
+   "adds": "brain's MCP server over the same exported functions, needing nothing from another intent (D-72).",
+   "claims": [
+    "c11"
    ]
   }
  ],
@@ -1405,6 +1421,19 @@
     "decisions/D-68",
     "decisions/D-69"
    ]
+  },
+  {
+   "at": "2026-11-01T10:56Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 10, amended: brain's MCP server back as checkpoint 4 (c11), over the same exported functions (D-72); the first Gate A question marked replaced by question 15.",
+   "how": "by the AIP-3 thread, from D-72",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [
+    "decisions/D-72"
+   ]
   }
  ],
  "reviews": [
@@ -1572,11 +1601,18 @@
    "what": "Answer: Gate A on revision 10, or one more round (question 15)",
    "step": 2,
    "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t27",
+   "what": "Checkpoint 4: brain's MCP server",
+   "step": 3,
+   "for": "checkpoint 4",
+   "who": "authors/avenmaia"
   }
  ],
  "protocol": {
   "name": "brain protocol v1",
-  "what": "The one door to brain (D-41). One program, theOS/brain/brain.mjs, with these verbs, each a plain function it exports. The command line calls them, and the skill theOS/.claude/skills/brain/SKILL.md, written by brain index from the verb list, teaches them (it loads because theOS threads start in theOS/, D-54). An MCP server over the same functions was AIP-4's (D-55); AIP-4 is dropped for now (D-64), so none is built. Fields keep their meaning forever; v1 only grows (new verbs, new optional fields). brain writes files; the agent commits them with its other work.",
+  "what": "The one door to brain (D-41). One program, theOS/brain/brain.mjs, with these verbs, each a plain function it exports. The command line calls them, and the skill theOS/.claude/skills/brain/SKILL.md, written by brain index from the verb list, teaches them (it loads because theOS threads start in theOS/, D-54). An MCP server serves the same functions to other sessions and tools (D-47, D-72), in AIP-3's last checkpoint. Fields keep their meaning forever; v1 only grows (new verbs, new optional fields). brain writes files; the agent commits them with its other work.",
   "reads": [
    {
     "verb": "brain prime",
