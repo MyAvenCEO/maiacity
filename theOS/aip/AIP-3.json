@@ -256,9 +256,9 @@
   },
   {
    "id": "c10",
-   "promise": "Links are brain's graph: every path inside a doc resolves, and each link's type is the field it sits in; brain get returns links and backlinks by type. brain check warns, without failing, when a doc that holds cites one that was superseded (D-48).",
+   "promise": "Links are brain's graph: a link is an id, never a path; every id inside a doc resolves to a doc, and each link's type is the field it sits in; brain get returns links and backlinks by type. brain check warns, without failing, when a doc that holds cites one that was superseded (D-48).",
    "fails": "A link points at nothing, or a holding doc quietly rests on a superseded one.",
-   "check": "brain check fails a planted dangling path and prints a warning for a planted citation of a superseded doc.",
+   "check": "brain check fails a planted id that resolves to nothing and a planted path used as a link, and prints a warning for a planted citation of a superseded doc.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -288,9 +288,9 @@
   },
   {
    "id": "c12",
-   "promise": "One migration commit, written by brain as one event of AIP-3 at Build, moves every doc brain keeps into brain/ (the layout above) and renames every doc, existing ones too, to a hash id with every reference to it, so theOS has one id scheme (D-49, D-53). Every path and every old name in text is rewritten (old names such as D-12 or AIP-3; quotes included; OLD-AIP-n is legacy and kept), events included. theOS/brain/renames.json keeps each old name and path with its new id, and the commit's SHA: the one exception c2 accepts. Legacy files outside theOS/ are not changed; their old paths are looked up in renames.json.",
+   "promise": "One migration commit, written by brain as one event of AIP-3 at Build, moves every doc brain keeps into brain/ (the layout above) and renames every doc, existing ones too, to a flat hash id and rewrites every reference to it, paths included, as that id, so theOS has one id scheme (D-49, D-53). Every path and every old name in text is rewritten (old names such as D-12 or AIP-3; quotes included; OLD-AIP-n is legacy and kept), events included. theOS/brain/renames.json keeps each old name and path with its new id, and the commit's SHA: the one exception c2 accepts. Legacy files outside theOS/ are not changed; their old paths are looked up in renames.json.",
    "fails": "A doc, an app or a text inside theOS/ still uses an old name or path, an old name can no longer be looked up, or another commit claims the exception.",
-   "check": "After the migration brain check finds no old name or path anywhere in theOS/ (renames.json excepted); brain get resolves every old name; c2 accepts history rewritten only in the commit renames.json names.",
+   "check": "After the migration brain check finds no old name and no path used as a link anywhere in theOS/ (renames.json excepted); brain get resolves every old name; c2 accepts history rewritten only in the commit renames.json names.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -1316,6 +1316,26 @@
    "writes": [],
    "reads": [],
    "task": "t23"
+  },
+  {
+   "at": "2026-11-01T12:35Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Reference everything flat by hash ids, never by paths.",
+   "how": "in the AIP-3 thread, his words: \"you should reference everything flat by hash ids right, never by paths\"; sent to avenMAIA to record as a decision",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:35Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 9, amended: a link is a flat id, never a path; brain resolves an id to its file (brain index writes the map for the apps); folders are only where files sit (protocol ids and layout, c10, c12).",
+   "how": "by the AIP-3 thread",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": []
   }
  ],
  "reviews": [
@@ -1498,7 +1518,7 @@
    },
    {
     "verb": "brain get <id>",
-    "does": "Returns one doc, what supersedes it, and its links and backlinks (a link is any string that names a doc's path), grouped by type from checkpoint 3: the field they sit in, such as supersedes, relates, intents or writes. A link whose target changed since the commit that added it is flagged 'changed since' (c5). An old name (D-12, AIP-3) is resolved through theOS/brain/renames.json."
+    "does": "Returns one doc, what supersedes it, and its links and backlinks (a link is any string that is an id), grouped by type from checkpoint 3: the field they sit in, such as supersedes, relates, intents or writes. A link whose target changed since the commit that added it is flagged 'changed since' (c5). An old name (D-12, AIP-3) is resolved through theOS/brain/renames.json."
    },
    {
     "verb": "brain reflect <type> <draft>",
@@ -1509,7 +1529,7 @@
   "writes": [
    {
     "verb": "brain add <type> <file>",
-    "does": "Mints the doc's id: <folder>/<prefix>-<hex>, the prefix short for the type (d for a decision, aip for an intent) and the hex 4 random characters, longer if the path exists on this branch (D-45); avenMAIA mints a decision's id this way like anyone else. Checks the doc against its type's schema; refuses a supersedes entry ({doc, part, what}) whose doc does not exist or did not hold at the parent commit. Runs brain reflect itself and writes into the event the candidates the doc does not supersede, for the reviewer to judge (D-50). Runs brain index when the doc's folder has one. Answers created or unchanged, and lists what the doc supersedes."
+    "does": "Mints the doc's id: <prefix>-<hex>, the prefix short for the type and the hex 4 random characters, longer if the id exists on this branch (D-45), and files the doc in its type's folder; avenMAIA mints a decision's id this way like anyone else. Checks the doc against its type's schema; refuses a supersedes entry ({doc, part, what}) whose doc does not exist or did not hold at the parent commit. Runs brain reflect itself and writes into the event the candidates the doc does not supersede, for the reviewer to judge (D-50). Runs brain index when the doc's folder has one. Answers created or unchanged, and lists what the doc supersedes."
    },
    {
     "verb": "brain edit <id> <file>",
@@ -1528,12 +1548,13 @@
    "verb": "brain check",
    "does": "A module that AIP-1's check command runs on every commit before it is pushed (from the pre-push hook) and that avenMAIA runs on every merged tree. It runs every claim's check below and fails a commit that changed a doc without an event of that commit (D-46). A non-merge commit is checked against its parent. A merge commit is checked only for what differs from both parents. Merges resolve with brain index (index docs written again) and a git merge driver for lists that only grow, which keeps both sides' new entries, the first parent's first; brain prime installs the driver."
   },
-  "errors": "Every refusal is a fixed code with the fix, for example no_intent (pass --intent aip/<id>), schema (field x: expected y), step (a metric is written at Learn; the AIP stands at <step>), not_held (<id> was superseded by <id>).",
+  "errors": "Every refusal is a fixed code with the fix, for example no_intent (pass --intent <aip id>), schema (field x: expected y), step (a metric is written at Learn; the AIP stands at <step>), not_held (<id> was superseded by <id>).",
   "not": [
    "No delete and no withdraw: a doc stops holding only when a newer doc supersedes it through the reflection (D-48).",
    "No model inside the door: brain never guesses a supersede or a link.",
    "No commits by brain, and no version guard on edit yet: each thread writes its own branch, so clashes show at merge."
   ],
-  "layout": "brain/ holds brain's program (brain.mjs, SKILL.json, test/), its app (index.html, app.js: today's Sources app, renamed brain) and every doc brain keeps: brain/sources, brain/decisions, brain/sessions, brain/terms, brain/lessons, brain/metrics, brain/authors. aip/ (the intents) and avenCEO/ (the harness: steps, gates, types, checkers) stay where they are; they write to brain. The move happens in the one migration with the hash-id rename (c12), so every link is rewritten once."
+  "layout": "brain/ holds brain's program (brain.mjs, SKILL.json, test/), its app (index.html, app.js: today's Sources app, renamed brain) and every doc brain keeps, in folders by type: brain/sources, brain/decisions, brain/sessions, brain/terms, brain/lessons, brain/metrics, brain/authors. aip/ (the intents) and avenCEO/ (the harness: steps, gates, types, checkers) stay where they are; they write to brain. Folders are only where files sit; no link names one. The move happens in the one migration with the hash-id rename (c12).",
+  "ids": "Every doc is referenced by its id alone, flat, never by a path: an id is a type prefix and random hex (d-3f9c for a decision, aip-7a1e for an intent, src-0b42 for a source), unique across all of theOS. A link is any string that is an id. brain finds a doc's file from its id (brain index writes the map from id to file for the static apps), so a doc can move between folders without any link changing."
  }
 }
