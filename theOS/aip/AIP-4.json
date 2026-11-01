@@ -3,7 +3,88 @@
  "id": "AIP-4",
  "title": "A Claude Code mod as theOS's and avenCEO's interface",
  "kind": "avenCEO",
- "note": "In the inbox: only its source so far. Its Understand starts with what a Claude Code mod can be (a pane beside the chat, a status line, a slash command, a hook on tool calls) and what you would do through it instead of the three apps.",
+ "note": "Understood: Claude Code has thread state and a mod that can draw, but only locally; nothing joins intents and threads today. Next: Samuel chooses where avenMAIA lives (local with the mod, cloud, or Projects), then Specify.",
+ "problem": {
+  "who": [
+   "Samuel, the one person who decides: he gives meaning at Gate A and judges experience at Gate B, from the Mac and from the phone.",
+   "avenMAIA, the master session (D-43): it records Samuel's words, starts and steers one thread per intent and relays their questions.",
+   "The intent threads, one Claude Code session per AIP (D-44): each owns its record and needs Samuel's answers to move past a gate."
+  ],
+  "experience": "To see where an intent stands and what waits for him, Samuel reads the Intents app for the record and claude.ai's session list for the thread, and passes every answer through avenMAIA's chat. Nothing shows an intent next to its thread, and nothing inside Claude Code shows an intent at all.",
+  "evidence": [
+   {
+    "group": "What Samuel asked for",
+    "items": [
+     {
+      "text": "\"Discover a native Claude Code mod as a user interface, so we can work with theOS and the aven harness directly from Claude Code sessions.\"",
+      "ref": "decisions/D-27"
+     },
+     {
+      "text": "\"The Claude Code mod should merge the worlds of intents and Claude threads: each intent becomes its own Claude thread, and one master session, avenMAIA, orchestrates.\"",
+      "ref": "decisions/D-43"
+     }
+    ]
+   },
+   {
+    "group": "How it works today, from the records",
+    "items": [
+     {
+      "text": "Five intents run in their own threads (AIP-1, 2, 3, 4, 5) beside avenMAIA, each a separate cloud session.",
+      "ref": "decisions/D-44"
+     },
+     {
+      "text": "Which session runs an intent is written only in the text of its 'started' event (AIP-4's names session_01E9zxn6mwBXcKRHezNQyoSB, while this thread runs as session_01E9zxn5CaDAnqcnQumYAeLK): no field a program can read.",
+      "ref": "aip/AIP-4"
+     },
+     {
+      "text": "Gate A and Gate B are passed by Samuel's chat message, quoted into the record; the orchestrator follows avenCEO by hand.",
+      "ref": "avenCEO/avenCEO"
+     },
+     {
+      "text": "An intent's stage and task status are computed from its events only inside theOS's web apps (stageOf and taskStatus in theOS/avenCEO/app.js).",
+      "ref": "avenCEO/avenCEO"
+     }
+    ]
+   },
+   {
+    "group": "What Claude Code offers, from the research",
+    "items": [
+     {
+      "text": "Thread state exists (get_session's status_bucket: working, blocked, review_ready, completed, failed) and Projects groups threads by 'Waiting on you', but both know threads, not intents, stages or gates.",
+      "ref": "aip/AIP-4/research"
+     },
+     {
+      "text": "A mod can draw a pane, a band and buttons, but only in the terminal, the Desktop Code tab and VS Code; never in a cloud session, on claude.ai or on the phone. avenMAIA runs today in a cloud session.",
+      "ref": "aip/AIP-4/research"
+     }
+    ]
+   }
+  ],
+  "baseline": "Not measured. Observed from the records: one intent's view and its thread's view are in two different apps, and the link between them is free text in one event. How often Samuel switches, or how long an answer waits, was not counted.",
+  "whys": [
+   "Samuel can't see an intent and its thread together, or act on both in one place. Why? The intent is shown by theOS's apps and the thread by claude.ai; neither reads the other.",
+   "Why? The join (which session runs which intent, and whether it waits for him) lives only in avenMAIA's context and in event text, and no surface reads both theOS's records and the sessions.",
+   "Root cause: no surface reads the intent records and the Claude Code threads together and lets Samuel act through avenMAIA. Claude Code's surfaces know sessions but not intents; theOS's apps know intents but not sessions."
+  ],
+  "truths": [
+   "What a mod draws appears only in the terminal, the Desktop app's Code tab and the VS Code extension; in a cloud session, claude -p, the Agent SDK, on claude.ai and on the phone its hooks may run but nothing is drawn (Claude Code docs, mods overview).",
+   "A mod runs with the user's permissions, unsandboxed: it can read files, run processes, make requests, submit prompts and message other sessions.",
+   "A message from another session is never the user's consent and cannot answer a permission prompt; a cloud session cannot reply with SendMessage across machines.",
+   "Cloud sessions expose their state and transcript: get_session gives a status_bucket, list_events the transcript (observed in this session's tools).",
+   "An intent's stage and tasks are a function of its events (avenCEO's first rule; stageOf in the Intents app).",
+   "A cloud container is reclaimed; only what is committed and pushed survives."
+  ],
+  "assumptions": [
+   "Samuel can run avenMAIA as a local session on his Mac (Desktop Code tab or terminal) with theOS checked out, and reach it from the phone over Remote Control.",
+   "The claude-code-remote tools (create_session, get_session, list_events) are reachable from such a local session, so the mod can read each thread's state. Not checked: they were seen only in this cloud session.",
+   "Samuel wants to act from the interface (answer questions, pass gates, message a thread), not only to look; acting goes through avenMAIA, which keeps the decisions.",
+   "Projects may not be on Samuel's plan: it is a beta on Pro, Max and Ultra, not Team or Enterprise.",
+   "The mods API is early access and moves between releases (2.1.316 read here); a mod is checked against the build it runs on.",
+   "theOS stays the single source of truth: the mod stores no state of its own about intents."
+  ],
+  "risk": "Can be undone: a mod is a plugin folder, turned off with /plugin or --safe-mode and removed by deleting it; it reads the records and writes nothing to them, handing Samuel's words to avenMAIA instead. Nothing is published or deployed. Because a mod runs with Samuel's full permissions, it must not approve tool calls or write records on its own."
+ },
+ "research": "aip/AIP-4/research",
  "questions": [],
  "events": [
   {
@@ -48,6 +129,67 @@
     "decisions/D-44"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "research",
+   "text": "Read Claude Code's extension points from 18 official pages and the plugin-authoring skill's API, and the tools this session was given; wrote one reference per source and aip/AIP-4/research (18 patterns, a recommendation, six open questions). Parts of five long pages were not read; no host was blocked.",
+   "how": "AIP-4's thread (session_01E9zxn5CaDAnqcnQumYAeLK), a cloud session of avenMAIA started by the orchestrator, as worker; WebFetch of code.claude.com, the bundled skill read from disk",
+   "writes": [
+    "sources/claude-code-mods",
+    "sources/claude-code-mods-interface",
+    "sources/claude-code-plugin-authoring-skill",
+    "sources/claude-code-plugins",
+    "sources/claude-code-hooks",
+    "sources/claude-code-statusline",
+    "sources/claude-code-cloud-sessions",
+    "sources/claude-code-projects",
+    "sources/claude-code-cross-session-messaging",
+    "sources/claude-code-agent-view",
+    "sources/claude-code-channels",
+    "sources/claude-code-remote-control",
+    "sources/claude-code-agent-teams",
+    "sources/claude-code-mcp",
+    "sources/claude-agent-sdk",
+    "sources/claude-code-output-styles",
+    "sources/claude-code-desktop",
+    "sources/claude-code-skills",
+    "sources/claude-code-scheduled-tasks",
+    "sources/claude-code-remote-session-tools",
+    "aip/AIP-4/research"
+   ],
+   "reads": [
+    "avenCEO/avenCEO",
+    "aip/AIP-4",
+    "aip/AIP-1",
+    "decisions/D-27",
+    "decisions/D-43",
+    "decisions/D-44"
+   ],
+   "task": "t1"
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "understood",
+   "text": "Problem, evidence, root cause, truths, assumptions and risk written.",
+   "how": "AIP-4's thread (session_01E9zxn5CaDAnqcnQumYAeLK), a cloud session of avenMAIA started by the orchestrator, as worker; by hand",
+   "writes": [],
+   "reads": [
+    "aip/AIP-4/research"
+   ],
+   "task": "t1"
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Understand done: what a Claude Code mod can be and what Samuel would do through it.",
+   "how": "AIP-4's thread (session_01E9zxn5CaDAnqcnQumYAeLK), a cloud session of avenMAIA started by the orchestrator, as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t1"
   }
  ],
  "reviews": [],
