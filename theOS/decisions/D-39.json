@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "D-39",
+ "n": 39,
+ "title": "AIP-1: Gate A for pieces 1 and 2",
+ "subtype": "gate-A",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "intents",
+  "gates",
+  "checks"
+ ],
+ "quote": "AIP-1: do as you suggest.",
+ "means": "Gate A for AIP-1's checkpoints 1 and 2: theOS/CLAUDE.md with the done rule, the package file, the crawl and the docs check, then buttons and screenshots under 5 minutes. The pixel diff and the look checker go back to Specify with round 6's findings, as their own intent, AIP-6.",
+ "intents": [
+  "aip/AIP-1",
+  "aip/AIP-6"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-34"
+ ],
+ "reflection": {
+  "checked": "every decision before D-39 that held",
+  "result": "supersedes nothing"
+ }
+}

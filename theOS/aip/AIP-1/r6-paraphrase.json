@@ -16,71 +16,71 @@
    "sev": "Major",
    "scope": "done rule, terms/published-2",
    "text": "Several AIPs run at once (D-26) but there is one artifact, and \"the newest commit whose message names an artifact version\" names no branch: a diff can take its base from another branch's publish, and republishes overwrite each other. The version is put in a commit pushed before the publish that creates it.",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6: the base of the pixel diff with several AIPs at once."
   },
   {
    "sev": "Major",
    "scope": "checkpoints 1 and 2, gates/review",
    "text": "The look checker is a checkpoint's only critic and arrives in checkpoint 3; checkpoints 1 and 2 change only check code, which no view shows, so their Review gate has nothing to run and no fresh checker reviews the check code. Which done rule applies before checkpoint 3 is unsaid.",
-   "answer": "open",
-   "note": ""
+   "answer": "fix",
+   "note": "The Review gate of checkpoints 1 and 2 is a fresh critic of the check code's diff, the zoom-out lens on code."
   },
   {
    "sev": "Major",
    "scope": "c3",
    "text": "The fix commits also restyle views that were not broken, so \"at the parent, the checker flags them\" has no ground truth per group; \"passes the rest\" is never tested and a checker that flags too much passes. b1d105b39 is a scroll behaviour, but the checker sees stills; viewport or full-page is unsaid.",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6."
   },
   {
    "sev": "Major",
    "scope": "c2, c3",
    "text": "A state's identity is its route plus its rendered text, but the diff must pair views across two commits: any text edit turns a changed view into one removed and one new. Pairing and new views are undefined; the Mechanical gate diffs a new view against a mockup that small edits do not have.",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6."
   },
   {
    "sev": "Major",
    "scope": "c3, c4",
    "text": "Grouping by the exact set of class names has no upper bound, and c4 times only the check command: nothing limits how much the look checker is shown.",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6."
   },
   {
    "sev": "Major",
    "scope": "outcome",
    "text": "A layout escape is a correction event, but events live in intents and small edits have no intent; avenCEO forbids writes outside an intent's lifecycle. The baseline is in a session doc, and avenMAIA, whose work is measured, decides the cause.",
-   "answer": "open",
-   "note": ""
+   "answer": "fix",
+   "note": "AIP-1's outcome no longer counts correction events: the check's own result on every change that touches view code, counted per session in the session doc."
   },
   {
    "sev": "Major",
    "scope": "risk",
    "text": "\"Can be undone\" needs a tested undo; nothing tests republishing the previous version.",
-   "answer": "open",
-   "note": ""
+   "answer": "fix",
+   "note": "The undo of a republish (republish the version before) is tried once in checkpoint 1."
   },
   {
    "sev": "Nit",
    "scope": "deferred, deleted",
    "text": "They hand the release to AIP-2; assumption 1 and AIP-2 say AIP-5.",
-   "answer": "open",
-   "note": ""
+   "answer": "fix",
+   "note": "The release is AIP-5's everywhere."
   },
   {
    "sev": "Nit",
    "scope": "assumptions, checkpoint 3",
    "text": "The look checker's prompt is in avenCEO/checks/ by assumption 3 and avenCEO/checkers/look.json by checkpoint 3; the checker type does not list it.",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6: the look checker's prompt."
   },
   {
    "sev": "Nit",
    "scope": "done rule",
    "text": "Where the artifact is hosted and how it is republished is unsaid.",
-   "answer": "open",
-   "note": ""
+   "answer": "fix",
+   "note": "The done rule says it: the theOS artifact is a private claude.ai page, republished by avenMAIA with its files."
   }
  ]
 }

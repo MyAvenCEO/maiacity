@@ -1,0 +1,109 @@
+{
+ "type": "intent",
+ "id": "AIP-6",
+ "title": "The pixel diff and the look checker",
+ "kind": "avenCEO",
+ "note": "Split from AIP-1 at its Gate A (D-39): its checkpoint 3 and the outcome it served. It starts from AIP-1's round 6, whose findings it carries.",
+ "source": {
+  "type": "idea",
+  "by": "authors/samuel-andert",
+  "at": "2026-11-01",
+  "text": "AIP-1: do as you suggest.",
+  "links": [
+   "aip/AIP-1"
+  ],
+  "ref": "decisions/D-39"
+ },
+ "claims": [
+  {
+   "id": "c1",
+   "promise": "A pixel diff against the last published version lists the views that changed. They are grouped by rendered structure (the set of class names in the view) and size, and the look checker is shown, from each group, the view with the most changed pixels, with the group's count: it flags the broken ones and passes the rest. The program picks, never the author.",
+   "fails": "A visual break is called done, a break in part of a group hides behind a view that is fine, or a checker that flags everything passes.",
+   "check": "Its prompt is committed first. Then each fix is replayed as the pair (the fix's parent, the fix): 106ba0e5f (two parts of the intent page shared one class name), 3ddc07339 (the squeezed scenario table, on the 23 OLD-AIPs that have scenarios) and b1d105b39 (the board that scrolled as a whole). Shown the changed views at the parent, the checker flags them; at the fix, it passes them. Its prompts and answers are stored.",
+   "kind": "review",
+   "result": "open"
+  }
+ ],
+ "pixel_diff": [
+  "Base: the commit of the last published version, read off the newest commit message that names an artifact version.",
+  "Render: the crawl visits every state of the three apps at the base and at the change, at 390x844 and 1280x720, in the same box and browser; each screenshot waits for document.fonts.ready and for no network request in flight. A state is keyed by its route and size.",
+  "Compare: for each state in both, the two PNGs are compared pixel by pixel; a pixel counts as changed when any channel differs by more than a small threshold, so anti-aliasing noise is ignored. States only in the change are new; only in the base are gone.",
+  "Group: each changed or new state is grouped by its rendered structure (the sorted set of class names in it) and its size. A layout bug shows the same way across one structure, so one group is one kind of view.",
+  "Pick: from each group the program picks the state with the most changed pixels; it never picks by path, and the author never picks.",
+  "Show: the look checker, a fresh agent with its prompt in theOS/avenCEO/checkers/look.json, sees per group the before and after screenshots with the changed pixels marked, the group's count, and nothing of the conversation.",
+  "Judge: for each, it answers pass, or Blocker, Major or Nit with what looks broken (cut off, overlapping, squeezed, unreachable, off-style). A Blocker or Major stops the done rule; the answer is stored with the prompt.",
+  "Test of the checker: replayed on the fixes 106ba0e5f, 3ddc07339 and b1d105b39 as (the fix's parent, the fix): shown the parent's views it must flag them, shown the fix's it must pass them."
+ ],
+ "outcome": {
+  "promise": "Zero layout escapes over the first three sessions after its checkpoint that change view code, each with at least five such commits.",
+  "how": "Counted per session in the session doc.",
+  "kind": "measured",
+  "result": "open"
+ },
+ "checkpoints": [
+  {
+   "n": 1,
+   "adds": "The pixel diff against the last published version, the grouping, and the look checker's prompt; its replays.",
+   "claims": [
+    "c1"
+   ]
+  }
+ ],
+ "carried": [
+  "aip/AIP-1/r6-paraphrase",
+  "aip/AIP-1/r6-zoom-out"
+ ],
+ "questions": [],
+ "reviews": [],
+ "tasks": [
+  {
+   "id": "t1",
+   "what": "Answer the findings carried from AIP-1's round 6, and write revision 1",
+   "step": 2,
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t2",
+   "what": "Spec review round 1",
+   "step": 2,
+   "who": "two fresh checkers"
+  },
+  {
+   "id": "t3",
+   "what": "Gate A",
+   "step": 2,
+   "who": "authors/samuel-andert"
+  }
+ ],
+ "events": [
+  {
+   "at": "2026-11-01T09:50Z",
+   "by": "authors/avenmaia",
+   "what": "source",
+   "text": "Split from AIP-1 at its Gate A: the pixel diff and the look checker.",
+   "how": "by hand, at your direct ask (D-39)",
+   "writes": [
+    "aip/AIP-6"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:50Z",
+   "by": "authors/avenmaia",
+   "what": "understood",
+   "text": "Understood with AIP-1: the same problem, evidence and root cause (aip/AIP-1).",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:50Z",
+   "by": "authors/avenmaia",
+   "what": "specified",
+   "text": "c1 and the pixel diff's design taken from AIP-1's revision 8; round 6's findings carried.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  }
+ ]
+}

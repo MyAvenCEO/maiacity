@@ -1,7 +1,7 @@
 {
  "type": "intent",
  "id": "AIP-1",
- "title": "Build avenCEO, our agent harness",
+ "title": "Checks for theOS's apps: the crawl and the docs check",
  "kind": "avenCEO",
  "note": "The first AIP of avenCEO's new sequence: avenCEO is built with its own steps, by hand, before any of it is automated. The 91 current intents (theOS/docs/intents.json, numbered OLD-AIP-1 to OLD-AIP-91) are consolidated into this format later, in their own AIP.",
  "problem": {
@@ -136,7 +136,7 @@
   },
   {
    "name": "Checks first",
-   "note": "The done rule for every theOS commit: theOS's check command green (the crawl, the docs check, the pixel diff against the last published version), the look checker shown one view per group of changed views, pushed and published. An AIP only for work that needs Gate A. Everything in theOS/, from scratch. Measure after checkpoint 3; the router, the Stop hook and a metrics script only as new AIPs, and only if escapes remain.",
+   "note": "The done rule for every theOS commit: theOS's check command green (the crawl and the docs check), pushed and published. An AIP only for work that needs Gate A. Everything in theOS/, from scratch. The pixel diff and the look checker come with AIP-6.",
    "chosen": true
   },
   {
@@ -168,14 +168,6 @@
    "result": "open"
   },
   {
-   "id": "c3",
-   "promise": "A pixel diff against the last published version lists the views that changed. They are grouped by rendered structure (the set of class names in the view) and size, and the look checker is shown, from each group, the view with the most changed pixels, with the group's count: it flags the broken ones and passes the rest. The program picks, never the author.",
-   "fails": "A visual break is called done, a break in part of a group hides behind a view that is fine, or a checker that flags everything passes.",
-   "check": "Its prompt is committed first. Then each fix is replayed as the pair (the fix's parent, the fix): 106ba0e5f (two parts of the intent page shared one class name), 3ddc07339 (the squeezed scenario table, on the 23 OLD-AIPs that have scenarios) and b1d105b39 (the board that scrolled as a whole). Shown the changed views at the parent, the checker flags them; at the fix, it passes them. Its prompts and answers are stored.",
-   "kind": "review",
-   "result": "open"
-  },
-  {
    "id": "c4",
    "promise": "theOS's check command finishes in under 5 minutes for a change of one doc, so it is never the step that gets skipped.",
    "fails": "The check is slow and is skipped.",
@@ -185,8 +177,8 @@
   }
  ],
  "outcome": {
-  "promise": "Zero layout escapes over the first three sessions after checkpoint 3 that change view code (.js, .css or .html), each with at least five such commits.",
-  "how": "Counted session by session: a layout escape is a correction event by Samuel Andert whose cause is layout. Renamed terms are AIP-3's outcome; total corrections per 10 commits stay a metric (metrics/corrections), not this AIP's test.",
+  "promise": "Over the first three sessions after checkpoint 2 that change view code (.js, .css or .html), no content a person cannot reach and no page that scrolls sideways is ever called done.",
+  "how": "The check runs on every change that touches view code; a correction of that kind is noted in the session doc, by hand.",
   "kind": "measured",
   "result": "open"
  },
@@ -196,16 +188,15 @@
   "The published artifact not updated after a change: no check; the done rule asks for it.",
   "Renamed words: AIP-3's c6; until then the done rule's sweep, which nothing enforces."
  ],
- "done_rule": "A change to theOS is done when theOS's check command is green (the crawl, the pixel diff against the last published version, the docs check), a fresh checker has looked at the changed views and found no Blocker or Major, a decision that renames a word has been swept for the old word, it is pushed to the work branch, and the theOS artifact (private) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply.",
+ "done_rule": "A change to theOS is done when theOS's check command is green (the crawl and the docs check), a decision that renames a word has been swept for the old word, it is pushed to the work branch, and the theOS artifact (a private claude.ai page, republished by avenMAIA with its files) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply. The pixel diff and the look checker join it with AIP-6.",
  "aip_when": "An AIP is opened for work that needs your Gate A: a decision about what must be true (architecture, product behaviour, how we work). Small edits follow the done rule only.",
  "mockup": [
-  "The check's report: each app, its states, pass or fail; a folder of screenshots",
-  "The checker's answer for the changed views, one per group, with the counts"
+  "The check's report: each app, its states, pass or fail; a folder of screenshots"
  ],
  "checkpoints": [
   {
    "n": 1,
-   "adds": "theOS/CLAUDE.md with the done rule (the root check does not apply in theOS; a decision that renames a word is swept for the old word); theOS/package.json and its lockfile; the check command with a crawl that follows links, and the docs check, which fails first at faf266961's parent.",
+   "adds": "theOS/CLAUDE.md with the done rule (the root check does not apply in theOS; a decision that renames a word is swept for the old word); theOS/package.json and its lockfile; the check command with a crawl that follows links, and the docs check, which fails first at faf266961's parent. The undo of a republish (the version before) is tried once.",
    "claims": [
     "c1"
    ]
@@ -216,13 +207,6 @@
    "claims": [
     "c2",
     "c4"
-   ]
-  },
-  {
-   "n": 3,
-   "adds": "The pixel diff against the last published version, the grouping, and the look checker's prompt in theOS/avenCEO/checkers/look.json; its replays.",
-   "claims": [
-    "c3"
    ]
   }
  ],
@@ -244,20 +228,24 @@
    "until": "Escapes remain after checkpoint 3."
   },
   {
-   "what": "An append-only check for events",
-   "until": "Records multiply; git keeps their history meanwhile."
-  },
-  {
    "what": "Memory: decisions and their reflection, terms, the trace, authors, the schema of every doc",
    "until": "AIP-3, brain (D-25)."
   },
   {
    "what": "Release gating, and where theOS's checks run",
    "until": "AIP-2, which gives theOS the sandbox and the release pipeline (D-24)."
+  },
+  {
+   "what": "The pixel diff and the look checker",
+   "until": "AIP-6 passes its Gate A."
+  },
+  {
+   "what": "A check that history only grows",
+   "until": "AIP-3's c2."
   }
  ],
  "deleted": [
-  "Anything in legacy code: rules in the repository's check.mjs, entries in aven/ops/ci/suites.json, agents in the repository's .claude, a line in its CLAUDE.md. theOS is standalone (D-4); taking over the release pipeline is AIP-2's, not this one's (D-24).",
+  "Anything in legacy code: rules in the repository's check.mjs, entries in aven/ops/ci/suites.json, agents in the repository's .claude, a line in its CLAUDE.md. theOS is standalone (D-4); taking over the release pipeline is AIP-5's, not this one's (D-24).",
   "Choosing which views the checker sees: the pixel diff chooses.",
   "Picking checks by path: theOS is small, and every check always runs.",
   "Contrast and slide text size: no escape asked for them.",
@@ -290,7 +278,8 @@
     "Gate A for checkpoints 1 and 2 now; checkpoint 3 and the outcome go back to Specify with round 6's findings (recommended)",
     "Revision 9 for everything, then round 7",
     "Build all three with the open findings"
-   ]
+   ],
+   "answered": "decisions/D-39"
   }
  ],
  "events": [
@@ -965,6 +954,51 @@
    "how": "by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T09:50Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Do as you suggest: Gate A for checkpoints 1 and 2; the pixel diff and the look checker go back to Specify as AIP-6.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-39"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:50Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 9: the pixel diff, the look checker and c3 moved to AIP-6; the outcome counts what the check catches; the Review gate of checkpoints 1 and 2 is a critic of the check code; round 6's findings answered or carried to AIP-6.",
+   "how": "by hand",
+   "writes": [
+    "aip/AIP-1/r6-paraphrase",
+    "aip/AIP-1/r6-zoom-out",
+    "aip/AIP-6"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:50Z",
+   "by": "authors/samuel-andert",
+   "what": "gate-A",
+   "text": "Gate A passed for checkpoints 1 and 2 (D-39).",
+   "how": "in chat, your words polished and kept in the decision",
+   "writes": [
+    "decisions/D-39"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:50Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Gate A passed (D-39).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t4"
   }
  ],
  "reviews": [
@@ -1043,13 +1077,6 @@
    "who": "authors/avenmaia"
   },
   {
-   "id": "t7",
-   "what": "Checkpoint 3: the pixel diff and its checker",
-   "step": 3,
-   "for": "checkpoint 3",
-   "who": "authors/avenmaia"
-  },
-  {
    "id": "t8",
    "what": "Gate B: try it",
    "step": 3,
@@ -1062,15 +1089,5 @@
    "for": "the outcome",
    "who": "authors/avenmaia"
   }
- ],
- "pixel_diff": [
-  "Base: the commit of the last published version, read off the newest commit message that names an artifact version.",
-  "Render: the crawl visits every state of the three apps at the base and at the change, at 390x844 and 1280x720, in the same box and browser; each screenshot waits for document.fonts.ready and for no network request in flight. A state is keyed by its route and size.",
-  "Compare: for each state in both, the two PNGs are compared pixel by pixel; a pixel counts as changed when any channel differs by more than a small threshold, so anti-aliasing noise is ignored. States only in the change are new; only in the base are gone.",
-  "Group: each changed or new state is grouped by its rendered structure (the sorted set of class names in it) and its size. A layout bug shows the same way across one structure, so one group is one kind of view.",
-  "Pick: from each group the program picks the state with the most changed pixels; it never picks by path, and the author never picks.",
-  "Show: the look checker, a fresh agent with its prompt in theOS/avenCEO/checkers/look.json, sees per group the before and after screenshots with the changed pixels marked, the group's count, and nothing of the conversation.",
-  "Judge: for each, it answers pass, or Blocker, Major or Nit with what looks broken (cut off, overlapping, squeezed, unreachable, off-style). A Blocker or Major stops the done rule; the answer is stored with the prompt.",
-  "Test of the checker: replayed on the fixes 106ba0e5f, 3ddc07339 and b1d105b39 as (the fix's parent, the fix): shown the parent's views it must flag them, shown the fix's it must pass them."
  ]
 }

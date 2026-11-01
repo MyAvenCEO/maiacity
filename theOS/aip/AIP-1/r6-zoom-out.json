@@ -12,50 +12,50 @@
    "sev": "Major",
    "scope": "c3, the b1d105b39 replay",
    "text": "That fix changes behaviour, not a broken layout: at its parent a still screenshot shows nothing broken. The look checker can flag it only if its prompt mentions per-column scrolling, which tunes it to the known bug. The escape was a preference nobody had written down: the other half of the root cause. Simpler: drop b1d105b39 from c3's replays and list it under gaps; write each layout correction as a rule the look checker reads, mechanical where it can be (a board column is its own scroll container).",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6: b1d105b39 and preferences as written rules."
   },
   {
    "sev": "Major",
    "scope": "done rule, the look checker",
    "text": "A fresh agent on every change: a record edit changes its page, trace tables, backlinks and the dashboard, so nearly every commit wakes the checker, with no time limit, no limit on what it is shown, and no enforcement: the step most likely skipped. Simpler: mechanical checks on every change; the look checker only when view code (.js, .css, .html) changed, or a group's set of class names is new.",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6: when the look checker runs."
   },
   {
    "sev": "Nit",
    "scope": "order, c4",
    "text": "Checkpoint 2 times a command that diffs nothing; checkpoint 3 doubles the work. Move the screenshots and c4 to checkpoint 3; keep checkpoint 2 to buttons and the fixture.",
-   "answer": "open",
-   "note": ""
+   "answer": "decline",
+   "note": "Kept as you approved: checkpoint 2 takes the screenshots and c4."
   },
   {
    "sev": "Nit",
    "scope": "the pixel diff's base",
    "text": "No commit message names an artifact version yet, so at checkpoint 3 every view counts as changed. Publish the first version in checkpoint 1, or fall back to the parent commit.",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6: the base."
   },
   {
    "sev": "Nit",
    "scope": "title",
    "text": "\"Build avenCEO, our agent harness\" no longer matches: it builds the done rule's checks for theOS's three apps. Rename it.",
-   "answer": "open",
-   "note": ""
+   "answer": "fix",
+   "note": "Renamed: \"Checks for theOS's apps: the crawl and the docs check\"."
   },
   {
    "sev": "Nit",
    "scope": "check and checker docs",
    "text": "The look checker's prompt has two homes; the checker type lists only paraphrase and zoom-out; the check type repeats the claims: defer it until a second intent adds checks.",
-   "answer": "open",
-   "note": ""
+   "answer": "carried",
+   "note": "AIP-6: the checker and check docs."
   },
   {
    "sev": "Nit",
    "scope": "deferred",
    "text": "\"An append-only check for events\" is AIP-3's c2: point there.",
-   "answer": "open",
-   "note": ""
+   "answer": "fix",
+   "note": "Points to AIP-3's c2."
   }
  ]
 }
