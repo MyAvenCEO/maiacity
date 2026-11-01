@@ -100,7 +100,7 @@ async function actions(page, origin) {
   const { hrefs, buttons } = await page.evaluate(() => {
     // getAttribute, not .href: a link inside an SVG has no string href.
     const hrefs = [...document.querySelectorAll('a[href]')].map((a) => { try { return new URL(a.getAttribute('href'), document.baseURI).href; } catch { return null; } });
-    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML, kind: b.tagName + [...b.classList].sort().map((c) => `.${c}`).join('') }));
+    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML, kind: window.__kind(b) }));
     return { hrefs, buttons };
   });
   const links = [...new Set(hrefs)].filter((h) => {
@@ -113,13 +113,15 @@ async function actions(page, origin) {
 // A state is a route and what it shows: the same URL with the same rendered text and the same view is one state.
 const keyOf = async (page) => `${page.url()}\n${await page.evaluate(() => `${document.body?.innerText ?? ''}\n${window.__view()}`)}`;
 
-// A view type: which boxes, by element and classes, the page renders, whatever their text. All decision pages are one view type,
-// unless one of them shows a part the others don't. Installed in every page, next to countFetches.
-// Only boxes count (an element that isn't inline), since they make the layout; inline text styling doesn't.
+// A view type: which boxes the page renders, whatever their text, each named by its kind (element, classes and the
+// names of its data attributes, so a tab button with data-tab differs from a plain one). All decision pages are one view
+// type, unless one of them shows a part the others don't. Only boxes count (an element that isn't inline), since they
+// make the layout; inline text styling doesn't. Installed in every page, next to countFetches.
 function pageView() {
+  window.__kind = (e) => e.tagName.toLowerCase() + [...e.classList].sort().map((c) => `.${c}`).join('')
+    + Object.keys(e.dataset).sort().map((k) => `[${k}]`).join('');
   window.__view = () => [...new Set([...document.querySelectorAll('body *')]
-    .filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'inline')
-    .map((e) => e.tagName.toLowerCase() + [...e.classList].sort().map((c) => `.${c}`).join('')))].sort().join(' ');
+    .filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'inline').map(window.__kind))].sort().join(' ');
 }
 
 // Bring the page to a state: its URL, then its buttons pressed again. Returns the key it reached, or null when a button
@@ -206,7 +208,7 @@ async function crawl(browser, size, start, origin, out) {
         if ((await reach(page, state.recipe, state.key)) !== state.key) { state.inPlaceOnly = true; await found(page, { url: page.url(), clicks: [] }); continue; }
         const here = origin + '/' + state.url;
         let moved = false;
-        const kinds = new Set(); // one button of each kind (element and classes): the others of its kind lead to the same view types
+        const kinds = new Set(); // one button of each kind (window.__kind): the others of its kind lead to the same view types
         for (const b of (await actions(page, origin)).buttons) {
           if (kinds.has(b.kind)) continue;
           kinds.add(b.kind);
