@@ -32,7 +32,25 @@ const W = {
   srcApp() { return this.map ? 'brain' : 'sources'; },
   appOf(ref) { const f = this.file(ref); return f.startsWith('sources/') || f.startsWith('brain/sources/') ? this.srcApp() : 'avenCEO'; },
   href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/index.html#${path}`; },
-  label: (d, path) => (d && (d.type === 'decision' ? d.id : d.title || d.name || d.word || d.id)) || path.split('/').pop(),
+  // What people see is a name, never a hash id (D-75): a decision is D-n, an intent AIP-n, any other doc its title, with
+  // every id inside it named too. Links and stored text keep the id.
+  all: null, // the docs of the last crawl, to name ids inside text
+  name(d, ref, depth = 0) {
+    if (!d) return String(ref ?? '').split('/').pop();
+    if (d.type === 'decision' && d.n != null) return `D-${d.n}`;
+    if (d.type === 'intent') return d.n != null ? `AIP-${d.n}` : d.id;
+    // docs without a title are named after what they belong to
+    const of = (r) => this.name(this.all?.get(r), r, depth + 1);
+    if (d.type === 'review' && d.intent && !d.title) return `${of(d.intent)} ${d.checkpoint ? `checkpoint ${d.checkpoint}` : `round ${d.round}`} ${d.lens || 'review'}`;
+    if (d.type === 'research' && d.intent && !d.title) return `${of(d.intent)} research`;
+    if (d.type === 'session' && !d.title && d.from) return `Session ${d.from}${d.to && d.to !== d.from ? ` to ${d.to}` : ''}`;
+    return this.named(d.title || d.name || d.word || d.cue || d.id, depth);
+  },
+  named(t, depth = 0) {
+    // depth stops a title that names a doc whose title names it back
+    return String(t ?? '').replace(/(?<![\w/-])[a-z]+-[0-9a-f]{4,}(?![\w-])/g, (m) => (this.isId(m) && depth < 3 ? this.name(this.all?.get(m), m, depth + 1) : m));
+  },
+  label(d, path) { return this.name(d, path); },
   // all docs reachable from the starting paths, and who points at whom
   async crawl(starts) {
     const docs = new Map(), back = new Map(), queue = [...starts];
@@ -51,6 +69,7 @@ const W = {
         }
       });
     }
+    this.all = docs;
     return { docs, back };
   },
   // text with AIP-n linked to its doc, OLD-AIP-n to the Docs app's legacy board, and paths to their docs
@@ -62,7 +81,7 @@ const W = {
   },
   link(path, here, docs) {
     const d = docs?.get(path);
-    const tip = d?.type === 'decision' && d.title ? ` title="${this.esc(d.title)}"` : '';
+    const tip = ` title="${this.esc([(d?.type === 'decision' || d?.type === 'intent') && d.title ? this.named(d.title) : '', this.isId(path) ? path : ''].filter(Boolean).join(' · '))}"`;
     return `<a class="wl" href="${this.href(path, here)}"${tip}>${this.esc(this.label(d, path))}</a>`;
   },
   who(by, here, docs) { return this.isPath(by) ? this.link(by, here, docs) : this.esc(by); },

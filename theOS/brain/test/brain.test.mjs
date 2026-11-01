@@ -16,10 +16,10 @@ const docs = await load(fixtures);
 
 test('holds: a doc holds until a newer doc supersedes it; in part, it holds in part; a chain does not bring an old one back', () => {
   assert.deepEqual(holds(docs, 'decision'), [
-    { id: 'decisions/D-5', title: 'Fifth, superseded in a named part', holds: 'holds in part' },
-    { id: 'decisions/D-4', title: 'Fourth, holds, with a free-text part', holds: 'holds' },
-    { id: 'decisions/D-3', title: 'Third, holds', holds: 'holds' },
-    { id: 'decisions/D-2', title: 'Second, superseded in part', holds: 'holds in part' },
+    { id: 'decisions/D-5', name: 'D-5', title: 'Fifth, superseded in a named part', holds: 'holds in part' },
+    { id: 'decisions/D-4', name: 'D-4', title: 'Fourth, holds, with a free-text part', holds: 'holds' },
+    { id: 'decisions/D-3', name: 'D-3', title: 'Third, holds', holds: 'holds' },
+    { id: 'decisions/D-2', name: 'D-2', title: 'Second, superseded in part', holds: 'holds in part' },
   ]);
   // a chain old -> mid -> new: only the newest holds; the oldest does not come back
   assert.deepEqual(holds(docs, 'term').map((x) => x.id), ['avenCEO/terms/new-word']);
@@ -33,11 +33,11 @@ test('prime: what holds for decisions and terms, and what waits for Samuel', () 
   const p = prime(docs);
   assert.deepEqual(p.holds.decision.map((x) => x.id), ['decisions/D-5', 'decisions/D-4', 'decisions/D-3', 'decisions/D-2']);
   assert.deepEqual(p.holds.term.map((x) => x.id), ['avenCEO/terms/new-word']);
-  assert.deepEqual(p.waits.questions, [{ intent: 'aip/AIP-1', q: 'Open question?', options: ['Yes (recommended)', 'No'] }]);
+  assert.deepEqual(p.waits.questions, [{ intent: 'aip/AIP-1', name: 'AIP-1', q: 'Open question?', options: ['Yes (recommended)', 'No'] }]);
   // a task of an earlier step still waits; one of a later step does not yet; a done one does not
   assert.deepEqual(p.waits.tasks, [
-    { intent: 'aip/AIP-1', id: 't0', what: 'Your answer: an earlier question (overdue)' },
-    { intent: 'aip/AIP-1', id: 't1', what: 'Gate A: approve' },
+    { intent: 'aip/AIP-1', name: 'AIP-1', id: 't0', what: 'Your answer: an earlier question (overdue)' },
+    { intent: 'aip/AIP-1', name: 'AIP-1', id: 't1', what: 'Gate A: approve' },
   ]);
 });
 

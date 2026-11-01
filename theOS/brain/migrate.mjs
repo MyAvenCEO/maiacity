@@ -6,7 +6,8 @@
 // reference, paths and old names in text alike, is rewritten as the id; review docs' prompts stay verbatim and
 // OLD-AIP-n is legacy and kept. It writes brain/ids.json (id to file, the definition's id, each folder's index) and
 // brain/renames.json (each old name and path to its id; the migration commit's SHA is added after committing), moves
-// the Sources app to brain/ and points the dashboard at it. Only JSON docs and those two app files are touched.
+// the Sources app to brain/ and points the dashboard at it. Decisions and intents keep n, so the apps and brain still
+// show them as D-n and AIP-n (D-75). Only JSON docs and those two app files are touched.
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, relative, dirname, resolve } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
@@ -84,6 +85,9 @@ export function migrate(root, { seed } = {}) {
     const dest = BRAIN[folder] || BRAIN[top] || (top === 'aip' ? 'aip' : folder);
     const doc = rewrite(x.doc);
     doc.id = x.id;
+    // decisions keep n; an intent gets n from AIP-n, so both are still named D-n and AIP-n (D-75)
+    const m = /^AIP-(\d+)$/.exec(x.doc.id || '');
+    if (x.doc.type === 'intent' && m && doc.n == null) doc.n = +m[1];
     ids[x.id] = `${dest}/${x.id}`;
     if (x.doc.type === 'index') index[folder] = x.id;
     if (x.path === 'avenCEO/avenCEO') rootId = x.id;
@@ -112,10 +116,6 @@ export function migrate(root, { seed } = {}) {
   if (existsSync(dash)) {
     let h = readFileSync(dash, 'utf8');
     h = h.replace('href="sources/index.html"><span class="k">Sources</span>', 'href="brain/index.html"><span class="k">brain</span>');
-    h = h.replace(/'(aip|decisions|sessions|sources|authors)\/index\.json'/g, (m, f) => `'${ids[index[f]]}.json'`);
-    h = h.replace(/get\(`\$\{p\}\.json`\)/g, 'get(`${ids[p] ?? p}.json`)');
-    h = h.replace('const get = (p) =>', "const ids = (await fetch('brain/ids.json').then((r) => r.json())).ids;\n  const get = (p) =>");
-    h = h.replace("avenCEO/index.html#${esc(I.id.startsWith('aip/') ? I.id : 'aip/' + I.id)}", 'avenCEO/index.html#${esc(I.id)}');
     writeFileSync(dash, h);
   }
   return { docs: docs.length, names: Object.keys(names).length, rootId };
