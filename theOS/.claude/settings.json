@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/brain/brain.mjs\" prime"
+            "command": "node \"$CLAUDE_PROJECT_DIR/brain/brain.mjs\" install >/dev/null 2>&1; node \"$CLAUDE_PROJECT_DIR/brain/brain.mjs\" prime"
           }
         ]
       }

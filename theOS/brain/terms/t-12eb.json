@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-12eb",
  "word": "brain",
+ "about": [
+  "brain"
+ ],
  "means": "theOS's memory: every doc, their schema and brain's reflection, which keeps what still holds computed and never outdated (aip-836d).",
  "supersedes": [],
  "reflection": {

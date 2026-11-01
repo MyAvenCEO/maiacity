@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-3bf5",
  "word": "avenSANDBOX",
+ "about": [
+  "avensandbox"
+ ],
  "means": "The cloud environment of that name, where avenMAIA's sessions run. theOS owns what it runs: its setup script's text and what that script finds (aip-6fb1). avenDB's released package of the same name is legacy.",
  "supersedes": [
   {

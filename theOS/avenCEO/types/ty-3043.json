@@ -51,5 +51,69 @@
   "author": "agent",
   "note": "Reading is an event of the intent that read it; a doc of ours about it is written by an event too.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "subtype",
+   "id",
+   "title",
+   "about",
+   "url"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "reference"
+    ]
+   },
+   "subtype": {
+    "type": "string"
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^src-[0-9a-f]{4,}$"
+   },
+   "title": {
+    "type": "string"
+   },
+   "about": {
+    "type": "array",
+    "items": {
+     "type": "string"
+    }
+   },
+   "url": {
+    "type": "string"
+   },
+   "by": {
+    "type": "string"
+   },
+   "summary": {
+    "type": "string"
+   },
+   "ideas": {
+    "type": "array"
+   },
+   "took": {
+    "type": "array"
+   },
+   "steps": {
+    "type": "array"
+   },
+   "bands": {
+    "type": "array"
+   },
+   "gates": {
+    "type": "array"
+   },
+   "loops": {
+    "type": "array"
+   },
+   "sources": {
+    "type": "array"
+   }
+  }
  }
 }

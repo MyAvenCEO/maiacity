@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-234a",
  "word": "Claim",
+ "about": [
+  "claim"
+ ],
  "means": "A promise about the result, with how it could fail and the check that would catch it.",
  "supersedes": [],
  "reflection": {

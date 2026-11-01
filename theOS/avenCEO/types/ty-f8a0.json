@@ -32,5 +32,46 @@
   "author": "agent",
   "note": "A lesson is written in Learn, with its evidence.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "status",
+   "cue",
+   "lesson",
+   "evidence",
+   "confidence"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "lesson"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^l-[0-9a-f]{4,}$"
+   },
+   "status": {
+    "type": "string"
+   },
+   "cue": {
+    "type": "string"
+   },
+   "lesson": {
+    "type": "string"
+   },
+   "evidence": {
+    "type": "string"
+   },
+   "confidence": {
+    "type": "string"
+   },
+   "intent": {
+    "type": "string"
+   }
+  }
  }
 }

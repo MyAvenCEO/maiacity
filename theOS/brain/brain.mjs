@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // brain: theOS's memory, and the one door to it (AIP-3, brain protocol v1). Every verb is a plain function this module
-// exports; the command line below calls the same functions. Checkpoint 1 has the reads: prime, holds and get.
+// exports; the command line below calls the same functions. The reads are here; the writes are in door.mjs, re-exported.
 // What holds is computed by ui/wiki.js, the same code the apps run, loaded here unchanged.
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import * as door from './door.mjs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import vm from 'node:vm';
+export { add, edit, append, index, install, check, reflect, merge3, validate, DoorError } from './door.mjs';
 
 const THEOS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SAMUEL = 'authors/samuel-andert';
@@ -126,22 +128,88 @@ function text(verb, out) {
   if (verb === 'get') return JSON.stringify(out, null, 1);
 }
 
+// The verbs of brain protocol v1, as the skill teaches them (brain index writes the skill from this list).
+export const VERBS = [
+  ['prime', 'the decisions and terms that hold now, and what waits for Samuel'],
+  ['holds <type>', 'the docs of a type that hold now'],
+  ['get <id>', 'one doc, whether it holds, what supersedes it, its links and backlinks'],
+  ['reflect <type> <draft.json>', 'the docs a draft may supersede: same type, holding, a shared topic word'],
+  ['add <type> <doc.json> --intent <aip id> --by <author id> [--task <id>]', 'a new doc: id minted, schema checked, filed, its event written'],
+  ['edit <id> <patch.json> --intent <aip id> --by <author id>', 'a correction that keeps the meaning; a change of meaning is a new doc that supersedes it'],
+  ['append <id> <list> <entry.json> --intent <aip id> --by <author id>', 'an entry at the end of a list that only grows'],
+  ['index', 'the index docs and brain/ids.json written again from the folders'],
+  ['install', "this clone's pre-push hook (brain check) and the merge driver for lists that only grow"],
+  ['check [--range a..b]', 'every commit in the range against its parent: events cover every changed doc, schemas, history only grows'],
+];
+
+// The skill Claude Code loads (theOS/.claude/skills/brain/SKILL.md), written from VERBS by brain index.
+export function skill() {
+  return `---
+name: brain
+description: theOS's memory (brain) and the one door to it. Use before acting on any decision, term, source, lesson, metric or intent in theOS, and for every write to them.
+---
+
+# brain
+
+brain is theOS's memory: one JSON doc per thing, each named by a flat hash id (d-… a decision, aip-… an intent) and
+shown as its id and title. A doc holds until a newer doc supersedes it; superseded in part, the rest still holds. What
+holds is computed, never stored. Every read and every write goes through these verbs; never edit a doc's file by hand:
+brain check fails a commit that changed a doc without the event a verb writes. Run them from theOS/ as
+\`node brain/brain.mjs <verb>\`.
+
+${VERBS.map(([v, w]) => `- \`brain ${v}\`: ${w}.`).join('\n')}
+
+A write names the intent it serves (--intent) and its author (--by, an author doc's id) and appends that intent's event;
+commit the files it wrote with your work. To replace or drop a doc, add a newer one whose supersedes names it
+(\`{ "doc": "<id>", "part": "all" or the part, "what": "…" }\`); brain refuses a supersede of a doc that no longer
+holds, and records the candidates you left for the reviewer. Add \`--json\` for data. A refusal prints a fixed code and
+its fix; follow the fix.
+
+This file is written by \`brain index\` from brain's verb list; do not edit it by hand.
+`;
+}
+
 async function main(argv) {
   const json = argv.includes('--json');
+  const opt = (k) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
   const r = argv.indexOf('--root');
   if (r >= 0 && !argv[r + 1]) { process.stderr.write('brain: missing_arg: --root <the theOS folder>\n'); process.exitCode = 1; return; }
   const root = r >= 0 ? resolve(argv[r + 1]) : THEOS;
-  const args = argv.filter((a, i) => a !== '--json' && (r < 0 || (i !== r && i !== r + 1)));
-  const [verb, arg] = args;
+  const valued = ['--root', '--intent', '--by', '--task', '--range'];
+  const args = argv.filter((a, i) => a !== '--json' && !valued.includes(a) && !valued.includes(argv[i - 1]));
+  const [verb, arg, arg2, arg3] = args;
+  const file = (f) => { if (!f) throw new BrainError('missing_arg', `brain ${verb}: a JSON file is missing`); return JSON.parse(readFileSync(resolve(f), 'utf8')); };
+  const who = { intent: opt('intent'), by: opt('by'), task: opt('task') };
   try {
+    if (verb === 'merge') { // the git merge driver: brain merge %O %A %B, writes the result into %A
+      const [o, a, b] = [arg, arg2, arg3].map((f) => JSON.parse(readFileSync(f, 'utf8')));
+      writeFileSync(arg2, `${JSON.stringify(door.merge3(o, a, b), null, 1)}\n`);
+      return;
+    }
+    const writes = {
+      add: () => door.add(root, { type: arg, doc: file(arg2), ...who }),
+      edit: () => door.edit(root, { id: arg, patch: file(arg2), ...who }),
+      append: () => door.append(root, { id: arg, list: arg2, entry: file(arg3), ...who }),
+      index: () => { const r = door.index(root); writeFileSync(join(root, '.claude', 'skills', 'brain', 'SKILL.md'), skill()); return r; },
+      install: () => door.install(root),
+      check: () => door.check(root, { range: opt('range') }),
+      reflect: () => { const all = door.docsOf(root); return door.reflect(all, arg, file(arg2)); },
+    };
+    if (writes[verb]) {
+      if (['add', 'edit', 'append'].includes(verb) && (!who.intent || !who.by)) throw new BrainError(!who.intent ? 'no_intent' : 'no_author', `brain ${verb} needs --intent <aip id> and --by <author id>`);
+      const out = writes[verb]();
+      process.stdout.write(`${JSON.stringify(out, null, json ? 0 : 1)}\n`);
+      if (verb === 'check' && out.fails.length) process.exitCode = 1;
+      return;
+    }
     const docs = await load(root);
     const verbs = { prime: () => prime(docs), holds: () => holds(docs, arg), get: () => get(docs, arg) };
-    if (!verbs[verb]) throw new BrainError('unknown_verb', 'the verbs are: prime, holds <type>, get <id or path>');
-    if (verb !== 'prime' && !arg) throw new BrainError('missing_arg', verb === 'holds' ? 'brain holds <type>, e.g. brain holds decision' : 'brain get <id or path>, e.g. brain get D-1');
+    if (!verbs[verb]) throw new BrainError('unknown_verb', `the verbs are: ${VERBS.map(([v]) => v.split(' ')[0]).join(', ')}`);
+    if (verb !== 'prime' && !arg) throw new BrainError('missing_arg', verb === 'holds' ? 'brain holds <type>, e.g. brain holds decision' : 'brain get <id>');
     const out = verbs[verb]();
     process.stdout.write(`${json ? JSON.stringify(out) : text(verb, out)}\n`);
   } catch (e) {
-    if (!(e instanceof BrainError)) throw e;
+    if (!(e instanceof BrainError) && !(e instanceof door.DoorError)) throw e;
     process.stdout.write(json ? `${JSON.stringify({ error: e.code, fix: e.fix })}\n` : '');
     process.stderr.write(`brain: ${e.code}: ${e.fix}\n`);
     process.exitCode = 1;

@@ -36,5 +36,58 @@
   "author": "agent",
   "note": "A type and its schema change in the intent that needs it; brain (aip-836d) keeps them.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "name",
+   "file",
+   "what",
+   "subtypes",
+   "fields",
+   "written_by",
+   "links_to",
+   "trace"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "type"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^ty-[0-9a-f]{4,}$"
+   },
+   "name": {
+    "type": "string"
+   },
+   "file": {
+    "type": "string"
+   },
+   "what": {
+    "type": "string"
+   },
+   "subtypes": {
+    "type": "array"
+   },
+   "fields": {
+    "type": "array"
+   },
+   "written_by": {
+    "type": "string"
+   },
+   "links_to": {
+    "type": "array"
+   },
+   "trace": {
+    "type": "object"
+   },
+   "schema": {
+    "type": "object"
+   }
+  }
  }
 }

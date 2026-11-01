@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-2aff",
  "word": "Escape",
+ "about": [
+  "escape"
+ ],
  "means": "A problem found after the work was called done: for a small edit, after its done rule; for an AIP, after Gate B.",
  "supersedes": [],
  "reflection": {

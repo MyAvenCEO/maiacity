@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-ee45",
  "word": "avenMAIA",
+ "about": [
+  "avenmaia"
+ ],
  "means": "The architect session that orchestrates the threads and writes the decision logs.",
  "supersedes": [],
  "reflection": {
