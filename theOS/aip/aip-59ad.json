@@ -722,6 +722,15 @@
    "how": "by hand, aip-59ad's thread, relayed by avenMAIA",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T14:28Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "The deploy off, on production: run 41315961980 (#1784's push) checked the switch, said the deploy is off and skipped every deploy step. The switch to on: #1786's pull request run 41316067619, all three checks green; merged into production at b20033fa3 (14:28Z), the first real deploy's push run starting.",
+   "how": "by hand, aip-59ad's thread, run ids relayed by avenMAIA",
+   "writes": [],
+   "reads": []
   }
  ],
  "problem": {
