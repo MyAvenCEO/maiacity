@@ -196,8 +196,10 @@
    "by": "authors/samuel-andert",
    "what": "answer",
    "text": "Drop the mod for now, and close AIP-4.",
-   "how": "in chat in AIP-4's thread, your words polished; the decision doc is avenMAIA's to write",
-   "writes": [],
+   "how": "in chat in AIP-4's thread, your words polished; avenMAIA wrote the decision (D-64)",
+   "writes": [
+    "decisions/D-64"
+   ],
    "reads": [
     "aip/AIP-4/research"
    ]
@@ -218,8 +220,10 @@
    "by": "authors/samuel-andert",
    "what": "answer",
    "text": "brain's MCP server stays in AIP-3, not AIP-4; AIP-4 stays closed.",
-   "how": "in chat in AIP-4's thread, answering the conflict between his close of AIP-4 and D-55; your word polished; the decision doc, which would supersede D-55, is avenMAIA's to write",
-   "writes": [],
+   "how": "in chat in AIP-4's thread, answering the conflict between his close of AIP-4 and D-55; your word polished; avenMAIA wrote the decision (D-72), which supersedes D-55",
+   "writes": [
+    "decisions/D-72"
+   ],
    "reads": [
     "decisions/D-55",
     "decisions/D-47"
