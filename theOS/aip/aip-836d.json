@@ -1819,6 +1819,16 @@
    "writes": [],
    "reads": [],
    "task": "t8"
+  },
+  {
+   "at": "2026-11-01T14:39Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 4 review by a fresh agent: 3 Major (get, versions and index answered differently through MCP than on the command line; a failing check came back as success; c11's test covered three verbs, not all), 5 Nit. All fixed: getFull, reindex and writeVersions are the one function each door calls; a check with failures is a tool error; the test drives every verb through both doors on migrated copies and compares answers and refusal codes; a line that is not a request is answered, not a crash; the protocol version is one brain knows; theOS/.mcp.json starts the server from the project folder. install and mcp stay command-line only: they set up a clone. 25 of 25 tests.",
+   "how": "a fresh subagent reading the record and driving the server by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t9"
   }
  ],
  "reviews": [

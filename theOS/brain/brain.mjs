@@ -150,7 +150,7 @@ export const VERBS = [
   ['index', 'the index docs and brain/ids.json written again from the folders'],
   ['install', "this clone's pre-push hook (brain check) and the merge driver for lists that only grow"],
   ['versions', 'every link whose target changed after it was cited, into brain/versions.json for the apps (c5)'],
-  ['mcp', 'the same verbs as an MCP server on stdio, for other sessions and tools (theOS/.mcp.json)'],
+  ['mcp', 'the same verbs (but install and mcp, which set up this clone) as an MCP server on stdio (theOS/.mcp.json)'],
   ['check [--range a..b]', 'every commit in the range against its parent: events cover every changed doc, schemas, history only grows'],
 ];
 
@@ -181,6 +181,25 @@ This file is written by \`brain index\` from brain's verb list; do not edit it b
 `;
 }
 
+// What the command line and the MCP server both answer (c11): get with its link versions, index with the skill,
+// versions written for the apps. One function each, so the two doors cannot drift.
+export function getFull(root, docs, ref) {
+  const out = get(docs, ref);
+  try { out.changedSince = door.versions(root, [out.id])[out.id] || []; } catch { out.changedSince = []; }
+  return out;
+}
+export function reindex(root) {
+  const r = door.index(root);
+  const f = join(root, '.claude', 'skills', 'brain', 'SKILL.md');
+  try { if (readFileSync(f, 'utf8') !== skill()) writeFileSync(f, skill()); } catch { /* no skill folder here */ }
+  return r;
+}
+export function writeVersions(root) {
+  const v = door.versions(root);
+  writeFileSync(join(root, 'brain', 'versions.json'), `${JSON.stringify(v, null, 1)}\n`);
+  return { flagged: Object.keys(v).length };
+}
+
 async function main(argv) {
   const json = argv.includes('--json');
   const opt = (k) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -203,11 +222,11 @@ async function main(argv) {
       add: () => door.add(root, { type: arg, doc: file(arg2), ...who }),
       edit: () => door.edit(root, { id: arg, patch: file(arg2), ...who }),
       append: () => door.append(root, { id: arg, list: arg2, entry: file(arg3), ...who }),
-      index: () => { const r = door.index(root); writeFileSync(join(root, '.claude', 'skills', 'brain', 'SKILL.md'), skill()); return r; },
+      index: () => reindex(root),
       install: () => door.install(root),
       check: () => door.check(root, { range: opt('range') }),
       reflect: () => { const all = door.docsOf(root); return door.reflect(all, arg, file(arg2)); },
-      versions: () => { const v = door.versions(root); writeFileSync(join(root, 'brain', 'versions.json'), `${JSON.stringify(v, null, 1)}\n`); return { flagged: Object.keys(v).length }; },
+      versions: () => writeVersions(root),
     };
     if (writes[verb]) {
       if (['add', 'edit', 'append'].includes(verb) && (!who.intent || !who.by)) throw new BrainError(!who.intent ? 'no_intent' : 'no_author', `brain ${verb} needs --intent <aip id> and --by <author id>`);
@@ -217,11 +236,10 @@ async function main(argv) {
       return;
     }
     const docs = await load(root);
-    const verbs = { prime: () => prime(docs), holds: () => holds(docs, arg), get: () => get(docs, arg) };
+    const verbs = { prime: () => prime(docs), holds: () => holds(docs, arg), get: () => getFull(root, docs, arg) };
     if (!verbs[verb]) throw new BrainError('unknown_verb', `the verbs are: ${VERBS.map(([v]) => v.split(' ')[0]).join(', ')}`);
     if (verb !== 'prime' && !arg) throw new BrainError('missing_arg', verb === 'holds' ? 'brain holds <type>, e.g. brain holds decision' : 'brain get <id>');
     const out = verbs[verb]();
-    if (verb === 'get') try { out.changedSince = door.versions(root, [out.id])[out.id] || []; } catch { /* no git here */ }
     process.stdout.write(`${json ? JSON.stringify(out) : text(verb, out)}\n`);
   } catch (e) {
     if (!(e instanceof BrainError) && !(e instanceof door.DoorError)) throw e;

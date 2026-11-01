@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { load, prime, holds, get, skill, VERBS } from '../brain.mjs';
+import { load, prime, holds, get, getFull, skill, VERBS } from '../brain.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = join(here, 'fixtures');
@@ -66,7 +66,7 @@ test('get: a missing doc is a fixed error with its fix', () => {
 test('the command line answers the same as the functions', () => {
   assert.deepEqual(cli('prime'), prime(docs));
   assert.deepEqual(cli('holds', 'decision'), holds(docs, 'decision'));
-  assert.deepEqual(cli('get', 'decisions/D-2'), get(docs, 'decisions/D-2'));
+  assert.deepEqual(cli('get', 'decisions/D-2'), getFull(fixtures, docs, 'decisions/D-2'));
   let err;
   try { cli('get', 'decisions/D-99'); } catch (e) { err = JSON.parse(e.stdout); }
   assert.equal(err.error, 'not_found');
