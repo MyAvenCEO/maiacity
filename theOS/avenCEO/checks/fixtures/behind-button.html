@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="expect" content="red">
+<title>Fixture: a state behind a button</title>
+<!-- The crawl must reach a state that only a button shows (aip-31df, claim c2): no link and no hash lead to it. That
+     state holds a box whose content is cut off, so the check is red only when the crawl pressed the button. -->
+<style>
+  body { margin: 0; padding: 16px; font: 16px/1.5 sans-serif; }
+  .panel { height: 80px; overflow: hidden; border: 1px solid #ccc; }
+  .panel p { margin: 0; height: 400px; }
+</style>
+</head>
+<body>
+<p>A page that is fine as it loads.</p>
+<button type="button" id="open">Show the details</button>
+<script>
+  document.getElementById('open').addEventListener('click', () => {
+    document.body.insertAdjacentHTML('beforeend', '<div class="panel"><p>Details, cut off at the bottom.</p></div>');
+  });
+</script>
+</body>
+</html>

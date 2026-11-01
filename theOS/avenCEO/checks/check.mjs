@@ -5,7 +5,7 @@
 // Usage: node theOS/avenCEO/checks/check.mjs [--root <theOS dir>] [--entry <page under the root>] [--out <dir>] [--fixtures]
 import { createServer } from 'node:http';
 import { createRequire, Module } from 'node:module';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docsCheck } from './docs-check.mjs';
@@ -157,7 +157,7 @@ async function press(page, b) {
 // Every state a person can reach from the entry page at one size, by following links and pressing buttons, each checked
 // by the docs check when first reached. Buttons are pressed only in the first state of each view type, one of each kind:
 // a first version, for speed (d-5afb); a state behind one of several buttons of the same kind can be missed.
-async function crawl(browser, size, start, origin) {
+async function crawl(browser, size, start, origin, out) {
   const context = await browser.newContext({ viewport: size });
   for (const f of [countFetches, pageButtons, pageView]) await context.addInitScript(f);
   context.on('page', async (p) => { if (await p.opener()) await p.close(); }); // a link or button that opens a new tab
@@ -170,7 +170,10 @@ async function crawl(browser, size, start, origin) {
     if (states.length >= MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
     keys.add(key);
     const state = { size: `${size.width}x${size.height}`, url: page.url().slice(origin.length + 1), recipe, key, fails: await page.evaluate(docsCheck) };
-    states.push(state);
+    states.push(state); // before any await: its number names its screenshot, and parallel pages mustn't share one
+    // A screenshot of the state as a person sees it in the window; settle() waited for document.fonts.ready.
+    state.shot = join('shots', state.size, `${String(states.length).padStart(4, '0')}.png`);
+    await page.screenshot({ path: join(out, state.shot) });
     for (const l of (await actions(page, origin)).links) if (!loaded.has(l)) { loaded.add(l); queue.push({ visit: l }); }
     const view = await page.evaluate(() => window.__view());
     if (!views.has(view)) { views.add(view); queue.push({ state }); }
@@ -223,12 +226,14 @@ async function crawl(browser, size, start, origin) {
   return { states, views: views.size };
 }
 
-// Crawl from one entry page at both sizes; print what failed. Returns the report.
+// Crawl from one entry page at both sizes; write the report and a screenshot of every state to out/; print what
+// failed. Returns the report.
 async function run(browser, origin, root, entry, out) {
   const t0 = Date.now();
-  const runs = await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${entry}`, origin)));
+  rmSync(join(out, 'shots'), { recursive: true, force: true });
+  const runs = await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${entry}`, origin, out)));
   const states = runs.flatMap((r) => r.states), failed = states.filter((s) => s.fails.length);
-  const results = states.map(({ size, url, recipe, fails, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }) }));
+  const results = states.map(({ size, url, recipe, fails, shot, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), shot, fails, ...(inPlaceOnly && { inPlaceOnly }) }));
   const report = { root, entry, seconds: Math.round((Date.now() - t0) / 1000), reached: states.length, views: runs.reduce((n, r) => n + r.views, 0), failed: failed.length, results };
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 1));
