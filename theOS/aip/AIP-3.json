@@ -1570,6 +1570,18 @@
     "decisions/D-76"
    ],
    "task": "t7"
+  },
+  {
+   "at": "2026-11-01T11:41Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Short decision titles after the migration (avenMAIA, from D-37): a decision's title loses a leading 'AIP-n: ' when that intent is in its intents; the decisions list and brain's answers show the intents beside it. Scratch run on the real tree with avenMAIA's reworded D-76 and checker prompts: 328 docs, 415 old names, no old name, no dangling id; the checker prompts read 'node brain/brain.mjs get <id>' and 'the doc def-…'; 11 app pages without a bare id, a D-n or an AIP-n beyond OLD-AIP-n, no console error. 11 of 11 tests.",
+   "how": "by the AIP-3 thread; the scratch run, its audit and the apps in Chromium",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [],
+   "task": "t7"
   }
  ],
  "reviews": [

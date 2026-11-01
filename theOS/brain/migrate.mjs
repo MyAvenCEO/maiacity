@@ -84,6 +84,10 @@ export function migrate(root, { seed } = {}) {
     const folder = dirname(x.path);
     const top = x.path.split('/')[0];
     const dest = BRAIN[folder] || BRAIN[top] || (top === 'aip' ? 'aip' : folder);
+    // a decision's title loses a leading "AIP-n: " when that intent is in its intents; the apps show the intents beside
+    // it, so the title stays short (D-37)
+    const m = x.doc.type === 'decision' && /^AIP-(\d+):?\s+/.exec(x.doc.title || '');
+    if (m && (x.doc.intents || []).includes(`aip/AIP-${m[1]}`)) x.doc.title = x.doc.title.slice(m[0].length);
     const doc = rewrite(x.doc);
     doc.id = x.id;
     ids[x.id] = `${dest}/${x.id}`;
