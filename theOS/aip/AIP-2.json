@@ -3,7 +3,7 @@
  "id": "AIP-2",
  "title": "theOS owns avenSANDBOX and the release pipeline",
  "kind": "product",
- "note": "In the inbox: only its source so far. avenSANDBOX today builds avenDB's box image and releases from the production branch (avensandbox.yml), so this changes a release path and needs your Gate A.",
+ "note": "Ownership moved at once (D-24): avenDB's pipeline is parked; theOS's own box and release grow in checkpoints 2 and 3, after Gate A.",
  "questions": [
   {
    "q": "Move avenSANDBOX into theOS (theOS owns it and its release from then on), or copy it and leave avenDB's release where it is? And who releases the box afterwards?",

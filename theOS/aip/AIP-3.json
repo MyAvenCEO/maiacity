@@ -3,7 +3,7 @@
  "id": "AIP-3",
  "title": "brain: theOS's memory, one schema, references pinned by commit",
  "kind": "aven",
- "note": "In the inbox: only its source so far. A first proposal was given in chat on 1 Nov; it is specified here once you take it up.",
+ "note": "brain: the schema, the reflection and the trace of everything theOS keeps. It took AIP-1's memory parts (D-25).",
  "questions": [
   {
    "q": "Is brain's direction right: a JSON doc per thing, JSON Lines for whatever only grows, a JSON Schema per type, binaries named by content hash, and every internal reference pinned as path@full commit SHA?",

@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-27",
+ "n": 27,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "intents",
+  "apps",
+  "aven"
+ ],
+ "quote": "can you create also another AIP number 4, which should discover a Claude Code native mod as user interface to directly interact with the OS or with the aven harness from Claude Code sessions",
+ "means": "AIP-4 opens: discover a native Claude Code mod as a user interface to theOS and aven, used from inside Claude Code sessions.",
+ "intents": [
+  "aip/AIP-4"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-8"
+ ],
+ "reflection": {
+  "checked": "every decision before D-27 that held",
+  "result": "supersedes nothing"
+ }
+}
