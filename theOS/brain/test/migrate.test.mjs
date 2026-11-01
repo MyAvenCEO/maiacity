@@ -19,6 +19,9 @@ test('the migration renames, moves and rewrites everything, and what holds is un
   // a title that names other docs: shown by the same names after the migration
   const d4 = join(root, 'decisions', 'D-4.json');
   writeFileSync(d4, JSON.stringify({ ...JSON.parse(readFileSync(d4, 'utf8')), title: 'AIP-1: builds on D-2' }));
+  // a decision titled after an intent it is for loses that prefix in the migration (the apps show its intents)
+  const d3 = join(root, 'decisions', 'D-3.json');
+  writeFileSync(d3, JSON.stringify({ ...JSON.parse(readFileSync(d3, 'utf8')), title: 'AIP-1: Third, holds', intents: ['aip/AIP-1'] }));
   const before = prime(await load(root));
   assert.equal(before.holds.decision.find((x) => x.id === 'decisions/D-4').title, 'AIP-1: builds on D-2');
   const r = migrate(root, { seed: 'test' });
@@ -38,10 +41,13 @@ test('the migration renames, moves and rewrites everything, and what holds is un
   const id = (o) => names[o];
   // stored as ids, shown as id and title (D-76): the same docs and titles as before, under their new ids, and no D-n or
   // AIP-n left in what is shown
-  assert.deepEqual(after.holds.decision.map((x) => x.id), before.holds.decision.map((x) => id(x.id)));
+  assert.deepEqual(new Set(after.holds.decision.map((x) => x.id)), new Set(before.holds.decision.map((x) => id(x.id))));
   for (const x of after.holds.decision) assert.ok(x.name.startsWith(`${x.id} · `), x.name);
   const a4 = after.holds.decision.find((x) => x.id === names['D-4']);
   assert.equal(a4.title, `${names['aip/AIP-1']} · A fixture intent: builds on ${names['D-2']} · Second, superseded in part`);
+  const a3 = after.holds.decision.find((x) => x.id === names['D-3']);
+  assert.equal(a3.title, 'Third, holds');
+  assert.deepEqual(a3.for, [`${names['aip/AIP-1']} · A fixture intent`]);
   assert.doesNotMatch(JSON.stringify(after.holds) + JSON.stringify(after.waits), /\b(D|AIP)-\d+\b/);
   assert.deepEqual(after.waits.tasks.map((t) => t.id), before.waits.tasks.map((t) => t.id));
   assert.deepEqual(after.waits.questions.length, before.waits.questions.length);

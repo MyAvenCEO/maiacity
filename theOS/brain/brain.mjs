@@ -59,10 +59,10 @@ export function holds(docs, type) {
   const types = typesIn(docs);
   if (!types.includes(type) || type === 'index') throw new BrainError('unknown_type', `a type is one of: ${types.filter((t) => t !== 'index').join(', ')}`);
   const xs = [...docs].filter(([, d]) => d.type === type)
-    .map(([p, d]) => ({ id: p, name: Wof(docs).name(d, p), title: titleOf(docs, d), holds: holdsOf(docs, p), n: d.n, at: d.at || '' }))
+    .map(([p, d]) => ({ id: p, name: Wof(docs).name(d, p), title: titleOf(docs, d), holds: holdsOf(docs, p), n: d.n, at: d.at || '', for: (d.intents || []).map((r) => Wof(docs).name(docs.get(r), r)) }))
     .filter((x) => x.holds !== 'superseded')
     .sort((a, b) => b.at.localeCompare(a.at) || (b.n ?? 0) - (a.n ?? 0) || a.title.localeCompare(b.title));
-  return plain(xs.map(({ id, name, title, holds: h }) => ({ id, name, title, holds: h })));
+  return plain(xs.map(({ id, name, title, holds: h, for: f }) => ({ id, name, title, holds: h, ...(f.length ? { for: f } : {}) })));
 }
 
 // What waits for Samuel: the open questions of every intent that is not closed, and his tasks not done at or before
@@ -111,7 +111,7 @@ export function get(docs, ref) {
 
 // The command line: brain <verb> [args] [--json] [--root <theOS folder>].
 function text(verb, out) {
-  const line = (x) => `- ${x.name}${x.holds === 'holds in part' ? ' (holds in part)' : ''}`;
+  const line = (x) => `- ${x.name}${x.holds === 'holds in part' ? ' (holds in part)' : ''}${x.for ? ` [for ${x.for.join('; ')}]` : ''}`;
   if (verb === 'prime') {
     const w = out.waits;
     return [

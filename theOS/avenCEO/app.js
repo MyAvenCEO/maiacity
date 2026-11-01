@@ -113,7 +113,7 @@ function reflected(title, type) {
   const card = ([p, d]) => {
     const part = supersededBy(p).filter((s) => !W.whole(s)).map((s) => `${W.name(G.docs.get(s.p), s.p)}: ${s.what || s.how}`).join(' ');
     return `<a class="card" href="#${p}"><span class="top">${holdChip(p)}${chips(d.about)}</span><b>${e(W.name(d, p))}</b>
-      <small>${e(d.means)}</small>${part ? `<small><b>Changed by</b> ${e(part)}</small>` : ''}</a>`;
+      <small>${e(d.means)}</small>${d.intents?.length ? `<small><b>For</b> ${e(d.intents.map((r) => W.name(G.docs.get(r), r)).join(' · '))}</small>` : ''}${part ? `<small><b>Changed by</b> ${e(part)}</small>` : ''}</a>`;
   };
   const now = xs.filter(([p]) => holds(p) !== 'superseded'), old = xs.filter(([p]) => holds(p) === 'superseded');
   return `<article class="doc"><header><h1>${title}</h1><p class="lead">${type === 'decision' ? 'Your decisions, newest first.' : 'The glossary.'} What holds is computed by brain's reflection: one holds until a later one supersedes ${type === 'decision' ? 'it' : 'or merges it'}; superseded in part, the rest still holds.</p></header>
