@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "code",
+ "id": "src-c73a",
+ "title": "p2panda: group resolver",
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-auth/src/group/resolver.rs"
+}

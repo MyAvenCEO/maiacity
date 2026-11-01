@@ -1,0 +1,34 @@
+{
+ "type": "decision",
+ "id": "d-e0db",
+ "n": 66,
+ "title": "round 5's answers applied, one more round",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "brain",
+  "gates"
+ ],
+ "quote": "Do as you believe is best.",
+ "means": "aip-836d's spec review stopped after three unclean rounds. Its thread applies every proposed answer of round 5 in revision 9 and runs round 6: reads come first (checkpoint 1 needs nothing from aip-31df), the door for writes from checkpoint 2, and the merge rule keeps only what differs from both parents.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-87d6",
+   "part": "from the start",
+   "what": "The check fails a doc changed without the brain command from aip-836d's checkpoint 2, after the read verbs of checkpoint 1."
+  }
+ ],
+ "relates": [
+  "d-5bce"
+ ],
+ "reflection": {
+  "checked": "every decision before d-e0db that held",
+  "result": "supersedes d-87d6 in part (when the door starts)"
+ }
+}

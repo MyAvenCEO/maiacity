@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "code",
+ "id": "src-b81a",
+ "title": "Tlon: groups",
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/tloncorp/tlon-apps/blob/develop/desk/app/groups.hoon"
+}

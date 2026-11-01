@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "spec",
+ "id": "src-2e5c",
+ "title": "Meadowcap",
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/earthstar-project/willowprotocol.org/blob/main/src/pages/specs/meadowcap.tsx"
+}

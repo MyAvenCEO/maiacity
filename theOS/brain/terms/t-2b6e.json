@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-2b6e",
+ "word": "avenOS",
+ "means": "avenDB's app in the browser (legacy); its last release, 26.10.31v6, is what aven.maia.city serves.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

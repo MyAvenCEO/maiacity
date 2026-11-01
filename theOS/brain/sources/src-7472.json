@@ -1,0 +1,27 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-7472",
+ "title": "Claude Code: Draw in the interface with a mod",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/plugins/mods/interface.md",
+ "by": "Anthropic",
+ "summary": "Each place a mod can draw is a render site; a ui.render hook returns an element tree for it. A pane opens with $.ui.open and sits as a sidebar in a wide fullscreen terminal or above the prompt in a narrow one. Pane, the question dialog, the spinner, messages and tool rows work in the terminal, Desktop and VS Code. Elements: Box, Text, Button, Markdown, Link, Code, Input and Select (terminal, Desktop, VS Code), Svg (Desktop, VS Code), Client for animation (terminal, Desktop), Raster and Image (terminal). Buttons and fields keep their handlers in the mod and raise ui.press, ui.input and ui.select. State a drawing reads lives in $.state, so a write redraws its readers; $.store keeps values across sessions.",
+ "ideas": [
+  "A pane with tabs, buttons and inputs is drawn from data, so it can be a live board.",
+  "Check e.surface and draw what that surface has: text where Svg or Raster is missing.",
+  "Keep drawn state in $.state, not module variables: a reload keeps it."
+ ],
+ "took": [
+  {
+   "idea": "A pane per view, tabs per intent",
+   "where": "rs-0844: pattern pane"
+  },
+  {
+   "idea": "Buttons and inputs to act",
+   "where": "rs-0844: pattern act-through-avenMAIA"
+  }
+ ]
+}

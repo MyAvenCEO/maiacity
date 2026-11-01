@@ -1,0 +1,41 @@
+{
+ "type": "type",
+ "id": "ty-1bdc",
+ "name": "step",
+ "file": "avenCEO/steps/<n>-<name>.json",
+ "what": "One of avenCEO's four steps: its question, what to do, what it writes, its gate, who does it, and where it goes back.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "question, do, output",
+   "means": "the work"
+  },
+  {
+   "name": "gate",
+   "means": "the gate after it"
+  },
+  {
+   "name": "back",
+   "means": "where it goes back to, and when"
+  },
+  {
+   "name": "from",
+   "means": "the sources it comes from"
+  }
+ ],
+ "written_by": "Samuel, through avenCEO intents",
+ "links_to": [
+  "ty-ae9a",
+  "ty-3043"
+ ],
+ "trace": {
+  "events": [
+   "changed",
+   "revised"
+  ],
+  "step": "aip-31df's steps",
+  "author": "agent",
+  "note": "avenCEO's definition is built by aip-31df.",
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ }
+}

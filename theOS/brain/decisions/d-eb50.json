@@ -1,0 +1,35 @@
+{
+ "type": "decision",
+ "id": "d-eb50",
+ "n": 69,
+ "title": "Links are flat hash ids, never paths",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "brain",
+  "links"
+ ],
+ "quote": "Reference everything flat by hash ids, never by paths.",
+ "means": "Every link in brain is a doc's flat hash id, never a path; folders are only where files sit. brain resolves an id to its file, and brain index writes the map the apps read.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-0e44",
+   "part": "how a link is written",
+   "what": "A link is the doc's flat hash id; its commit is computed (d-3956), not written into the link."
+  }
+ ],
+ "relates": [
+  "d-ac7d",
+  "d-072e",
+  "d-f83e"
+ ],
+ "reflection": {
+  "checked": "every decision before d-eb50 that held",
+  "result": "supersedes d-0e44 in part (how a link is written)"
+ }
+}

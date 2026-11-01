@@ -1,0 +1,38 @@
+{
+ "type": "decision",
+ "id": "d-1bc9",
+ "n": 74,
+ "title": "Gate A for revision 10",
+ "subtype": "gate-A",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "brain"
+ ],
+ "quote": "Approve revision 10.",
+ "means": "Gate A for aip-836d's revision 10, after spec review round 6, whose findings it all answers. Checkpoint 1 builds the read verbs. Checkpoint 2 opens with the one migration (every doc into brain/, flat hash ids, ids.json) and builds the door for writes on that final shape. Checkpoint 3 builds the reflection and the link graph. Checkpoint 4 builds brain's MCP server (d-9271). The brain skill is a real Claude Code skill written by brain index.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-b301",
+   "part": "whole",
+   "what": "d-b301's approval held only if round 6 was clean; it was not, and this approves revision 10 itself."
+  }
+ ],
+ "relates": [
+  "d-eaaf",
+  "d-e0db",
+  "d-3956",
+  "d-eb50",
+  "d-9271"
+ ],
+ "reflection": {
+  "checked": "every decision before d-1bc9 that held",
+  "result": "supersedes d-b301 (whole)"
+ }
+}

@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "t-ffb5",
+ "word": "View",
+ "means": "One state of one of theOS's three apps a person can reach: a slide, a panel, a tab, a page.",
+ "supersedes": [
+  {
+   "term": "t-743a",
+   "how": "redefined: three apps, not only the docs app"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes view (redefined)"
+ }
+}

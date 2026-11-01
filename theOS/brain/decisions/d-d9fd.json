@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-d9fd",
+ "n": 47,
+ "title": "brain's verbs over MCP too",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "interface",
+  "apps"
+ ],
+ "quote": "Yes: serve brain's verbs over MCP too.",
+ "means": "brain's verbs are served as a command, a skill and an MCP server, so aip-a195's mod, the apps and other sessions all use the same door.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-5bce",
+  "d-fef3"
+ ],
+ "reflection": {
+  "checked": "every decision before d-d9fd that held",
+  "result": "supersedes nothing"
+ }
+}

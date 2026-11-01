@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-dc23",
+ "n": 13,
+ "title": "Move avenSANDBOX into theOS",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "testing",
+  "legacy"
+ ],
+ "quote": "Move the whole responsibility for avenSANDBOX, and its lifecycle, into theOS. That helps our testing gates too: tests, Lean, vectors.",
+ "means": "aip-6fb1 starts: theOS takes over avenSANDBOX's responsibility and lifecycle.",
+ "intents": [
+  "aip-6fb1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-9351",
+  "d-ff11"
+ ],
+ "reflection": {
+  "checked": "every decision before d-dc23 that held",
+  "result": "supersedes nothing"
+ }
+}

@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-6e78",
+ "n": 37,
+ "title": "Compact decision titles",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "style",
+  "decisions"
+ ],
+ "quote": "Keep decision titles compact, with a maximum length, and move the longer explanation into a subtitle.",
+ "means": "Every decision has a short title, 60 characters at most; the longer explanation is its subtitle.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-bca7"
+ ],
+ "reflection": {
+  "checked": "every decision before d-6e78 that held",
+  "result": "supersedes nothing"
+ }
+}

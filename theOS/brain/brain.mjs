@@ -115,7 +115,7 @@ function text(verb, out) {
   if (verb === 'prime') {
     const w = out.waits;
     return [
-      "brain prime: what holds now in theOS's memory. Act on these, not on superseded docs; brain get <path> shows one doc.",
+      "brain prime: what holds now in theOS's memory. Act on these, not on superseded docs; brain get <id> shows one doc.",
       ...Object.entries(out.holds).flatMap(([t, xs]) => [`\n${t}s that hold (${xs.length}):`, ...xs.map(line)]),
       `\nWaits for Samuel (${w.questions.length} questions, ${w.tasks.length} tasks):`,
       ...w.questions.map((q) => `- ${q.name}: ${q.q}`),

@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-fef3",
+ "n": 27,
+ "title": "a Claude Code mod as interface",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "apps",
+  "aven"
+ ],
+ "quote": "Create aip-a195: discover a native Claude Code mod as a user interface, so we can work with theOS and the aven harness directly from Claude Code sessions.",
+ "means": "aip-a195 opens: discover a native Claude Code mod as a user interface to theOS and aven, used from inside Claude Code sessions.",
+ "intents": [
+  "aip-a195"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-1ab2"
+ ],
+ "reflection": {
+  "checked": "every decision before d-fef3 that held",
+  "result": "supersedes nothing"
+ }
+}

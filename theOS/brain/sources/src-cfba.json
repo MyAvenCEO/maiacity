@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-cfba",
+ "title": "local-first-web/auth: CRDX",
+ "about": [
+  "access control",
+  "local-first data"
+ ],
+ "url": "https://github.com/local-first-web/auth/blob/main/packages/crdx/README.md"
+}

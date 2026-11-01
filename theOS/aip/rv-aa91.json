@@ -1,0 +1,68 @@
+{
+ "type": "review",
+ "id": "rv-aa91",
+ "intent": "aip-836d",
+ "round": 2,
+ "lens": "zoom-out",
+ "commit": "e74702594",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-3.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there that the plan rebuilds needlessly? Search theOS/ to find out.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "c2 vs c3, kept docs",
+   "text": "metric is kept yet its measurements grow; review is kept yet answers are added; d-bca7 to d-6e78 rewrote every kept decision in place. Simpler: drop the kept and living split; c4 makes every edit visible and supersedes says what replaces what.",
+   "answer": "fix",
+   "note": "As proposed: the kept and living split is dropped; c4 makes every edit visible, supersedes says what replaces what."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3's checked list",
+   "text": "An agent that pastes c7's output always passes, and a missed supersede still passes. Simpler: store nothing; the check computes what held at the parent and verifies supersedes targets held there; misses are caught by the outcome and the deferred checker.",
+   "answer": "fix",
+   "note": "As proposed: nothing is stored; the check computes what held at the parent and verifies each supersedes target held there; misses are caught by the outcome and the deferred checker."
+  },
+  {
+   "sev": "Major",
+   "scope": "c4, c1 vs copied lists",
+   "text": "Index docs, the definition's lists and the session's lists change in almost every commit with no event; session.intents already drifted. Simpler: check each equals its folder or backlinks, or generate them, and keep them out of c1, c3 and c4; an intent's own doc is covered by its new events.",
+   "answer": "fix",
+   "note": "As proposed: the index docs, the definition's lists and the session's lists are checked to equal their folders and backlinks, and kept out of c1, c3 and c4."
+  },
+  {
+   "sev": "Major",
+   "scope": "c5, checkpoint 4",
+   "text": "About 860 of 1,142 references point at docs that never change, about 250 at docs that change with every event: the chip carries no signal, and its generated file needs a publish step no AIP builds. Defer c5 until a correction is traced to a moved target; d-0e44 is Samuel's, so escalate.",
+   "answer": "escalate",
+   "note": "Asked as question 3."
+  },
+  {
+   "sev": "Major",
+   "scope": "c7's check",
+   "text": "Two implementations of holds() plus a browser render. Simpler: move holds() and supersededBy() into ui/wiki.js, loaded by the app and the command.",
+   "answer": "fix",
+   "note": "As proposed: holds() and supersededBy() move into ui/wiki.js, used by the apps and the command; c7's equality claim goes."
+  },
+  {
+   "sev": "Nit",
+   "scope": "order",
+   "text": "The single supersedes form arrives in checkpoint 2 but c7 needs it in checkpoint 1.",
+   "answer": "fix",
+   "note": "The single supersedes form ({doc, part, what}) moves into checkpoint 1."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c1",
+   "text": "The schema repeats the type doc's fields: make the schema the only source; validate with ajv.",
+   "answer": "fix",
+   "note": "The schema is the only source of a type's fields, shown as its fields table; validated with ajv."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c6",
+   "text": "aip-31df's checkpoint 1 still sweeps renamed words; delete one of the two.",
+   "answer": "fix",
+   "note": "aip-31df's sweep stands until c6 lands, then it is deleted from the done rule; said in both."
+  }
+ ]
+}

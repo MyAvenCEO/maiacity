@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-d7ef",
+ "status": "proposed",
+ "cue": "Event times are written by the agent, by hand, at minute grain.",
+ "lesson": "Stamp events by machine when they are written; lead time per step is only as good as these times.",
+ "evidence": "aip-6fb1 has 4 to 6 events on the same minute (09:12, 09:21, 09:53), so the time spent in spec review against fixing can't be told apart; one event in aip-6fb1's thread carried a wrong time and needed an erratum.",
+ "confidence": "medium",
+ "intent": "aip-6219"
+}

@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-2154",
+ "n": 57,
+ "title": "avenOS is no longer needed",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "release",
+  "legacy"
+ ],
+ "quote": "We don't need it anymore.",
+ "means": "Once theOS's apps replace avenOS at aven.maia.city, avenOS is reachable nowhere; its releases stay on GitHub for the undo.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-367c"
+ ],
+ "reflection": {
+  "checked": "every decision before d-2154 that held",
+  "result": "supersedes nothing"
+ }
+}

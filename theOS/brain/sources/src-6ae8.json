@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-6ae8",
+ "title": "Keyhive: Keyline",
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline/README.md"
+}

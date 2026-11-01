@@ -1,0 +1,89 @@
+{
+ "type": "review",
+ "id": "rv-cf03",
+ "intent": "aip-31df",
+ "round": 3,
+ "lens": "zoom-out",
+ "commit": "900c30ba2",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer with the persona of a skeptical architect: a fresh reader with no history of this project, who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/aip/AIP-1.json\n\nIt is the record of planned work: building \"avenCEO\", an agent harness that runs inside Claude Code. Its definition is theOS/docs/avenceo.json (skip its \"protocols\" array).\n\nImportant constraint from the project owner: theOS is a standalone, fresh project. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. Do not propose reusing it by import or by editing it.\n\nThe record's \"review\" field holds rounds 1 and 2 of this review, with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. Its \"events\" field is append-only history; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there (theOS/docs and its scripts) that the plan rebuilds needlessly?\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "c2, done rule",
+   "text": "The author still chooses the views the checker sees; app.js and style.css change every view (about 270 states at three sizes). Diff every view's pixels against the base commit; the checker sees only views whose pixels changed.",
+   "answer": "fix",
+   "note": "Adopted: the crawl plus a pixel diff against the base commit choose the views (c2, c3)."
+  },
+  {
+   "sev": "Major",
+   "scope": "checkpoint 2, view list",
+   "text": "Listing views from data files misses states behind buttons (intent tabs), and the data files had other names at the replay commits (verified: theDECISIONS.json and theAUDIT.json at faf266961's parent, theINTENTS.json at the others).",
+   "answer": "fix",
+   "note": "Adopted: crawl the rendered app from theOS/index.html, follow every link and button, drop duplicate states (c2)."
+  },
+  {
+   "sev": "Major",
+   "scope": "assumptions",
+   "text": "Playwright resolves from the repository's root package.json, a silent dependency on legacy code (verified).",
+   "answer": "fix",
+   "note": "theOS/package.json and its lockfile, in checkpoint 1."
+  },
+  {
+   "sev": "Major",
+   "scope": "order",
+   "text": "Checkpoints 1 and 2 do nothing until checkpoint 3 adds the done rule; the root CLAUDE.md's check reports green for theOS with nothing run (verified: it asks for aven/ops/devx/check.mjs).",
+   "answer": "fix",
+   "note": "theOS/CLAUDE.md with the done rule comes in checkpoint 1 and grows with each checkpoint; it says the root check does not apply."
+  },
+  {
+   "sev": "Major",
+   "scope": "checkpoint 2",
+   "text": "Contrast and slide text size have no evidence or claim; a naive contrast check raises false alarms.",
+   "answer": "fix",
+   "note": "Deleted until an escape asks for them."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c4",
+   "text": "One app, two checks: picking by path saves nothing.",
+   "answer": "fix",
+   "note": "Deleted: every check always runs."
+  },
+  {
+   "sev": "Nit",
+   "scope": "design",
+   "text": "It repeats avenCEO's definition; no checkpoint builds its table.",
+   "answer": "fix",
+   "note": "Moved into avenCEO's definition (Memory and decision history)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c5",
+   "text": "A process claim already met; nothing builds it.",
+   "answer": "fix",
+   "note": "Moved to avenCEO's rules."
+  },
+  {
+   "sev": "Nit",
+   "scope": "assumption on app.js",
+   "text": "The fix was committed before Gate A and is in no checkpoint.",
+   "answer": "fix",
+   "note": "Reworded: viewer changes are ordinary edits under the done rule."
+  },
+  {
+   "sev": "Nit",
+   "scope": "question 1",
+   "text": "live.now already answers it; signed approvals are YAGNI.",
+   "answer": "fix",
+   "note": "The question is now a plain yes or no; signing is dropped."
+  },
+  {
+   "sev": "Nit",
+   "scope": "glossary.json",
+   "text": "Word decisions already live in the current intents (theOS AIP-22, 32, 41) and slides mark terms; cite them, and scope by story ids.",
+   "answer": "fix",
+   "note": "Each entry cites the theOS AIP that decided it; scopes are story ids."
+  }
+ ]
+}

@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-1386",
+ "title": "Loro",
+ "about": [
+  "local-first data"
+ ],
+ "url": "https://github.com/loro-dev/loro"
+}

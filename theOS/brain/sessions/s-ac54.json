@@ -1,0 +1,195 @@
+{
+ "type": "session",
+ "id": "s-ac54",
+ "orchestrator": "a-6ffb",
+ "from": "2026-10-31",
+ "to": "2026-11-01",
+ "commits": {
+  "theOS": 68,
+  "note": "commits touching theOS/ when this doc was written"
+ },
+ "summary": "The theOS explainer (13 chapters with Architecture panels), the security audits and research that became the 91 current intents, then avenCEO: from a flow definition to aip-31df, built with its own steps.",
+ "asks": [
+  {
+   "about": "theOS explainer",
+   "quote": "Rename rule to policy; give read paths like every other operation; keep one single source of truth for the shape of operations; every reference names its data id at a version.",
+   "did": "The 13 chapters, their Architecture panels and the operations schema."
+  },
+  {
+   "about": "security",
+   "quote": "Run another deep security audit of everything decided so far: this is mission-critical crypto design.",
+   "did": "Audits from primary sources; findings became proposals."
+  },
+  {
+   "about": "research",
+   "quote": "Audit other systems in depth: Urbit and Tlon, Hypercore and Pears, Jazz's lenses, Loro's branching, p2panda and iroh.",
+   "did": "Research that fed the current intents."
+  },
+  {
+   "about": "guardian",
+   "quote": "One guardian per identity: its own primitive, the root of trust.",
+   "did": "OLD-AIP-91, woven through the chapters."
+  },
+  {
+   "about": "intents",
+   "quote": "Let's build a proper flow pipeline instead: learn, propose, decide, on a kanban board.",
+   "did": "The Intents board (now legacy)."
+  },
+  {
+   "about": "flow",
+   "quote": "Let's define from scratch how we actually want to work.",
+   "did": "The flow: first principles, design thinking, the Claude Code team, Shopify Helix, Harness², the Elephant-Goldfish Model."
+  },
+  {
+   "about": "avenCEO",
+   "quote": "Let's apply our own flow to building the flow engine itself, and call it avenCEO.",
+   "did": "aip-31df, three spec review rounds, five revisions."
+  },
+  {
+   "about": "memory",
+   "quote": "We document everything there as our memory, each thing in its own doc.",
+   "did": "This: one JSON doc per thing in theOS/."
+  }
+ ],
+ "decisions": [
+  "d-1b6c",
+  "d-e028",
+  "d-1372",
+  "d-9351",
+  "d-ff11",
+  "d-3b1f",
+  "d-b4ce",
+  "d-1ab2",
+  "d-9698",
+  "d-6c0a",
+  "d-d810",
+  "d-0e44",
+  "d-dc23",
+  "d-d1f4",
+  "d-cbd4",
+  "d-728e",
+  "d-e2d9",
+  "d-8725",
+  "d-87aa",
+  "d-d483",
+  "d-81c7",
+  "d-418a",
+  "d-3d81",
+  "d-a347",
+  "d-1fee",
+  "d-ae58",
+  "d-fef3",
+  "d-3d83",
+  "d-4d06",
+  "d-367c",
+  "d-260c",
+  "d-0020",
+  "d-0a23",
+  "d-4fff",
+  "d-bca7",
+  "d-e9c7",
+  "d-6e78",
+  "d-9f02",
+  "d-23e7",
+  "d-f960",
+  "d-5bce",
+  "d-3e01",
+  "d-b43d",
+  "d-2519",
+  "d-ac7d",
+  "d-87d6",
+  "d-d9fd",
+  "d-072e",
+  "d-3a9c",
+  "d-0a3f",
+  "d-d454",
+  "d-f7b3",
+  "d-f83e",
+  "d-6b87",
+  "d-432d",
+  "d-9364",
+  "d-2154",
+  "d-4ca4",
+  "d-fdc7",
+  "d-7994",
+  "d-eb51",
+  "d-06a8",
+  "d-f6da",
+  "d-0603",
+  "d-eaaf",
+  "d-e0db",
+  "d-3956",
+  "d-b301",
+  "d-eb50",
+  "d-c219",
+  "d-ca32",
+  "d-9271",
+  "d-113f",
+  "d-1bc9",
+  "d-09f1",
+  "d-4e7c",
+  "d-19fb",
+  "d-8912",
+  "d-5afb"
+ ],
+ "corrections": [
+  {
+   "text": "The intent detail page broke: two parts of the page shared one CSS class name.",
+   "commit": "106ba0e5f"
+  },
+  {
+   "text": "The scenario table squeezed its first column into a tall strip.",
+   "commit": "3ddc07339"
+  },
+  {
+   "text": "The intents and decisions pages did not scroll.",
+   "commit": "faf266961"
+  },
+  {
+   "text": "The board scrolled as a whole instead of per column.",
+   "commit": "b1d105b39"
+  },
+  {
+   "text": "Not every \"rule\" was renamed to \"policy\" after that was decided.",
+   "commit": ""
+  },
+  {
+   "text": "Slides kept an old shape of operations after its single source of truth changed.",
+   "commit": ""
+  },
+  {
+   "text": "The published page was not updated after a change.",
+   "commit": ""
+  },
+  {
+   "text": "Agents were modelled without their own identity, and coops with members.",
+   "commit": ""
+  },
+  {
+   "text": "An audit leaned on summaries instead of primary sources.",
+   "commit": ""
+  },
+  {
+   "text": "Decisions were listed oldest first.",
+   "commit": ""
+  },
+  {
+   "text": "avenMAIA recorded \"from production\" as deploys started by hand (d-7994); Samuel had said in aip-59ad's thread that production starts them by itself (d-06a8)."
+  },
+  {
+   "text": "avenMAIA read \"a - no migrate them too\" as keeping D-n and AIP-n as names (d-09f1); Samuel meant no numbers: reference by the hash and the title (d-4e7c)."
+  }
+ ],
+ "intents": [
+  "aip-31df",
+  "aip-6fb1",
+  "aip-836d",
+  "aip-a195",
+  "aip-59ad",
+  "aip-f4e2",
+  "aip-f663",
+  "aip-6219",
+  "aip-55e6",
+  "aip-c455"
+ ]
+}

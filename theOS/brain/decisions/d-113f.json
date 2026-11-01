@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "d-113f",
+ "n": 73,
+ "title": "Gate A",
+ "subtype": "gate-A",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "release"
+ ],
+ "quote": "Go.",
+ "means": "Gate A for aip-59ad's revision 3: one theOS release workflow reports Only from main, avenSANDBOX and theOS on every pull request to production; a push to production that changes theOS/ with both checks green deploys by itself, unpacking that commit's theOS/ beside the earlier builds and switching the link; one command undoes it; the deploy keys stay repository secrets (d-c219, d-ca32). Its build waits for aip-31df's checkpoint 1, aip-6fb1's checkpoint 4 and the goal pull request that brings theOS/ to main.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-06a8",
+  "d-c219",
+  "d-ca32"
+ ],
+ "reflection": {
+  "checked": "every decision before d-113f that held",
+  "result": "supersedes nothing"
+ }
+}

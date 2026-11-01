@@ -1,0 +1,31 @@
+{
+ "type": "decision",
+ "id": "d-f7b3",
+ "n": 52,
+ "title": "Four changes to avenCEO become intents",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "avenCEO",
+  "process"
+ ],
+ "quote": "Good: take all four changes to avenCEO.",
+ "means": "The four changes aip-6fb1's reflection proposed each become an intent, measured before they are kept: a check is a script a machine runs (aip-f663), events stamped by a machine (aip-6219), a kind on every finding (aip-55e6), and one spec round while you are reachable (aip-c455).",
+ "intents": [
+  "aip-6fb1",
+  "aip-f663",
+  "aip-6219",
+  "aip-55e6",
+  "aip-c455"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-9f02"
+ ],
+ "reflection": {
+  "checked": "every decision before d-f7b3 that held",
+  "result": "supersedes nothing"
+ }
+}

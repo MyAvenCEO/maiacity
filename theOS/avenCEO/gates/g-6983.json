@@ -1,0 +1,10 @@
+{
+ "type": "gate",
+ "subtype": "human",
+ "id": "g-6983",
+ "name": "Gate A",
+ "after": "st-9d3e",
+ "who": "a-4c7a",
+ "what": "You approve what must be true: the claims, the assumptions, the mockup and the checkpoint plan, next to a fresh checker's paraphrase. One question: approve, change, or send back.",
+ "how": "Asked in chat; your answer is quoted into a decision doc with its time."
+}

@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-b301",
+ "n": 68,
+ "title": "Gate A, if round 6 is clean",
+ "subtype": "gate-A",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "brain"
+ ],
+ "quote": "OK.",
+ "means": "Gate A for aip-836d's revision 9 (claims, assumptions, checkpoints, outcome and mockup), on condition that spec review round 6 comes back clean; if it does not, the gate is asked again.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-e0db"
+ ],
+ "reflection": {
+  "checked": "every decision before d-b301 that held",
+  "result": "supersedes nothing"
+ }
+}

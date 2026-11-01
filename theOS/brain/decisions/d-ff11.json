@@ -1,0 +1,32 @@
+{
+ "type": "decision",
+ "id": "d-ff11",
+ "n": 5,
+ "title": "The sandbox may be used for testing",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "legacy",
+  "testing",
+  "intents"
+ ],
+ "quote": "We can reuse the sandbox for testing, but nothing else. The current intents board is legacy too: we learn from it and carry its lessons into the new avenCEO harness.",
+ "means": "The sandbox may be used for testing; the Intents board is legacy, its lessons move into avenCEO.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-9351",
+   "part": "part",
+   "what": "d-9351 said nothing outside theOS is used; the sandbox may now be used for testing."
+  }
+ ],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before d-ff11 that held",
+  "result": "supersedes d-9351 (part)"
+ }
+}

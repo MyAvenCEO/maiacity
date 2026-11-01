@@ -1,9 +1,0 @@
-{
- "type": "metric",
- "id": "metrics/touches",
- "name": "Touches",
- "what": "your actions per intent",
- "want": "two: Gate A and Gate B",
- "how": "by hand, until a metrics script exists",
- "measurements": []
-}

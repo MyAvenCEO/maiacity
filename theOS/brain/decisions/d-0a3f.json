@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-0a3f",
+ "n": 50,
+ "title": "The reviewer judges the reflection",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "reflection",
+  "review"
+ ],
+ "quote": "The reviewer judges it.",
+ "means": "brain add does not refuse a doc over its reflection: it records what the reflection left unchecked, and the reviewer judges it.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-072e",
+  "d-87d6"
+ ],
+ "reflection": {
+  "checked": "every decision before d-0a3f that held",
+  "result": "supersedes nothing"
+ }
+}

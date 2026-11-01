@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-fc75",
+ "title": "p2panda: encryption",
+ "about": [
+  "group encryption"
+ ],
+ "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-encryption/README.md"
+}

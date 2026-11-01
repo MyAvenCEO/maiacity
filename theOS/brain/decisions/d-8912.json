@@ -1,0 +1,31 @@
+{
+ "type": "decision",
+ "id": "d-8912",
+ "n": 78,
+ "title": "Wrap up at a clean cut",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "sessions"
+ ],
+ "quote": "Yes: wrap up at a clean cut.",
+ "means": "This session ends at a clean cut, not at the goal's end. aip-31df's checkpoint 1 lands, aip-836d runs its migration once and every thread merges it. Each open intent is then parked with its next step written in its record: aip-6fb1 checkpoint 4 and Gate B; aip-836d checkpoints 2 to 4 after the migration; aip-59ad's build after the goal pull request to main; aip-f4e2 to aip-c455 not started. The session record is updated, the finished threads are archived, and a new session picks up from brain prime.",
+ "intents": [
+  "aip-31df",
+  "aip-6fb1",
+  "aip-836d",
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-b43d",
+  "d-2519"
+ ],
+ "reflection": {
+  "checked": "every decision before d-8912 that held",
+  "result": "supersedes nothing"
+ }
+}
