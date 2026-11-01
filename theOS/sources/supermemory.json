@@ -1,0 +1,37 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/supermemory",
+ "title": "Supermemory",
+ "about": [
+  "agent memory",
+  "supersession",
+  "forgetting"
+ ],
+ "url": "https://github.com/supermemoryai/supermemory",
+ "by": "Supermemory (supermemoryai), a company with a hosted API and open-source plugins. Read from its README and two doc pages in its repo (apps/docs/concepts/graph-memory and apps/docs/recall/memory-operations). supermemory.ai was blocked; its research page was not read.",
+ "summary": "A hosted memory and retrieval service. You add documents; it extracts small facts (memories) and links each new one to older ones as updates, extends or derives. An isLatest flag keeps search on the current fact while the history stays in the graph. Agents use three tools: memory (save or forget), recall and context.",
+ "ideas": [
+  "Documents are what you hand in; memories are the facts extracted from them, and every memory links back to its document.",
+  "Three link types between memories: updates (the new one replaces the old for 'what is true now'), extends (adds detail, both stay valid) and derives (a fact inferred from several others).",
+  "isLatest marks the current memory in an update chain, so retrieval reads the newest without erasing the past.",
+  "Forgetting is a soft delete: forgotten memories leave search but are kept; facts with a time limit drop out when they expire.",
+  "A profile splits stable facts (static) from recent activity (dynamic), read in one call at the start of a session.",
+  "Memories are scoped by a namespace (container tag), for example one per user or project.",
+  "There is no direct 'create memory' route in v5: every memory comes from an ingested document."
+ ],
+ "took": [
+  {
+   "idea": "Name the kind of link a new doc has to an older one: replaces, extends, derives",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Current is a flag computed from the update chain, not a stored overwrite",
+   "where": "holds()"
+  },
+  {
+   "idea": "A short 'what stands now' profile read at the start of a session",
+   "where": "brain's read command"
+  }
+ ]
+}

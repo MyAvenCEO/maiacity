@@ -1,0 +1,44 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/anthropic-memory-tool",
+ "title": "Claude API memory tool and context editing",
+ "about": [
+  "agent memory",
+  "Claude API",
+  "context management"
+ ],
+ "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool",
+ "by": "Anthropic's API docs. Read in full: the memory tool page and a summary of the context editing page (platform.claude.com/docs/en/build-with-claude/context-editing); docs.claude.com redirects there.",
+ "summary": "The memory tool (type memory_20250818, name memory) lets Claude keep files under /memories across conversations. Claude only asks for operations; the application runs them against its own storage and must block paths outside /memories. It pairs with context editing, which clears old tool results, and with compaction: memory keeps what must survive when context is cleared or summarised.",
+ "ideas": [
+  "Six commands: view (directory or file, optional view_range), create, str_replace (old_str must be unique), insert (after insert_line), delete and rename (fails if the destination exists).",
+  "The API adds a fixed protocol to the system prompt: 'ALWAYS VIEW YOUR MEMORY DIRECTORY BEFORE DOING ANYTHING ELSE', record progress as you go, and 'ASSUME INTERRUPTION'.",
+  "The reference return and error strings are fixed, so the model learns one contract whatever the storage behind it.",
+  "The handler owns safety: canonicalise every path, reject traversal, cap file size, expire files not read for a long time.",
+  "Context editing (clear_tool_uses_20250919 with trigger, keep, clear_at_least, exclude_tools) warns Claude before clearing so it can save to memory first, and reports what it cleared.",
+  "For multi-session work: an initializer session sets up a progress log and a feature checklist, each session starts by reading them and ends by updating them, and a feature is marked done only after end-to-end verification."
+ ],
+ "took": [
+  {
+   "idea": "A small fixed verb set with fixed result and error strings",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "Read brain before anything else, every session",
+   "where": "theOS/CLAUDE.md and the brain skill"
+  },
+  {
+   "idea": "Assume interruption: write the step to the intent's trace as you go",
+   "where": "the intent's event trace"
+  },
+  {
+   "idea": "The tool validates every path and refuses anything outside brain's folders",
+   "where": "the check"
+  },
+  {
+   "idea": "Mark a step done only after it is verified",
+   "where": "the intent's event trace"
+  }
+ ]
+}

@@ -1,0 +1,41 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "sources/mempalace",
+ "title": "MemPalace",
+ "about": [
+  "agent memory",
+  "temporal validity",
+  "supersession"
+ ],
+ "url": "https://github.com/MemPalace/mempalace",
+ "by": "MemPalace, the open-source Python project (first published under milla-jovovich/mempalace, now the MemPalace org); MIT licensed. Read from its README and three pages of its website source (concepts/knowledge-graph, concepts/the-palace, reference/mcp-tools). Its benchmark files were not read.",
+ "summary": "A local memory that stores conversations verbatim, never summarised, filed in a hierarchy of wings (people, projects), rooms (topics) and drawers (original text). Beside it is a small temporal graph in SQLite whose facts have a validity window. Agents use it through about 48 MCP tools, including add, invalidate and supersede for graph facts.",
+ "ideas": [
+  "Verbatim first: the stored text is the original; search returns it as written.",
+  "Graph facts are subject, predicate, object with valid_from and valid_to; valid_to empty means still current.",
+  "Three distinct writes: add a fact that can coexist, invalidate a fact that ended, supersede a single-valued fact.",
+  "supersede closes the old fact and opens the new one in one transaction at the same boundary, so a query at that moment returns only the new value.",
+  "Each graph fact links back to the verbatim memory it came from (source_closet) and carries a confidence.",
+  "Updating a drawer first appends the old text to drawer_revisions.jsonl; if that append fails, the update is refused.",
+  "Identical content gets a deterministic id and is skipped; a separate check finds near-duplicates before filing."
+ ],
+ "took": [
+  {
+   "idea": "Separate writes for 'add', 'ended' and 'replaced', not one generic update",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "A replacement closes the old and opens the new in one atomic write",
+   "where": "the reflection"
+  },
+  {
+   "idea": "History is appended before any change, and the change fails if the append fails",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "Ask 'what held at time T'",
+   "where": "holds()"
+  }
+ ]
+}

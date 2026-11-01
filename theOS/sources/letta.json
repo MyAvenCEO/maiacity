@@ -1,0 +1,40 @@
+{
+ "type": "reference",
+ "subtype": "code",
+ "id": "sources/letta",
+ "title": "Letta (MemGPT)",
+ "about": [
+  "agent memory",
+  "memory blocks",
+  "sleep-time"
+ ],
+ "url": "https://github.com/letta-ai/letta-code",
+ "by": "Letta, the team behind MemGPT. Read from the letta README, the letta-code README, and the archived server's memory tools (letta/functions/function_sets/base.py) and block schema (letta/schemas/block.py) on the archive branch. docs.letta.com and arxiv.org were blocked; the MemGPT and sleep-time papers were not read.",
+ "summary": "An agent harness whose memory lives in the agent's own context as labelled blocks it edits with tools. Blocks have a label, a value, a character limit, a description and a read-only flag. Older text goes to archival memory, reached by insert and search tools. A second, sleep-time agent (now called dreaming) rewrites the blocks between conversations, and Letta Code tracks all of this context in git.",
+ "ideas": [
+  "Memory blocks: label, value, limit, description, read_only; they sit in the context window, so the agent always sees them.",
+  "Edit tools with exact names: core_memory_append and core_memory_replace (first set), later memory_replace, memory_insert, memory_apply_patch and memory_rethink, plus memory_finish_edits.",
+  "memory_replace needs an exact match of the old string, like a code edit; memory_rethink rewrites a whole block and is meant for reorganising, not small fixes.",
+  "Archival memory is outside the context: archival_memory_insert and archival_memory_search; conversation_search reads past messages.",
+  "Sleep-time agents (dreaming) do the consolidation in the background, so the main agent answers fast.",
+  "Letta Code's MemFS keeps all context, memory blocks included, in git, and can sync it to a GitHub repo."
+ ],
+ "took": [
+  {
+   "idea": "Fixed edit tools with exact-match replace, refused when the old text is not found",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "Read-only docs the agent may read but not write",
+   "where": "the check"
+  },
+  {
+   "idea": "Consolidation as a separate background step, not part of every write",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Agent memory kept as files in git",
+   "where": "brain's storage"
+  }
+ ]
+}
