@@ -1530,6 +1530,18 @@
    "writes": [],
    "reads": [],
    "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:09Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "Checkpoint 2 prepared, not run (avenMAIA's rule: the migration waits for AIP-1's checkpoint 1 and avenMAIA's go). The code now reads both shapes: ui/wiki.js resolves a reference through brain/ids.json when it exists and as a path before; the apps and brain.mjs start from W.DEF and the indexes from W.indexOf, find steps by number, and pick the app by the doc's file. brain/migrate.mjs renames every doc to a flat hash id, moves the docs brain keeps into brain/, rewrites every reference, writes ids.json and renames.json, moves the Sources app to brain/ and points the dashboard at it; its audit finds old names and dangling ids. Its test passes on the fixtures (11 of 11 with checkpoint 1's). On a scratch copy of the real tree: 325 docs, 409 old names, no old name left, what holds and what waits unchanged (71 decisions, 39 terms, 5 tasks), the dashboard, avenCEO and brain apps load with the same counts and no errors; the only dangling ids were the made-up examples in this record's protocol, now reworded.",
+   "how": "by the AIP-3 thread; node --test theOS/brain/test/*.test.mjs; node brain/migrate.mjs on a scratch copy; the apps in Chromium",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [],
+   "task": "t7"
   }
  ],
  "reviews": [
@@ -1761,6 +1773,6 @@
    "No commits by brain, and no version guard on edit yet: each thread writes its own branch, so clashes show at merge."
   ],
   "layout": "brain/ holds brain's program (brain.mjs, test/), ids.json, renames.json, its app (index.html, app.js: today's Sources app, renamed brain) and every doc brain keeps, in folders by type: brain/sources, brain/decisions, brain/sessions, brain/terms, brain/lessons, brain/metrics, brain/authors. aip/ (the intents) and avenCEO/ (the harness) keep their folders; their docs get ids too. Folders are only where files sit; no link names one.",
-  "ids": "Every doc, intents and avenCEO's docs included, is referenced by its id alone, flat, never by a path: a type prefix and random hex (d-3f9c for a decision, aip-7a1e for an intent, src-0b42 for a source), unique across theOS. A link is any string that is an id. brain index writes theOS/brain/ids.json, the map from id to file, which brain and the static apps read, so a doc can move between folders without any link changing."
+  "ids": "Every doc, intents and avenCEO's docs included, is referenced by its id alone, flat, never by a path: a type prefix and random hex (d- and 4 hex characters for a decision, aip- for an intent, src- for a source), unique across theOS. A link is any string that is an id. brain index writes theOS/brain/ids.json, the map from id to file, which brain and the static apps read, so a doc can move between folders without any link changing."
  }
 }

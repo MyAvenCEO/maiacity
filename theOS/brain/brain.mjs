@@ -32,9 +32,14 @@ function wiki(root) {
 // Every doc reachable from avenCEO's definition and its indexes: a Map of path to doc. The functions below take it.
 export async function load(root = THEOS) {
   const W = wiki(root);
-  const def = await W.get('avenCEO/avenCEO');
-  if (!def) throw new BrainError('bad_root', `no avenCEO/avenCEO.json under ${root}; pass --root <the theOS folder>`);
-  const { docs } = await W.crawl(['avenCEO/avenCEO', ...(def?.indexes || [])]);
+  await W.ready();
+  const def = await W.get(W.DEF);
+  if (!def) throw new BrainError('bad_root', `no avenCEO's definition under ${root}; pass --root <the theOS folder>`);
+  const { docs } = await W.crawl([W.DEF, ...(def?.indexes || [])]);
+  // old names (D-12, decisions/D-12) after the migration: brain/renames.json maps each to its id
+  let renames = {};
+  try { renames = JSON.parse(await readFile(join(root, 'brain', 'renames.json'), 'utf8')).names || {}; } catch { /* none before the migration */ }
+  Object.defineProperty(docs, 'renames', { value: renames });
   for (const [p, d] of docs) if (!d) docs.delete(p);
   Object.defineProperty(docs, 'W', { value: W });
   return docs;
@@ -63,6 +68,7 @@ export function holds(docs, type) {
 // the step the intent stands at (a Gate B task waits only once the intent is at Build). Index docs are copies, not links.
 function waits(docs) {
   const W = Wof(docs), questions = [], tasks = [];
+  const samuel = docs.renames?.[SAMUEL] ?? SAMUEL;
   for (const [p, I] of docs) {
     if (I.type !== 'intent') continue;
     const ev = I.events || [];
@@ -71,7 +77,7 @@ function waits(docs) {
     for (const q of I.questions || []) if (!q.answered && !q.replaced_by) questions.push({ intent: p, q: q.q, options: q.options });
     for (const t of I.tasks || []) {
       const done = ev.some((x) => x.task === t.id && x.what === 'done');
-      if (t.who === SAMUEL && !done && t.step <= at) tasks.push({ intent: p, id: t.id, what: t.what });
+      if (t.who === samuel && !done && t.step <= at) tasks.push({ intent: p, id: t.id, what: t.what });
     }
   }
   return { questions, tasks };
@@ -87,7 +93,7 @@ export function prime(docs) {
 // brain get <path>: one doc, whether it holds, what supersedes it, its links and backlinks (index docs left out).
 export function get(docs, ref) {
   // a path (decisions/D-12), or the id prime and holds print (D-12, avensandbox-3)
-  let path = docs.has(ref) ? ref : null;
+  let path = docs.has(ref) ? ref : docs.renames?.[ref] && docs.has(docs.renames[ref]) ? docs.renames[ref] : null;
   if (!path) {
     const hits = [...docs].filter(([p, d]) => d.type !== 'index' && (d.id === ref || p.split('/').pop() === ref)).map(([p]) => p);
     if (hits.length > 1) throw new BrainError('ambiguous', `${ref} names ${hits.join(', ')}; pass the path`);

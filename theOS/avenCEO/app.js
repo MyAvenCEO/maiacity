@@ -60,7 +60,7 @@ function tasks(I) {
 function stepper(I) {
   const [at, label] = stageOf(I), ev = I.events || [];
   const passed = (g) => ev.some((x) => x.what === `gate-${g}`);
-  const step = (n) => { const s = G.def.steps.find((q) => q.startsWith(`avenCEO/steps/${n}-`)); const cls = n < at ? 'done' : n === at ? 'at' : '';
+  const step = (n) => { const s = W.stepOf(n, G.docs); const cls = n < at ? 'done' : n === at ? 'at' : '';
     return `<a class="st ${cls}" href="#${s}"><span class="n">${n < at ? '✓' : n}</span>${W.STEPS[n - 1]}</a>`; };
   const gate = (g) => `<span class="gt ${passed(g) ? 'done' : ''}" title="Gate ${g}"><span>${g}</span></span>`;
   return `<nav class="stepper" aria-label="Where ${e(I.id)} stands">${step(1)}<span class="ln"></span>${step(2)}<span class="ln"></span>${gate('A')}<span class="ln"></span>${step(3)}<span class="ln"></span>${gate('B')}<span class="ln"></span>${step(4)}<span class="where"><b>${e(I.id)}</b> ${e(label)}</span></nav>`;
@@ -298,10 +298,10 @@ const PAGES = {
 async function show() {
   const h = decodeURIComponent(location.hash.slice(1));
   const route = h || 'home';
-  if (route.startsWith('sources/')) { location.href = `../sources/index.html#${route}`; return; }
-  document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route || (a.dataset.r === 'home' && route === 'avenCEO/avenCEO')));
+  if (W.isPath(route) && W.appOf(route) !== HERE) { location.href = `../${W.appOf(route)}/index.html#${route}`; return; }
+  document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route || (a.dataset.r === 'home' && route === W.DEF)));
   let html;
-  if (route === 'home' || route === 'avenCEO/avenCEO') html = home();
+  if (route === 'home' || route === W.DEF) html = home();
   else if (route === 'aips') html = board();
   else if (route === 'waiting') html = `<article class="doc"><header><h1>Waiting for you</h1><p class="lead">Every open question of every AIP. You answer here in chat; your answer becomes a decision doc.</p></header>${waiting() || '<p class="note">Nothing waits for you.</p>'}</article>`;
   else if (LISTS.some(([k]) => k === route)) { const [k, t, type] = LISTS.find(([x]) => x === route); html = ['decision', 'term'].includes(type) ? reflected(t, type) : list(k, t, type); }
@@ -315,13 +315,14 @@ async function show() {
 }
 
 async function start() {
-  const def = await W.get('avenCEO/avenCEO');
-  G = { ...(await W.crawl(['avenCEO/avenCEO', ...def.indexes.filter((p) => !p.startsWith('sources/'))])), def };
-  G.sources = await W.get('sources/index');
+  await W.ready();
+  const def = await W.get(W.DEF);
+  const sources = await W.get(W.indexOf('sources'));
+  G = { ...(await W.crawl([W.DEF, ...def.indexes.filter((p) => p !== W.indexOf('sources'))])), def, sources };
   const n = (type) => ofType(type).length;
   $('#nav').innerHTML = `<a href="#home" data-r="home">avenCEO</a>` + LISTS.map(([k, t, type]) => (k === 'gap' ? '<span class="gap"></span>'
     : `<a href="#${k}" data-r="${k}">${t}<span>${k === 'waiting' ? ofType('intent').reduce((s, [, I]) => s + (I.questions || []).filter((q) => !q.answered && !q.replaced_by).length, 0) : n(type)}</span></a>`)).join('');
-  $('#main').addEventListener('click', (ev) => { const j = ev.target.closest('[data-jump]'); if (j) { const s = G.def.steps.find((p) => p.startsWith(`avenCEO/steps/${j.dataset.jump.split('-')[1]}-`)); if (s) location.hash = s; } });
+  $('#main').addEventListener('click', (ev) => { const j = ev.target.closest('[data-jump]'); if (j) { const s = W.stepOf(+j.dataset.jump.split('-')[1], G.docs); if (s) location.hash = s; } });
   addEventListener('hashchange', show);
   show();
 }

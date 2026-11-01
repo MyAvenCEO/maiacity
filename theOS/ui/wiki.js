@@ -1,15 +1,26 @@
-// theOS's memory: one JSON doc per thing, each with a "type", linked to others by path ("aip/AIP-1", "decisions/…").
-// Shared by the three apps. A path is a doc's file under theOS/ without ".json". Nothing here writes.
+// theOS's memory: one JSON doc per thing, each with a "type", linked to others by reference. A reference is a flat id
+// (d-3f9c) once brain/ids.json exists (AIP-3's migration), and a path ("aip/AIP-1", a doc's file under theOS/ without
+// ".json") before it; everything here takes either. Shared by the apps and brain.mjs. Nothing here writes.
 const W = {
   root: '../',
   cache: new Map(),
-  folders: ['aip', 'decisions', 'sessions', 'sources', 'metrics', 'lessons', 'authors', 'avenCEO'],
-  get(path) {
-    if (!this.cache.has(path)) this.cache.set(path, fetch(`${this.root}${path}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
-    return this.cache.get(path);
+  folders: ['aip', 'decisions', 'sessions', 'sources', 'metrics', 'lessons', 'authors', 'avenCEO', 'brain'],
+  map: null, // brain/ids.json: { root, index: { folder: id }, ids: { id: file } }, or null before the migration
+  ready() {
+    this.loading ??= fetch(`${this.root}brain/ids.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((m) => { this.map = m; });
+    return this.loading;
+  },
+  file(ref) { return this.map?.ids?.[ref] ?? ref; },
+  get DEF() { return this.map?.root ?? 'avenCEO/avenCEO'; },
+  indexOf(folder) { return this.map?.index?.[folder] ?? `${folder}/index`; },
+  get(ref) {
+    if (!this.cache.has(ref)) this.cache.set(ref, this.ready().then(() => fetch(`${this.root}${this.file(ref)}.json`)).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+    return this.cache.get(ref);
   },
   esc: (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
-  isPath(s) { return typeof s === 'string' && /^[A-Za-z]+\/[\w@-]+(\/[\w@-]+)*$/.test(s) && this.folders.includes(s.split('/')[0]); },
+  isId(s) { return typeof s === 'string' && !!this.map?.ids && Object.hasOwn(this.map.ids, s); },
+  // a reference: an id, or before the migration a path
+  isPath(s) { return typeof s === 'string' && (this.isId(s) || (/^[A-Za-z]+\/[\w@-]+(\/[\w@-]+)*$/.test(s) && this.folders.includes(s.split('/')[0]))); },
   // every path a doc points at, anywhere inside it
   paths(o, out = new Set()) {
     if (typeof o === 'string') { if (this.isPath(o)) out.add(o); }
@@ -17,7 +28,9 @@ const W = {
     else if (o && typeof o === 'object') Object.values(o).forEach((x) => this.paths(x, out));
     return out;
   },
-  appOf: (path) => (path.startsWith('sources/') ? 'sources' : 'avenCEO'),
+  // which app shows a doc: brain's app (the Sources app until the migration) for sources, avenCEO's for the rest
+  srcApp() { return this.map ? 'brain' : 'sources'; },
+  appOf(ref) { const f = this.file(ref); return f.startsWith('sources/') || f.startsWith('brain/sources/') ? this.srcApp() : 'avenCEO'; },
   href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/index.html#${path}`; },
   label: (d, path) => (d && (d.type === 'decision' ? d.id : d.title || d.name || d.word || d.id)) || path.split('/').pop(),
   // all docs reachable from the starting paths, and who points at whom
@@ -44,7 +57,8 @@ const W = {
   text(t, here, docs) {
     return this.esc(t)
       .replace(/(?<![\w-])OLD-AIP-(\d+)/g, '<a href="../docs/index.html#intents-$1">OLD-AIP-$1</a>')
-      .replace(/(?<![\w-])AIP-(\d+)(?![\w-])/g, (m, n) => (docs?.has(`aip/AIP-${n}`) ? `<a href="${this.href(`aip/AIP-${n}`, here)}">${m}</a>` : m));
+      .replace(/(?<![\w-])AIP-(\d+)(?![\w-])/g, (m, n) => (docs?.has(`aip/AIP-${n}`) ? `<a href="${this.href(`aip/AIP-${n}`, here)}">${m}</a>` : m))
+      .replace(/(?<![\w/-])[a-z]+-[0-9a-f]{4,}(?![\w-])/g, (m) => (this.isId(m) ? this.link(m, here, docs) : m));
   },
   link(path, here, docs) {
     const d = docs?.get(path);
@@ -77,9 +91,11 @@ const W = {
     if (has('dropped')) return 5;
     return !has('understood') ? 1 : !has('gate-A') ? 2 : !has('gate-B') ? 3 : !has('measured') ? 4 : 5;
   },
+  // the step doc of step n: found by its number, so it works for paths and ids alike
+  stepOf(n, docs) { for (const [p, d] of docs || []) if (d?.type === 'step' && d.n === n) return p; return null; },
   stepLink(n, here, docs) {
-    const s = `avenCEO/steps/${n}-${this.STEPS[n - 1].toLowerCase()}`;
-    return docs?.has(s) ? `<a class="wl" href="${this.href(s, here)}">${n} · ${this.STEPS[n - 1]}</a>` : this.STEPS[n - 1];
+    const s = this.stepOf(n, docs);
+    return s ? `<a class="wl" href="${this.href(s, here)}">${n} · ${this.STEPS[n - 1]}</a>` : this.STEPS[n - 1];
   },
   // path → the events that wrote or read it, from every intent among the docs
   trace(docs) {
