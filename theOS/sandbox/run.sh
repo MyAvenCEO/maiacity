@@ -5,7 +5,9 @@
 # committed theOS/sandbox/box describes (theOS/sandbox/tag.sh reads HEAD: uncommitted edits to box/ run the old image),
 # never another: until it is published, run.sh says so and stops.
 # Only theOS/ is mounted, so there is no .git inside the box. The box runs as root (its tools live in root's /opt, and
-# cargo writes to /opt/cargo); on a Linux host, files it writes into theOS/ are root's.
+# cargo writes to /opt/cargo); on a Linux host, files it writes into theOS/ are root's. Playwright's package is the
+# box's own (NODE_PATH), unless the host's theOS/node_modules has one: then that one wins, and the check warns when it is
+# off theOS/package.json's pin.
 #   theOS/sandbox/run.sh <command...>     with no command: a shell in the box
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)

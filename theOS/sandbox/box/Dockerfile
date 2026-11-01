@@ -72,4 +72,11 @@ RUN rustup toolchain install "${RUST_NIGHTLY}" --profile minimal \
     && cargo fuzz --version
 
 
+# Playwright's package, the version theOS/package.json pins and this base's browsers match: theOS's check (AIP-1) finds
+# it on NODE_PATH, so the check runs inside the box with no install and no network. A layer of its own at the end.
+ARG PLAYWRIGHT_VERSION=1.64.1
+ENV NODE_PATH=/usr/lib/node_modules
+RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" \
+    && node -e "require('playwright')"
+
 WORKDIR /work
