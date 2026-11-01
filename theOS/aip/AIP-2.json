@@ -927,6 +927,15 @@
    "how": "AIP-2's thread (D-44), by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T12:24Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c3 on commit ca332a8, three scenarios, compared by theOS/sandbox/same.mjs: (1) the image workflow, run 41305824017 green: theos-4304affa59294591 built and smoked on both platforms (the box's Playwright equal to theOS/package.json's pin), then theOS's check inside it through run.sh as the last job, its report kept as the theos-check-report artifact; (2) this cloud session, inside the box through run.sh: green, 1460 states, 0 failed, Playwright 1.64.1, 200 s; (3) this cloud session outside the box: green, 1460 states, 0 failed, Playwright 1.63.0, 287 s. same.mjs: the runner and the box the same, the runner and the session the same, state by state. A first comparison against an older commit's report differed by the 2 states of a doc added in between, as it should. Not yet: the Mac (Gate B), and the check on arm64.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
