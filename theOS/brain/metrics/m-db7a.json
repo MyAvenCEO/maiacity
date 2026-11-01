@@ -5,5 +5,12 @@
  "what": "checkpoints that pass both gates in the first round",
  "want": "rising",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "session": "s-ac54",
+   "value": 0,
+   "count": 4,
+   "note": "aip-836d: none of its 4 checkpoints passed the review gate in its first round (1 Blocker in checkpoints 1, 2 and 3; Majors in 4)"
+  }
+ ]
 }

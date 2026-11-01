@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-f422",
+ "status": "kept",
+ "cue": "A check passes in a test world laid out differently from the real one.",
+ "lesson": "Run every new check once on the real layout, and plant one failure there; a check that never fails may check nothing.",
+ "evidence": "brain check matched no commit for hours: theOS is a subfolder and its git path filters read theOS/theOS; the tests built flat repositories; called green twice (aip-836d, checkpoint 3 review, fixed at 326f9d048).",
+ "confidence": "high",
+ "intent": "aip-836d"
+}

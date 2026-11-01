@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-faaf",
+ "title": "Gate B for brain",
+ "subtype": "gate-B",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "brain"
+ ],
+ "quote": "Yes.",
+ "means": "Gate B for aip-836d passes. Samuel tried what was asked: a new session's first read (brain prime: the decisions and terms that hold, each as id and title, and what waits for him); the Decisions list and a decision (holds, holds in part or superseded, what it is for, links changed since they were cited); the brain app, the former Sources app; and the door: a decision written through brain add, a decision file edited by hand refused at push. aip-836d goes on to Learn.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-1bc9"
+ ],
+ "reflection": {
+  "checked": "every decision that held about aip-836d's gates",
+  "result": "supersedes nothing: d-1bc9 approved what must be true; this approves what was built"
+ }
+}

@@ -5,5 +5,12 @@
  "what": "findings that needed knowledge only you had",
  "want": "falling, because each answer is written down",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "session": "s-ac54",
+   "value": 7,
+   "count": 7,
+   "note": "aip-836d: findings or questions only Samuel could answer: hash ids (D-45, D-49, D-53), MCP's home (D-55, D-72), where sessions start (D-54), how strict the reflection is (D-50)"
+  }
+ ]
 }

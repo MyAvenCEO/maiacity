@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-8ece",
+ "status": "kept",
+ "cue": "A script that rewrites every doc walks the folders, not the tracked files.",
+ "lesson": "Walk the files git tracks; generated output sits in the same folders.",
+ "evidence": "The migration gave AIP-1's check report (avenCEO/checks/out/report.json, git-ignored) an id and rewrote a text to it (aip-836d, t28).",
+ "confidence": "high",
+ "intent": "aip-836d"
+}
