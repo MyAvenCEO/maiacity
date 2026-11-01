@@ -100,7 +100,9 @@
     "Accept: the checks catch mistakes; write access is the guard (recommended)",
     "Add an organization ruleset 'Require workflows to pass' pinned to theOS's workflow (needs the organization's settings, possibly a paid plan)",
     "Also require approval for every outside contributor's workflow runs (Settings, Actions)"
-   ]
+   ],
+   "answer": "Accept: the checks catch mistakes; write access is the guard.",
+   "answered": "d-be19"
   }
  ],
  "reviews": [
@@ -700,6 +702,60 @@
    "writes": [
     ".github/workflows/theos.yml",
     "theOS/release/test.sh"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T15:29Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "decision d-be19 · production's checks catch mistakes; write access guards",
+   "how": "brain add",
+   "writes": [
+    "d-be19",
+    "ix-7380.items",
+    "s-ac54.decisions"
+   ],
+   "reads": [],
+   "left": [
+    "d-06a8",
+    "d-113f",
+    "d-2154",
+    "d-367c",
+    "d-47c5",
+    "d-4ca4",
+    "d-6628",
+    "d-7994",
+    "d-9364",
+    "d-a347",
+    "d-c219",
+    "d-ca32",
+    "d-eb51",
+    "d-f1a0",
+    "d-f6da",
+    "d-fdc7",
+    "d-820e"
+   ]
+  },
+  {
+   "at": "2026-11-01T15:30Z",
+   "by": "a-6ffb",
+   "what": "edit",
+   "text": "aip-59ad: questions",
+   "how": "brain edit",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T15:30Z",
+   "by": "a-6ffb",
+   "what": "edit",
+   "text": "s-ac54: summary",
+   "how": "brain edit",
+   "writes": [
+    "s-ac54"
    ],
    "reads": []
   }
