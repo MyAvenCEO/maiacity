@@ -684,6 +684,15 @@
     "theOS/sandbox/test.sh",
     "theOS/sandbox/environment-setup.sh"
    ]
+  },
+  {
+   "at": "2026-11-01T10:13Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2's 'same inputs build nothing' under round 2's workflow, run 41296532510 (workflow_dispatch on c2d6c8e): the plan found theos-5c06a62013298353 built for both platforms; build, join and latest skipped; the run took 14 s.",
+   "how": "AIP-2's thread (D-44), read off the run's jobs",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
