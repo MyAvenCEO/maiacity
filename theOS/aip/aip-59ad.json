@@ -963,6 +963,112 @@
     "aip-59ad"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T17:15Z",
+   "by": "a-4c7a",
+   "what": "gate-B",
+   "text": "Samuel looked at https://aven.maia.city on his phone and his Mac: 'good'. The last part of Gate B (d-820e).",
+   "how": "in chat to avenMAIA, relayed",
+   "writes": [],
+   "reads": [
+    "d-820e"
+   ]
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Gate B passed: the first real release, the undo to avenOS and back, Samuel's look (d-820e).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t10"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "measured",
+   "text": "The outcome, measuring (it stays open until the first five releases or 1 Dec 2026, whichever comes first): release 1 (b20033fa3) merged into production at 14:28Z, live with health green at 14:31Z, no one starting anything by hand, no undo needed; Samuel: 'good'. Claims: c1, c3, c4 pass by machine on GitHub and the server; c5 pass by review. Written to m-8241.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [],
+   "reads": [
+    "m-8241"
+   ]
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "measured",
+   "text": "The process: lead time 7 h 42 min from the source to Samuel's 'good', about 2 h 10 min of it work (Understand 32 min, Specify 50 min, Build 42 min); 2 h 54 min waiting on aip-31df and aip-6fb1 and parked. Review rounds: spec 1, checkpoint 1: 2, checkpoint 2: 1, none clean; first pass 0 of 2. Findings: spec 18 (1 Blocker, 10 Major, 7 Nit); checkpoints 16 (5 Major, 11 Nit; by kind missing check 4, bug 3, wrong fact 3, unclear 3, security 2, contradiction 1), 15 fixed, 1 escalated. Samuel's touches 16 against the 2 planned; escalations 1; corrections 2; mechanical share 0.75; undos tried 2, none for cause. Written to m-05db, m-e42c, m-db7a, m-4c97, m-c535, m-296e, m-ad06, m-0ae4.",
+   "how": "by hand, aip-59ad's thread, from the record's events and review docs",
+   "writes": [],
+   "reads": [
+    "rv-1e9d",
+    "rv-4567",
+    "rv-d660",
+    "rv-0c98",
+    "m-05db",
+    "m-e42c",
+    "m-db7a",
+    "m-4c97",
+    "m-c535",
+    "m-296e",
+    "m-ad06",
+    "m-0ae4"
+   ]
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "reflected",
+   "text": "What worked: Understand read the real state (the ruleset and the environment from Samuel's screenshots, the last deploy run, the service worker) before anything was specified, and the spec's delete-first round cut tags, release notes and a whole checkpoint. The deploy went live on its first run, because the critics' Majors (a red health that switches back, an undo that reaches avenOS by name, an undo that holds until theOS/ changes) and the off switch were all in before Gate B.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "reflected",
+   "text": "What cost too much: 16 touches against 2, because Understand turned up settings only Samuel could read or change, and three answers came one message at a time; a check that the Understand questions are all asked at once would help. I wrote event times by hand an hour ahead of the clock and had to restamp them (l-d7ef, aip-6219). I opened #1783 on an older instruction while a newer one waited unread (l-66e7). D-60 recorded an answer against Samuel's words; the thread caught it from the transcript.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [],
+   "reads": [
+    "l-d7ef"
+   ]
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Four lessons added through brain: a required check is matched by name only; read pending notifications right before an outward action; ship a deploy switched off; quote a bare on/off/yes/no in YAML.",
+   "how": "brain add, aip-59ad's thread",
+   "writes": [],
+   "reads": [
+    "l-0468",
+    "l-24e4",
+    "l-66d8",
+    "l-66e7"
+   ]
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Learn: the run measured and reflected, lessons written; the outcome stays a measuring event.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "closed",
+   "text": "aip-59ad closed: both checkpoints through their gates, Gate A (d-113f) and Gate B (d-820e) passed, theOS live at aven.maia.city since 14:31Z, the undo tried. Open after closing: the outcome, measured over the first five releases or until 1 Dec 2026 (task t11); the deferred list (avenOS's service worker, the Aven Peer at aven.maia.city, deleting avenDB's parked files, pruning old builds).",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [],
+   "reads": []
   }
  ],
  "problem": {
