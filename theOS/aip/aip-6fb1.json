@@ -1024,6 +1024,17 @@
     "theOS/sandbox/check.sh",
     "theOS/sandbox/same.mjs"
    ]
+  },
+  {
+   "at": "2026-11-01T12:52Z",
+   "by": "a-6ffb",
+   "what": "erratum",
+   "text": "The 12:49Z event gives the runner 1279 states: its artifact for a95dcb8 has 1283 (1279 was the line of the run before, on 8ef52b2). Its Playwright figures (1.64.1 in the box, 1.63.0 outside) came from the check's console line; check.sh now writes the version into commit.txt.",
+   "how": "aip-6fb1's thread, by hand, from rv-8bd0 round 3",
+   "writes": [],
+   "reads": [
+    "rv-8bd0"
+   ]
   }
  ],
  "reviews": [

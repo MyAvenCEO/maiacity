@@ -1,9 +1,10 @@
-# avenSANDBOX's image, owned by theOS (theOS/aip/AIP-2.json): every tool theOS's checks are built and run with
+# avenSANDBOX's image, owned by theOS (theOS/aip/aip-6fb1.json): every tool theOS's checks are built and run with
 # (theOS/sandbox/box/Dockerfile). Built for amd64 (cloud sessions, runners) and arm64 (OrbStack on Apple Silicon), each
-# on a runner of its own kind, and joined into one image. Tagged theos-<hash of theOS/sandbox/box, this file and
-# theOS/sandbox/tag.sh>, so the same inputs never build twice and every checkout runs exactly its own box. Each
-# platform's build is smoked by digest (every tool works inside it) before the join gives it its tag; main's box is
-# also "latest"; last, theOS's check runs inside it. Actions are pinned by commit. Public, so it pulls without a token.
+# on a runner of its own kind, and joined into one image. Tagged theos-<hash of theOS/sandbox/box, this file,
+# theOS/sandbox/tag.sh and theOS/package.json's Playwright pin>, so the same inputs never build twice and every
+# checkout runs exactly its own box. Each platform's build is smoked by digest (every tool works inside it) before the
+# join gives it its tag; main's box is also "latest"; last, theOS's check runs inside it (theOS/sandbox/check.sh).
+# Actions are pinned by commit. Public, so it pulls without a token.
 name: avenSANDBOX image
 
 on:
