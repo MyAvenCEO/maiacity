@@ -126,7 +126,9 @@
   "decisions/D-72",
   "decisions/D-73",
   "decisions/D-74",
-  "decisions/D-75"
+  "decisions/D-75",
+  "decisions/D-76",
+  "decisions/D-77"
  ],
  "corrections": [
   {
@@ -171,6 +173,9 @@
   },
   {
    "text": "avenMAIA recorded \"from production\" as deploys started by hand (D-60); Samuel had said in AIP-5's thread that production starts them by itself (D-62)."
+  },
+  {
+   "text": "avenMAIA read \"a - no migrate them too\" as keeping D-n and AIP-n as names (D-75); Samuel meant no numbers: reference by the hash and the title (D-76)."
   }
  ],
  "intents": [
