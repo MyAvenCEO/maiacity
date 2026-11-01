@@ -1,0 +1,41 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/hindsight",
+ "title": "Hindsight",
+ "about": [
+  "agent memory",
+  "consolidation",
+  "provenance"
+ ],
+ "url": "https://github.com/vectorize-io/hindsight",
+ "by": "Vectorize; MIT licensed. Read from its README and three pages of its docs source in the repo (developer/observations, developer/mental-models, developer/retain). hindsight.vectorize.io and arxiv.org were blocked, so the paper (arXiv 2512.12818) was not read.",
+ "summary": "A memory server with three operations: retain (store), recall (search) and reflect (reason over memory). Raw facts are kept; in the background they are consolidated into observations, each with its evidence quotes and a proof count, refined rather than overwritten. Above them sit mental models: standing answers to a fixed question, rebuilt when facts in their scope change, and read without any model call.",
+ "ideas": [
+  "Three verbs: retain, recall, reflect, each scoped to a bank (one isolated memory per user, agent or project).",
+  "Layers: raw facts (ground truth, never changed), observations (consolidated beliefs with evidence and proof count) and mental models (curated standing answers).",
+  "A contradiction does not overwrite: the observation is rewritten to say what was believed before and what is believed now, and the raw facts stay for tracing.",
+  "Freshness: when new facts in its scope have not yet been consolidated, an observation or mental model is marked stale and reflect checks it against raw facts.",
+  "A mental model keeps its previous versions and the facts and observations it was built from.",
+  "Mental models can be refreshed incrementally, changing only what the new facts imply, because a model asked to rewrite a whole page drifts.",
+  "Near-duplicate observations are merged above a set similarity (0.97 by default), within one tag scope only."
+ ],
+ "took": [
+  {
+   "idea": "Keep the raw record unchanged and build current views on top that cite it",
+   "where": "holds()"
+  },
+  {
+   "idea": "A stale flag: a view is stale when newer docs in its scope have not been reflected",
+   "where": "the reflection, the check"
+  },
+  {
+   "idea": "Standing answers to fixed questions, rebuilt only when their scope changed",
+   "where": "brain's read command"
+  },
+  {
+   "idea": "Edit only what changed instead of regenerating a page",
+   "where": "brain's write command"
+  }
+ ]
+}
