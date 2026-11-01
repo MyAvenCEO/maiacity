@@ -896,6 +896,28 @@
    "how": "AIP-2's thread (D-44), by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T12:04Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 4's Review gate, round 1: c4-review (2 Major, 4 Nit). Not clean: the workflow ran the check only on box changes, and nothing compared results across scenarios.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "aip/AIP-2/c4-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:04Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Checkpoint 4's round 1 answered (4 fixed, 2 declined with evidence): the image workflow runs on every change to theOS (a box change builds; any other runs only the check); theOS/sandbox/same.mjs compares two check reports state by state; the smoke step fails unless the box's Playwright is theOS/package.json's pin; run.sh says a host's node_modules wins.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c4-review"
+   ],
+   "reads": []
   }
  ],
  "reviews": [
@@ -906,7 +928,8 @@
   "aip/AIP-2/r3-paraphrase",
   "aip/AIP-2/r3-zoom-out",
   "aip/AIP-2/c2-review",
-  "aip/AIP-2/c3-review"
+  "aip/AIP-2/c3-review",
+  "aip/AIP-2/c4-review"
  ],
  "source": {
   "type": "idea",

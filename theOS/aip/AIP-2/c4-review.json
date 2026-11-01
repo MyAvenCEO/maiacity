@@ -1,0 +1,67 @@
+{
+ "type": "review",
+ "id": "aip/AIP-2/c4-review",
+ "intent": "aip/AIP-2",
+ "checkpoint": 4,
+ "lens": "critic",
+ "checker": "a fresh agent (Agent tool, general-purpose), seeing only the record, avenCEO's Review gate, the earlier checkpoint reviews, the diff and the files",
+ "rounds": [
+  {
+   "round": 1,
+   "commit": "88fe754",
+   "reviewed": "git diff 79fdd1a 88fe754 -- theOS/sandbox .github, and the files",
+   "prompt": "You are a \"goldfish\" critic: a fresh reader with no history of this project, doing avenCEO's Review gate on one checkpoint. You are strictly read-only: do not edit, write or create any file in the repository, do not run git commands that change anything, do not push or call GitHub. Do not run run.sh, test.sh --cold, docker, or the check command; reading files and git log/diff/show is fine.\n\nThe project is theOS, in /home/user/maiacity/theOS/. Code outside theOS/ is legacy, except what this intent moves. theOS keeps one JSON doc per thing; a path like \"aip/AIP-2\" is the file theOS/aip/AIP-2.json.\n\nRead the record /home/user/maiacity/theOS/aip/AIP-2.json (focus: claim c3, checkpoint 4, the outcome, and the latest events) and avenCEO's Review gate /home/user/maiacity/theOS/avenCEO/gates/review.json. Earlier checkpoints' reviews are theOS/aip/AIP-2/c2-review.json and c3-review.json: their findings are settled. Then review checkpoint 4's work at commit 88fe754:\n- the diff: <scratchpad>/c4.diff\n- the files: /home/user/maiacity/theOS/sandbox/box/Dockerfile, /home/user/maiacity/.github/workflows/avensandbox-image.yml, /home/user/maiacity/theOS/sandbox/run.sh, and theOS's check command /home/user/maiacity/theOS/avenCEO/checks/check.mjs with theOS/package.json (built by another intent, AIP-1; read it to judge how it runs in the box, do not review it as such).\n\nQuestions: Does the work keep c3's promise and make its check possible (theOS's check gives the same pass or fail per check on the same commit inside the image through run.sh, on the runner, in a cloud session and on a Mac; the image workflow runs it as its last step)? Does the check really find Playwright's package and the image's own browser inside the box (NODE_PATH, Module.globalPaths, the pin warning)? Bugs in the new check job (its condition, permissions, the report's path when the box runs as root, what happens when the check fails or the box was built before), and in the smoke step now that npm is gone. Does the outcome claim still hold as written, and what is still unproven?\n\nFor each finding give: Severity (Blocker | Major | Nit), kind (one of: bug, wrong fact, unclear, contradiction, YAGNI, security, missing check), the affected file and line, the reasoning, and a concrete fix. Give evidence a reader can verify. At most 500 words, plain text, no praise, lead with what is wrong. If there is no Blocker or Major, say so plainly.",
+   "result": "0 Blocker, 2 Major, 4 Nit: not clean. Still unproven, as the critic says: no run of the built image yet; the session figure ran outside the box on Playwright 1.63.0; the check runs on amd64 only, so arm64 and the Mac rest on Gate B; AIP-1's own Review gate is open; the outcome is not measured yet.",
+   "findings": [
+    {
+     "sev": "Major",
+     "kind": "missing check",
+     "scope": "the workflow's paths",
+     "text": "The workflow ran only on box changes, so a commit changing theOS's pages or the check never ran the check on the runner; c3 promises the same result on the same commit.",
+     "answer": "fix",
+     "note": "The push paths are theOS/** and the workflow: a box change builds it; any other change finds it built (plan: complete), skips build and join, and runs only theOS's check inside it. Each such push costs a plan job and one check (about 3 to 5 min on a runner); concurrency per ref cancels a superseded one."
+    },
+    {
+     "sev": "Major",
+     "kind": "missing check",
+     "scope": "no comparison across scenarios",
+     "text": "Results in different scenarios were to be compared by eye.",
+     "answer": "fix",
+     "note": "theOS/sandbox/same.mjs compares two report.json files state by state (size, url, clicks; repeated keys by their verdicts) and exits 1 on any difference. Tried: the same report is the same; a flipped verdict and a dropped state each exit 1; an unreadable report exits 2. The workflow keeps its report as the theos-check-report artifact; Gate B compares the Mac's and the session's against it."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "the Playwright pin three times",
+     "text": "If theOS/package.json moves, the box keeps its version and the check only warns.",
+     "answer": "fix",
+     "note": "The smoke step reads the pin from theOS/package.json on the runner and fails unless the box's Playwright package is that version."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "a host's theOS/node_modules wins",
+     "text": "run.sh mounts theOS/, so a host's node_modules takes over from the box's package.",
+     "answer": "fix",
+     "note": "Said in run.sh's header; the check's own pin warning stays."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "the report written as root",
+     "text": "",
+     "answer": "decline",
+     "note": "Settled in c3-review round 1 (the box runs as root, deliberately); on a runner the file is 0644 and uploads."
+    },
+    {
+     "sev": "Nit",
+     "kind": "security",
+     "scope": "npm install -g ignores the lockfile's integrity",
+     "text": "",
+     "answer": "decline",
+     "note": "The box's build context is theOS/sandbox/box alone (c2), so theOS's lockfile is not in it; playwright@1.64.1 pins playwright-core to exactly 1.64.1 and has no other dependency, and the smoke step now asserts the version against the pin."
+    }
+   ]
+  }
+ ]
+}
