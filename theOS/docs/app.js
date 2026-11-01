@@ -166,7 +166,7 @@ async function openIntents(st, i) {
   const sources = (current === 'decided' ? x.decision?.sources : current === 'propose' ? x.proposal?.sources : null) || [];
   $('#decisions').innerHTML = `<a class="iback" href="#intents-0">← theINTENTS</a>
     <article class="dcard intent ${stateOf(x)}">
-      <div class="dtop"><span class="did">${x.id}</span>${chip('stage', x.stage)}${x.outcome ? chip(x.outcome, x.outcome) : ''}${x.learn?.severity ? chip('sev ' + x.learn.severity, x.learn.severity) : ''}${x.learn ? `<a class="achap" href="#${x.learn.chapter}-1">${esc(chap[x.learn.chapter]?.title || '')}</a>` : ''}<span class="ddate">${esc(x.date)}</span></div>
+      <div class="dtop"><span class="did">${x.id}</span>${chip('phase', x.stage)}${x.outcome ? chip(x.outcome, x.outcome) : ''}${x.learn?.severity ? chip('sev ' + x.learn.severity, x.learn.severity) : ''}${x.learn ? `<a class="achap" href="#${x.learn.chapter}-1">${esc(chap[x.learn.chapter]?.title || '')}</a>` : ''}<span class="ddate">${esc(x.date)}</span></div>
       <h2>${esc(x.title)}</h2>
       <div class="itabs">${tabs.map(([k, l]) => `<button type="button" data-itab="${k}" class="${k === current ? 'on' : ''}">${l}</button>`).join('')}</div>
       ${body}
