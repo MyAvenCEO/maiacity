@@ -1,0 +1,45 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/claude-code-memory",
+ "title": "Claude Code memory: CLAUDE.md and auto memory",
+ "about": [
+  "agent memory",
+  "Claude Code",
+  "instructions"
+ ],
+ "url": "https://code.claude.com/docs/en/memory",
+ "by": "Anthropic's Claude Code docs, page 'How Claude remembers your project'. Read in full.",
+ "summary": "Claude Code carries knowledge across sessions in two ways: CLAUDE.md files that people write, and auto memory that Claude writes itself. Both load at session start as context, not enforced configuration; anything that must happen every time belongs in a hook. Auto memory keeps one file per memory and a short MEMORY.md index, of which only the first 200 lines or 25KB load.",
+ "ideas": [
+  "CLAUDE.md loads from the working directory and every directory above it; files in subdirectories load on demand when Claude touches a file there; .claude/rules/ files with a paths field load only for matching files.",
+  "@path imports pull other files in, up to four hops deep, but they still cost context; aim for under 200 lines per file.",
+  "If two instructions contradict, Claude may follow either; there is no precedence between a user rule and a project rule, so remove conflicts (/doctor prompt-audit finds them).",
+  "Auto memory has four types, user, feedback, project and reference, stored in frontmatter; Claude skips anything it can derive from the code or that CLAUDE.md already says.",
+  "MEMORY.md is an index, one line per memory; near the 200-line or 25KB limit Claude Code tells Claude to shorten it, and over the limit it returns an error asking for a rewrite.",
+  "Claude Code stamps a 'modified' ISO time into a memory's frontmatter on each write, so a reader can tell how current a fact is.",
+  "Memory is advisory: to block or force an action regardless of what Claude decides, use a hook such as PreToolUse."
+ ],
+ "took": [
+  {
+   "idea": "A short index loaded at start, one line per thing that holds, with the docs read on demand",
+   "where": "holds() and theOS/CLAUDE.md"
+  },
+  {
+   "idea": "Enforce the write path with a hook, since instructions alone are advisory",
+   "where": "the check"
+  },
+  {
+   "idea": "Do not store what can be derived; compute it",
+   "where": "holds()"
+  },
+  {
+   "idea": "The tool, not the agent, stamps the time and author of each write",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "A size budget on what loads at start, with a warning near it and an error past it",
+   "where": "the check"
+  }
+ ]
+}

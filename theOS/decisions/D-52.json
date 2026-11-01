@@ -1,0 +1,31 @@
+{
+ "type": "decision",
+ "id": "D-52",
+ "n": 52,
+ "title": "Four changes to avenCEO become intents",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "avenCEO",
+  "process"
+ ],
+ "quote": "Good: take all four changes to avenCEO.",
+ "means": "The four changes AIP-2's reflection proposed each become an intent, measured before they are kept: a check is a script a machine runs (AIP-7), events stamped by a machine (AIP-8), a kind on every finding (AIP-9), and one spec round while you are reachable (AIP-10).",
+ "intents": [
+  "aip/AIP-2",
+  "aip/AIP-7",
+  "aip/AIP-8",
+  "aip/AIP-9",
+  "aip/AIP-10"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-38"
+ ],
+ "reflection": {
+  "checked": "every decision before D-52 that held",
+  "result": "supersedes nothing"
+ }
+}

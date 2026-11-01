@@ -3,7 +3,7 @@
  "id": "avenCEO/types/decision",
  "name": "decision",
  "file": "decisions/D-n.json",
- "what": "Your words, verbatim, with the time: an answer, a gate approval or a correction, numbered D-1, D-2 and on. The human in the loop, recorded; whether it still holds is computed by brain's reflection.",
+ "what": "Your words, polished, with the time: an answer, a gate approval or a correction. The human in the loop, recorded; whether it still holds is computed by brain's reflection. Numbered D-1, D-2 and on until brain's hash ids land (D-45, D-49).",
  "subtypes": [
   "answer",
   "gate-approval",
