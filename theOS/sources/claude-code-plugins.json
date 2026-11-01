@@ -1,0 +1,23 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/claude-code-plugins",
+ "title": "Claude Code: Plugins overview",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/plugins/overview.md",
+ "by": "Anthropic",
+ "summary": "A plugin is a directory of components, usually with a manifest at .claude-plugin/plugin.json: skills, agents, settings hooks, a hooks module (which makes it a mod), MCP servers, output styles and more. Plugins come from marketplaces (a repository with .claude-plugin/marketplace.json) or load from a folder with --plugin-dir. Scopes are user, project and local. A cloud session, including claude.ai/code, doesn't load the plugins in local settings; a project adds plugins for its cloud threads in Project settings.",
+ "ideas": [
+  "One plugin can carry the mod, a skill for avenMAIA and an MCP server together.",
+  "A repository can be its own marketplace, so theOS can ship its mod from theOS/.",
+  "Cloud sessions need a plugin added on the account or project, not in the repository's settings."
+ ],
+ "took": [
+  {
+   "idea": "Ship the mod, a skill and later an MCP server as one plugin in theOS",
+   "where": "aip/AIP-4/research: recommendation"
+  }
+ ]
+}

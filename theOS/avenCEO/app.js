@@ -14,6 +14,7 @@ const L = (p) => W.link(p, HERE, G.docs);
 const sec = (h, body, note = '') => (body ? `<section class="sec"><h2>${h}</h2>${note ? `<p class="note">${note}</p>` : ''}${body}</section>` : '');
 const ul = (xs) => (xs?.length ? `<ul>${xs.map((v) => `<li>${T(v)}</li>`).join('')}</ul>` : '');
 const table = (heads, rows) => (rows.length ? `<table class="t"><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, k) => `<td>${k ? c : `<b>${c}</b>`}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '');
+const tally = (fs) => ['Blocker', 'Major', 'Nit'].map((v) => [v, fs.filter((f) => f.sev === v).length]).filter(([, c]) => c).map(([v, c]) => `${c} ${v}`).join(', ') || 'clean';
 const commit = (h) => (h ? `<a class="path" href="https://github.com/myavenceo/maiacity/commit/${e(h)}" target="_blank" rel="noopener">${e(h)}</a>` : '');
 const current = () => decodeURIComponent(location.hash.slice(1));
 const who = (b) => W.who(b, HERE, G.docs);
@@ -22,8 +23,9 @@ const chips = (xs, cls = '') => (xs || []).map((t) => `<span class="chip ${cls}"
 // The Specify label reads the review rounds (derived, never stored).
 function stageOf(I) {
   const ev = I.events || [], n = W.stepAt(ev, ev.length);
+  if (n === 5 && ev.some((x) => x.what === 'dropped')) return [5, 'Closed: dropped'];
   if (n !== 2) return [n, W.STEPS[n - 1]];
-  const reviews = (I.reviews || []).map((p) => G.docs.get(p)).filter(Boolean);
+  const reviews = (I.reviews || []).map((p) => G.docs.get(p)).filter((r) => r?.findings);
   const last = Math.max(0, ...reviews.map((r) => r.round));
   const lastKind = [...ev].reverse().find((x) => ['review', 'revised', 'stopped'].includes(x.what))?.what;
   const clean = last && !reviews.filter((r) => r.round === last).some((r) => r.findings.some((f) => f.sev !== 'Nit'));
@@ -208,7 +210,8 @@ function head(d, chips = [], sub = '') {
 const PAGES = {
   intent(I) {
     const [at, stage] = stageOf(I); const p = I.problem || {};
-    const reviews = (I.reviews || []).map((x) => G.docs.get(x)).filter(Boolean);
+    const all = (I.reviews || []).map((x) => G.docs.get(x)).filter(Boolean);
+    const reviews = all.filter((r) => r.findings), cpReviews = all.filter((r) => r.rounds);
     const rounds = [...new Set(reviews.map((r) => r.round))];
     return `${head(I, [`<span class="chip">${e(I.kind)}</span>`, `<span class="chip clay">${e(stage)}</span>`], `<p class="lead">${T(I.source?.text)} ${I.source?.ref ? L(I.source.ref) : ''}</p>${I.note ? `<p class="note">${T(I.note)}</p>` : ''}`)}
       ${sec('Waiting for you', (I.questions || []).filter((q) => !q.answered).map((q) => `<div class="wait"><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`).join(''), 'Asked here in chat; your answers become decision docs.')}
@@ -227,11 +230,17 @@ const PAGES = {
       ${sec('Deferred, on purpose', table(['What', 'Until'], (I.deferred || []).map((d) => [e(d.what), T(d.until)])))}
       ${sec('Deleted', ul(I.deleted))}
       ${sec('Spec review', rounds.map((n) => `<p><b>Round ${n}</b> ${reviews.filter((r) => r.round === n).map((r) => `${L(r.id)} <span class="note">${['Blocker', 'Major', 'Nit'].map((v) => [v, r.findings.filter((f) => f.sev === v).length]).filter(([, c]) => c).map(([v, c]) => `${c} ${v}`).join(', ') || 'clean'}</span>`).join(' · ')}</p>`).join(''), 'Fresh checkers that saw only the record and what it links. Each review is its own doc.')}
+      ${sec('Checkpoint reviews', cpReviews.map((r) => `<p><b>Checkpoint ${e(r.checkpoint)}</b> ${L(r.id)} <span class="note">${r.rounds.map((x, i) => `round ${i + 1}: ${tally(x.findings || [])}`).join(' · ')}</span></p>`).join(''), 'One fresh critic per round, on the checkpoint\'s diff.')}
       ${sec('Your decisions', table(['Decision', 'Holds', 'Means'], ofType('decision').filter(([, d]) => d.intents.includes(current())).sort((a, b) => b[1].n - a[1].n).map(([q, d]) => [L(q), holdChip(q), T(d.means)])), 'Every decision that names this intent, newest first.')}
       ${sec('Trace', table(['When', 'Step', 'Who', 'What', 'How', 'Wrote or read'], (I.events || []).map((x, i) => [e(x.at), W.stepLink(W.stepAt(I.events, i), HERE, G.docs), who(x.by), `<b>${e(x.what)}</b> ${T(x.text)}`, T(x.how || ''), [...(x.writes || []).map(L), ...(x.reads || []).map((r) => `read ${L(r)}`)].join(' · ')]).reverse()),
         "Append-only, newest first: every write of this intent's lifecycle. The step is where the intent stood, computed from the events before it.")}`;
   },
   review(R) {
+    if (R.rounds) {
+      const fin = (fs) => table(['Severity', 'Where', 'Finding', 'Answer'], fs.map((f) => [`<span class="chip ${e(String(f.sev).toLowerCase())}">${e(f.sev)}</span>`, T(f.scope || ''), T(f.text || ''), `<b>${e(f.answer || 'open')}</b> ${T(f.note || '')}`]));
+      return `${head({ ...R, title: `${R.intent.split('/').pop()}, checkpoint ${R.checkpoint}: ${R.lens || 'critic'}` }, [`<span class="chip">${e(R.lens || 'critic')}</span>`, `<span class="chip clay">${R.rounds.length} rounds</span>`], `<p class="by">Reviewed ${L(R.intent)} by ${e(R.checker || 'a fresh agent')}.</p>`)}
+        ${R.rounds.map((x, i) => sec(`Round ${x.round || i + 1}: ${tally(x.findings || [])}`, `${x.commit ? `<p class="path">at ${e(x.commit)}</p>` : ''}${x.prompt ? `<details><summary>Show the prompt</summary><pre class="code">${e(x.prompt)}</pre></details>` : ''}${fin(x.findings || [])}`)).join('')}`;
+    }
     const count = ['Blocker', 'Major', 'Nit'].map((v) => [v, R.findings.filter((f) => f.sev === v).length]).filter(([, c]) => c).map(([v, c]) => `${c} ${v}`).join(', ') || 'clean';
     return `${head({ ...R, title: `${R.intent.split('/').pop()}, round ${R.round}: ${R.lens}` }, [`<span class="chip">${e(R.lens)}</span>`, `<span class="chip clay">${count}</span>`], `<p class="by">Reviewed ${L(R.intent)} at commit ${commit(R.commit)}, by ${e(R.checker)}.</p>`)}
       ${sec('The exact prompt it got', `<details><summary>Show the prompt</summary><pre class="code">${e(R.prompt)}</pre></details>`)}

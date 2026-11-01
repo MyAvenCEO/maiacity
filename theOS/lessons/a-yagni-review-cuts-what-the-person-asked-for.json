@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "lessons/a-yagni-review-cuts-what-the-person-asked-for",
+ "status": "proposed",
+ "cue": "A zoom-out reviewer proposes deleting something the source names, and the worker agrees.",
+ "lesson": "Check a deletion against the source and the decisions before revising; if the source names it, escalate instead of cutting.",
+ "evidence": "AIP-2's revision 3 dropped the image after round 2 (a setup script only); Samuel reversed it at once (D-33: keep avenSANDBOX and every tool), and round 3 had to start over on revision 4.",
+ "confidence": "medium",
+ "intent": "aip/AIP-10"
+}

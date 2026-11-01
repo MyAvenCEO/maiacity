@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "lessons/a-check-is-claimed-before-all-its-parts-ran",
+ "status": "proposed",
+ "cue": "A claim's check has several parts, and one run is called the claim's verification.",
+ "lesson": "Record each part of a check as its own event with the run that proves it; a claim is verified only when every part has one.",
+ "evidence": "AIP-2 c2 was recorded as verified on run 41295117407, but that run smoked amd64 only and never tried the no-rebuild path; the checkpoint critic found both (c2-review round 1, two Majors), and round 2 found the fixes themselves still had no run on record (two more Majors).",
+ "confidence": "high",
+ "intent": "aip/AIP-7"
+}

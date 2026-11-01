@@ -1,0 +1,33 @@
+{
+ "type": "decision",
+ "id": "D-64",
+ "n": 64,
+ "title": "AIP-4 dropped: no mod for now",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "intents",
+  "apps"
+ ],
+ "quote": "Then let's drop the mod for now, and mark this intent as closed.",
+ "means": "AIP-4 is closed as dropped after its Understand research: no Claude Code mod for now. Its research stays in aip/AIP-4/research.",
+ "intents": [
+  "aip/AIP-4"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-27",
+   "part": "whole",
+   "what": "D-27 opened AIP-4 to discover a Claude Code mod; it is dropped for now."
+  }
+ ],
+ "relates": [
+  "decisions/D-43"
+ ],
+ "reflection": {
+  "checked": "every decision before D-64 that held",
+  "result": "supersedes D-27 (whole); conflicts with D-55, which moved brain's MCP server into AIP-4 after the drop: asked of you"
+ }
+}

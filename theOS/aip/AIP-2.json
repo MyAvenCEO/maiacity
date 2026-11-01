@@ -20,7 +20,28 @@
     "Yes",
     "Change: tell me what",
     "Send it back"
-   ]
+   ],
+   "answered": "decisions/D-38"
+  },
+  {
+   "q": "Checkpoint 2's Review gate ran three rounds without a clean one (c2-review: 3, 2 and 1 Major; every finding answered). Round 3's only Major (the smoke could not fail on a wrong platform) is fixed, tried here, and proven by the image workflow's run on the fixed commit (in the events). By the rule, patching stopped: pass the gate with that run as proof, run one more round, or send checkpoint 2 back to Understand?",
+   "options": [
+    "Pass it: the fix is proven by its run (recommended: the open finding was mechanical and a machine now checks it)",
+    "One more round",
+    "Back to Understand"
+   ],
+   "answered": "decisions/D-51"
+  },
+  {
+   "q": "avenCEO changes proposed by AIP-2's run (one avenCEO intent each, measured before kept). Which do you want as intents?",
+   "options": [
+    "1. A check is a file: every claim's check names a script in theOS that a machine runs; an event says verified only with that script's run (lessons/a-check-run-by-hand-is-not-kept, lessons/a-check-is-claimed-before-all-its-parts-ran). Measured by: checkpoint review findings of kind 'missing check' (7 of 15 in c2, 2 of 4 Blocker/Major in c3).",
+    "2. Events stamped by a machine: a small append script writes at, by and the commit; nobody types a time (lessons/a-time-is-typed-by-hand). Measured by: lead time per step readable to the minute; errata on times.",
+    "3. Every finding carries a kind, in the review type and both checker prompts (lessons/a-metric-has-no-field-to-read). Measured by: the share of findings with a kind (today 0 of 55 in spec review).",
+    "4. Spec review stops at one round when you are reachable: the zoom-out lens checks deletions against the source first, and three rounds turn into one round plus your answer (lessons/a-yagni-review-cuts-what-the-person-asked-for). Measured by: spec rounds and your corrections per intent (AIP-2: 3 rounds, 6 agents, 55 findings, 1 correction).",
+    "None now"
+   ],
+   "answered": "decisions/D-52"
   }
  ],
  "problem": {
@@ -79,7 +100,7 @@
    "The work reaches main through the goal pull request you ask for after Gate B; the environment's snapshot clones main.",
    "Pasting the environment's script and the Mac run are yours, at Gate B."
   ],
-  "risk": "Can be undone: the move by git mv back (tried in a scratch checkout); the environment's script by pasting the previous one, kept in theOS/sandbox/; the image's old tags stay pullable. The environment's script is shared by every session in it. production is frozen by its ruleset; it moves with the release (AIP-5)."
+  "risk": "Can be undone: the move by git mv back (tried in a scratch checkout); the environment's script by pasting the previous one, kept in theOS/sandbox/; the image's old tags stay pullable. The environment's script is shared by every session in it. production is frozen by its ruleset; it moves with the release (AIP-5). The environment's undo restores the previous script, which still never fails a session but has no time limit, and its avenDB warm-up (bun run up) fails since the box moved."
  },
  "reuse": [
   {
@@ -533,6 +554,307 @@
     "decisions/D-44"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:03Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c4, run.sh for real in a cloud session: with dockerd down and no image here, it started dockerd, pulled theos-4d9bc364ffc5f836 and ran a command inside it with theOS/ mounted at /work (rustc 1.99.1, bun 1.4.4, Lean 4.35.0 answered; exit 0) in 97.7 s; run again with the image present, 0.5 s. The session's /var/lib/docker held 316 KB, not avenDB's old image, so nothing had to be removed.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/run.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:05Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 1: c2-review (3 Major, 5 Nit). Not clean.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, the diff and the files",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:04Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Round 1 answered, every finding fixed: smoke per platform and latest only after smoke; a failed build no longer reads as already built; one tag script, theOS/sandbox/tag.sh, for the workflow and run.sh; actions pinned by commit; the base image by digest; the Dockerfile's comments say what each tool is for in theOS.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c4's test kept as a file, theOS/sandbox/test.sh: the environment's script exits 0 with a planted failure, a planted hang (cut at 3 s) and no setup file, and finds cloud-setup.sh one folder down; then run.sh runs a command in the box with theOS/ at /work. Green at 10:06 against theos-7f2a978d8e9df74f; before that tag was published it failed as it should (run.sh: not published yet).",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 2: c2-review (2 Major, 5 Nit). Not clean: round 1's fixes hold; both Majors are runs not yet on record.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, round 1, the diff of its fixes and the files",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Round 2 answered: each platform's build is smoked by digest before the join tags it (a failing box is never tagged), the platform is asserted, tag.sh is in the push paths and the hash, the concurrency comment says what it does.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "erratum",
+   "text": "The event 'Checkpoint 2's Review gate, round 1' carries 10:05 by hand; the round ended at about 10:03 (its answer is stamped 10:04). Hand-typed times are a lesson of this run.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2 at round 1's inputs, run 41295874265 (push of 649608d): theos-7f2a978d8e9df74f built for amd64 and arm64 (layers from the cache, about 5 s each; the base pinned by digest is the same image), joined, and smoked on both platforms, each on its own runner: every tool answered. latest skipped, as off main it should.",
+   "how": "AIP-2's thread (D-44), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:09Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2's 'same inputs build nothing', run 41296094936 (workflow_dispatch on the same commit 649608d): the plan found theos-7f2a978d8e9df74f built for both platforms and set complete; both builds and the join were skipped; the smoke still ran and passed on both platforms.",
+   "how": "AIP-2's thread (D-44), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:12Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 3's Review gate, round 1: c3-review (2 Blocker, 2 Major, 6 Nit). Not clean: run.sh broke on a Mac's bash 3.2 without a terminal; test.sh gave a false pass on a Mac and escaped its scratch folder; dockerd's start was never exercised.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, the diff and the files",
+   "writes": [
+    "aip/AIP-2/c3-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:11Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Checkpoint 3's round 1 answered (9 fixed, 1 declined with evidence): run.sh works on bash 3.2, asks the registry before saying 'not published', shows its pull; the environment script kills 30 s after its limit and its search root can be moved for the test; cloud-setup.sh stops the dockerd it started before the snapshot; test.sh skips the environment cases without timeout, asserts the hang started, and --cold tests dockerd's start; the undo's limits are in the risk.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c3-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:12Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2 at round 2's inputs, run 41296312738 (push of c2d6c8e): theos-5c06a62013298353 built for amd64 and arm64, each smoked by digest on its own runner before the join (platform asserted, every tool answered; 88 s and 65 s), then joined; latest skipped off main.",
+   "how": "AIP-2's thread (D-44), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:13Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c4 after checkpoint 3's round 1: theOS/sandbox/test.sh --cold green against theos-5c06a62013298353 (failure, hang started and cut at 3 s, no setup file, found one folder down, dockerd stopped as after a snapshot, run.sh started it and ran the command). The environment's script for real from /home/user with dockerd down: exit 0 in 5 s (the image already here), dockerd stopped after the warm-up, run.sh worked after.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh",
+    "theOS/sandbox/environment-setup.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:13Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2's 'same inputs build nothing' under round 2's workflow, run 41296532510 (workflow_dispatch on c2d6c8e): the plan found theos-5c06a62013298353 built for both platforms; build, join and latest skipped; the run took 14 s.",
+   "how": "AIP-2's thread (D-44), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:16Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 3: c2-review (1 Major, 2 Nit). Not clean: the smoke script could not fail on its platform check and on piped checks. The third round without a clean round: patching stops here; the Major's fix is mechanical and its proof is a machine run; the question goes to Samuel.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 3's Review gate, round 2: c3-review (0 Blocker, 0 Major, 5 Nit). Clean: checkpoint 3's Review gate passes.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "aip/AIP-2/c3-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Round 3 of checkpoint 2 answered: the smoke script runs under pipefail and fails on a wrong platform (tried here: WANT=aarch64 fails, WANT=x86_64 passes up to npm, which this session's containers can't reach). Checkpoint 3's five Nits fixed: test.sh --cold runs the real warm-up and checks the box is there and dockerd stopped, run.sh's refusal of an unpublished tag is tested, cloud-setup.sh stops only the dockerd run.sh started (by pid), 600 s is said as 600 s killed at 630 s.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c2-review",
+    "aip/AIP-2/c3-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "theOS/sandbox/test.sh --cold green, 11 cases: the environment's script (failure, hang started and cut, no file, found one folder down), dockerd stopped as after a snapshot, the real warm-up exits 0 and stops the dockerd it started, run.sh refuses an unpublished tag, the box is here after the warm-up, run.sh runs a command with theOS/ at /work and starts dockerd.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 3 built, its test green and its Review gate passed (c3-review round 2 clean).",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "measured",
+   "text": "The process, as AIP-2's measure says (the outcome claim is not measured yet: it needs checkpoint 4 and Gate B). Lead time: asked 08:51, understood 09:12 (21 min); Specify 09:12 to Gate A 09:53 (41 min, 3 spec rounds); Build from 09:54: checkpoint 2 built 10:00, its Review gate 10:02 to 10:16 (3 rounds); checkpoint 3 started 09:58, its gate clean 10:17. Many events share a minute (4 to 6 at 09:12, 09:21, 09:53), so time inside a step is not readable. Sent back: spec 3 rounds, none clean (Gate A by D-38's shortcut); checkpoint 2, 3 rounds, none clean; checkpoint 3, 2 rounds, clean on the second. First pass: 0 of 2 checkpoints. Findings: spec rounds 55 (2 Blocker, 29 Major, 24 Nit; 52 fixed, 1 contested, 2 declined; no kind recorded); checkpoint 2, 18 (6 Major, 12 Nit; kinds: missing check 8, bug 3, unclear 4, wrong fact 2, security 1); checkpoint 3, 15 (2 Blocker, 2 Major, 11 Nit; kinds: bug 5, unclear 5, missing check 4, wrong fact 1). Touches: 5 messages from Samuel against the 2 planned (the source; D-24, an answer to a question asked before the spec; D-33, a correction; D-38, the go-ahead that was also Gate A; D-44, how the work runs). Corrections: 1 (D-33 reversed revision 3). Escalations: 0 findings needed Samuel; 1 question before the spec (D-24); 1 now (checkpoint 2's third round). Mechanical share: 4 of 4 claims and the outcome are mechanical. Undos tried: 1 (the move, git mv back, 0.13 s); the environment's undo is Samuel's paste, not tried. Agents spent: 11 fresh checkers (6 spec, 3 for checkpoint 2, 2 for checkpoint 3), no workers: the threads did the work themselves.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t13"
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "reflected",
+   "text": "What worked: the fresh critic on real diffs found real defects every time, and cheaply (about 1.5 min and one agent a round): a smoke that skipped the Mac's platform, a latest tag ahead of its smoke, run.sh broken on a Mac's bash 3.2, a test with a false pass on a Mac, a test escaping its scratch folder, a smoke that could not fail. None of these were findable by reading the spec, and the spec rounds had not found them. Keeping the critic's prompt and the commit in the review let each round build on the last without re-raising settled findings (one contested with an event the critic had missed).",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "reflected",
+   "text": "What cost too much: spec review. Three rounds, six agents and 55 findings before Gate A, then Gate A passed by a shortcut anyway; one round's YAGNI cut (no image) was reversed by Samuel within minutes (D-33). The checkpoint rounds then found 33 more findings, 8 Blocker or Major, almost all of a kind no spec reviewer could see (does it run, on which platform, does the test test). The most repeated kind is 'missing check' (12 of 33): claims called verified on one run, a test kept only as an event, a check that could not fail.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "reflected",
+   "text": "What to change (proposed to Samuel as a question, not made): a check is a file a machine runs, and 'verified' needs its run; events stamped by a machine; a kind on every finding; one spec round when Samuel is reachable, with deletions checked against the source first. And one thing to keep: the three-round stop held (checkpoint 2 stopped at round 3 with one mechanical Major, now a question) without blocking checkpoint 3.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:21Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2 at round 3's inputs, run 41296956609 (push of eff1a84): theos-e14d0907038db10c built for amd64 and arm64, each smoked by digest under pipefail with the platform asserted (a wrong one now exits 1), then joined; latest skipped off main. Run 41297139269 (dispatch on the same commit): build skipped, the box not built twice. Read back here: run.sh uname -m answered x86_64.",
+   "how": "AIP-2's thread (D-44), read off the runs' jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:23Z",
+   "by": "authors/avenmaia",
+   "what": "blocked",
+   "text": "Checkpoint 4 waits: AIP-1's branch claude/theos-aip-1 is not on origin (git ls-remote, 10:13 and again now), so theOS's check command does not exist yet. Stopped after checkpoint 3, as the brief says.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:23Z",
+   "by": "authors/avenmaia",
+   "what": "asked",
+   "text": "Questions for Samuel written into the record: checkpoint 2's Review gate after three rounds (pass with its run as proof, one more round, or back); Gate B (what to paste, what to run on the Mac); and the avenCEO changes this run proposes.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "authors/avenmaia",
+   "what": "answer",
+   "text": "Samuel's answers, relayed by avenMAIA and read on its branch at b979bafd6 (merged here): checkpoint 2's Review gate passes, its run as proof (D-51); all four avenCEO changes become intents, AIP-7 to AIP-10 (D-52). The Gate A question was stale: Gate A passed by D-38.",
+   "how": "AIP-2's thread (D-44): avenMAIA's message, checked against decisions/D-51 and D-52 on its branch",
+   "writes": [],
+   "reads": [
+    "decisions/D-51",
+    "decisions/D-52"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 2 passed both gates: its Review gate by D-51, with run 41296956609 as proof of round 3's fix.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Questions marked answered (Gate A: D-38; checkpoint 2's gate: D-51; avenCEO changes: D-52). The lessons point at their intents: a check run by hand and a check claimed before all its parts ran at AIP-7, hand-typed times at AIP-8, a metric with no field at AIP-9, a YAGNI cut at AIP-10. The Gate B question is taken out until checkpoint 4 is built; its draft, to put back then: paste theOS/sandbox/environment-setup.sh into the environment's setup script (environment-setup.previous.sh is the undo); the work on main first; in a new session theOS/sandbox/run.sh rustc --version answers with no pull; on the Mac with OrbStack, run.sh uname -m says aarch64 and theOS/sandbox/test.sh is green; then theOS's check through run.sh, the same result as the image workflow's last step.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "lessons/a-check-is-claimed-before-all-its-parts-ran",
+    "lessons/a-check-run-by-hand-is-not-kept",
+    "lessons/a-time-is-typed-by-hand",
+    "lessons/a-metric-has-no-field-to-read",
+    "lessons/a-yagni-review-cuts-what-the-person-asked-for"
+   ],
+   "reads": []
   }
  ],
  "reviews": [
@@ -541,7 +863,9 @@
   "aip/AIP-2/r2-paraphrase",
   "aip/AIP-2/r2-zoom-out",
   "aip/AIP-2/r3-paraphrase",
-  "aip/AIP-2/r3-zoom-out"
+  "aip/AIP-2/r3-zoom-out",
+  "aip/AIP-2/c2-review",
+  "aip/AIP-2/c3-review"
  ],
  "source": {
   "type": "idea",

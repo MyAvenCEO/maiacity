@@ -1,0 +1,22 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "sources/claude-code-remote-control",
+ "title": "Claude Code: Remote Control",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/remote-control.md",
+ "by": "Anthropic",
+ "summary": "Remote Control connects claude.ai/code or the Claude app to a session running on your machine; the machine keeps the files, MCP servers and tools, and the conversation stays in sync across devices. claude remote-control runs a server that creates sessions on demand (--spawn same-dir or worktree, up to 32 by default). A cloud session can ask to use a folder on the user's computer. Trusted Devices can be required. A mod's drawing shows only in the terminal on that machine, not on the phone.",
+ "ideas": [
+  "avenMAIA could run locally, with its mod, and still be reachable from the phone.",
+  "Remote Control is what lets a local session list and message cloud sessions."
+ ],
+ "took": [
+  {
+   "idea": "A local avenMAIA reachable from the phone",
+   "where": "aip/AIP-4/research: recommendation"
+  }
+ ]
+}

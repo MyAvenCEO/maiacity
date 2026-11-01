@@ -59,6 +59,8 @@ const W = {
     // an event of what "sent back" sends the intent back to Understand: only what follows it counts
     const before = ev.slice(0, i), back = before.map((x) => x.what).lastIndexOf('sent back');
     const has = (w) => before.slice(back + 1).some((x) => x.what === w);
+    // an event of what "dropped" closes the intent where it stood
+    if (has('dropped')) return 5;
     return !has('understood') ? 1 : !has('gate-A') ? 2 : !has('gate-B') ? 3 : !has('measured') ? 4 : 5;
   },
   stepLink(n, here, docs) {
