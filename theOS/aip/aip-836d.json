@@ -136,6 +136,14 @@
     "Change: tell me what"
    ],
    "answered": "d-1bc9"
+  },
+  {
+   "q": "Gate B for brain: try it for a few minutes. (1) Start a new Claude Code session in theOS/ and look at what it is told first: the decisions and terms that hold now, each as its id and title, and what waits for you. (2) Open the Intents app's Decisions list and one decision: each shows as id and title, marked holds, holds in part or superseded, with what it is for and, where a link's target changed after it was cited, a 'changed since' chip. (3) Open the brain app (the former Sources app). (4) Ask the session to record a small test decision and watch it go through brain add, then ask it to edit a decision file by hand and push: the push is refused. Does brain show you what holds now, readably, and keep its memory only through its door?",
+   "options": [
+    "Yes, brain works (Gate B passes; then Learn)",
+    "Change: tell me what",
+    "Send it back"
+   ]
   }
  ],
  "problem": {
@@ -1829,6 +1837,16 @@
    "writes": [],
    "reads": [],
    "task": "t9"
+  },
+  {
+   "at": "2026-11-01T14:46Z",
+   "by": "a-6ffb",
+   "what": "asked",
+   "text": "Gate B asked: four things to try in a few minutes (the session's first read, the Decisions list and a decision, the brain app, a write through the door and a hand edit refused).",
+   "how": "by the AIP-3 thread, sent to avenMAIA for you",
+   "writes": [],
+   "reads": [],
+   "task": "t10"
   }
  ],
  "reviews": [
