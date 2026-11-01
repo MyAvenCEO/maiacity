@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "D-68",
+ "n": 68,
+ "title": "AIP-3: Gate A, if round 6 is clean",
+ "subtype": "gate-A",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "intents",
+  "gates",
+  "brain"
+ ],
+ "quote": "OK.",
+ "means": "Gate A for AIP-3's revision 9 (claims, assumptions, checkpoints, outcome and mockup), on condition that spec review round 6 comes back clean; if it does not, the gate is asked again.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-66"
+ ],
+ "reflection": {
+  "checked": "every decision before D-68 that held",
+  "result": "supersedes nothing"
+ }
+}

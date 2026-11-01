@@ -1,0 +1,34 @@
+{
+ "type": "decision",
+ "id": "D-65",
+ "n": 65,
+ "title": "brain is one folder: Sources becomes brain",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "brain",
+  "apps"
+ ],
+ "quote": "Rename Sources to brain, and move terms, decisions and sessions into the brain folder too: it is the single source of truth, gated and kept by brain.",
+ "means": "One brain/ folder holds every doc brain keeps: the sources, terms, decisions and sessions, and by the same reason lessons, metrics and authors. The Sources app becomes brain's app. AIP-3's one migration (its checkpoint 4) moves them.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-8",
+   "part": "the Sources app",
+   "what": "The third app is brain's app, holding every doc brain keeps, not only the sources."
+  }
+ ],
+ "relates": [
+  "decisions/D-41",
+  "decisions/D-53"
+ ],
+ "reflection": {
+  "checked": "every decision before D-65 that held",
+  "result": "supersedes D-8 in part (the Sources app); lessons, metrics and authors go into brain/ by the same reason, as AIP-3's thread read \"do as you believe is best\""
+ }
+}
