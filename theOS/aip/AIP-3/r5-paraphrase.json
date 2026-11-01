@@ -16,78 +16,78 @@
    "sev": "Major",
    "scope": "c2 and c12, the migration's exception",
    "text": "Nothing marks which event is the migration; a hand-typed event could unlock history rewriting.",
-   "answer": "open",
-   "note": "Proposed: the exception is one commit: brain writes its SHA into theOS/brain/renames.json, and c2 accepts only that SHA."
+   "answer": "fix",
+   "note": "Applied in revision 9: the exception is one commit: brain writes its SHA into theOS/brain/renames.json, and c2 accepts only that SHA."
   },
   {
    "sev": "Major",
    "scope": "c12 vs the legacy root CLAUDE.md",
    "text": "The legacy root CLAUDE.md names theOS/aip/AIP-2.json and theOS/decisions/D-24.json; the rename leaves them dangling and c12's scan misses them.",
-   "answer": "open",
-   "note": "Proposed: legacy text is not changed; c12 says so, and renames.json resolves those names; the scan covers theOS/ only, on purpose."
+   "answer": "fix",
+   "note": "Applied in revision 9: legacy text is not changed; c12 says so, and renames.json resolves those names; the scan covers theOS/ only, on purpose."
   },
   {
    "sev": "Major",
    "scope": "outcome, the cause",
    "text": "The corrected agent labels its own correction's cause; 'other' removes it from the count; today's corrections have no cause, so the baseline needs a hand count.",
-   "answer": "open",
-   "note": "Proposed: the cause is Samuel's words or, at Learn, a fresh checker's label; the baseline is labelled the same way by a fresh checker at Gate A."
+   "answer": "fix",
+   "note": "Applied in revision 9: the cause is Samuel's words or, at Learn, a fresh checker's label; the baseline is labelled the same way by a fresh checker at Gate A."
   },
   {
    "sev": "Major",
    "scope": "c7",
    "text": "Its check looks for text in settings.json and CLAUDE.md; nothing detects agents reading raw files.",
-   "answer": "open",
-   "note": "Proposed: c7's failure is restated as 'brain prime shows a superseded doc as holding or misses what waits', checked on the fixtures; raw reads are the outcome's to measure."
+   "answer": "fix",
+   "note": "Applied in revision 9: c7's failure is restated as 'brain prime shows a superseded doc as holding or misses what waits', checked on the fixtures; raw reads are the outcome's to measure."
   },
   {
    "sev": "Major",
    "scope": "protocol.check, merges",
    "text": "Read literally, every merge that brings docs from a branch fails.",
-   "answer": "open",
-   "note": "Proposed: as r5-zoom-out: non-merge commits are checked against their parent; a merge only for what differs from both parents."
+   "answer": "fix",
+   "note": "Applied in revision 9: as r5-zoom-out: non-merge commits are checked against their parent; a merge only for what differs from both parents."
   },
   {
    "sev": "Major",
    "scope": "D-46 vs enforcement",
    "text": "brain check runs by the done rule only; a thread that skips it pushes unchecked writes.",
-   "answer": "open",
-   "note": "Proposed: the session-start hook also installs a git pre-push hook that runs the check, and avenMAIA runs brain check on every merged tree; until AIP-2's pipeline, that is the enforcement, written as an assumption."
+   "answer": "fix",
+   "note": "Applied in revision 9: the session-start hook also installs a git pre-push hook that runs the check, and avenMAIA runs brain check on every merged tree; until AIP-2's pipeline, that is the enforcement, written as an assumption."
   },
   {
    "sev": "Nit",
    "scope": "c12 wording",
    "text": "The parenthesis reads as if D-12 and AIP-3 are exceptions; quotes and renames.json itself are unsaid.",
-   "answer": "open",
-   "note": "Proposed: 'old names such as D-12 or AIP-3; OLD-AIP-n is legacy and kept'; quotes are rewritten like any reference; renames.json is excluded from the scan."
+   "answer": "fix",
+   "note": "Applied in revision 9: 'old names such as D-12 or AIP-3; OLD-AIP-n is legacy and kept'; quotes are rewritten like any reference; renames.json is excluded from the scan."
   },
   {
    "sev": "Nit",
    "scope": "checkpoint 1, type docs' writer",
    "text": "types/type.json says written by Samuel through avenCEO intents, not avenMAIA.",
-   "answer": "open",
-   "note": "Proposed: the type docs change as AIP-3's writes, approved by Samuel at Gate A."
+   "answer": "fix",
+   "note": "Applied in revision 9: the type docs change as AIP-3's writes, approved by Samuel at Gate A."
   },
   {
    "sev": "Nit",
    "scope": "mockup",
    "text": "2-specify asks for slides and an Architecture panel diff; this is three text lines.",
-   "answer": "open",
-   "note": "Proposed: brain has no new screen; the mockup is the hook's text and the existing app lists, shown as such at Gate A."
+   "answer": "fix",
+   "note": "Applied in revision 9: brain has no new screen; the mockup is the hook's text and the existing app lists, shown as such at Gate A."
   },
   {
    "sev": "Nit",
    "scope": "c1, closed intents",
    "text": "No step after Closed, so a correction on a closed intent is refused.",
-   "answer": "open",
-   "note": "Proposed: corrections may be written at any step, Closed included."
+   "answer": "fix",
+   "note": "Applied in revision 9: corrections may be written at any step, Closed included."
   },
   {
    "sev": "Nit",
    "scope": "c6 vs renames.json",
    "text": "Two rename mechanisms with no stated relation; c6's scope format undefined.",
-   "answer": "open",
-   "note": "Proposed: renames.json is for ids, c6 for words; c6's scope is a list of folders."
+   "answer": "fix",
+   "note": "Applied in revision 9: renames.json is for ids, c6 for words; c6's scope is a list of folders."
   }
  ]
 }

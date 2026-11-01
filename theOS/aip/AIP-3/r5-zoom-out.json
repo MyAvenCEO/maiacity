@@ -12,43 +12,43 @@
    "sev": "Major",
    "scope": "outcome vs c6",
    "text": "The outcome starts after checkpoint 2, but the terms check (c6), the only guard against outdated words, lands in checkpoint 3.",
-   "answer": "open",
-   "note": "Proposed: c6 moves into checkpoint 2; the rename moves last."
+   "answer": "fix",
+   "note": "Applied in revision 9: c6 moves into checkpoint 2; the rename moves last."
   },
   {
    "sev": "Major",
    "scope": "order",
    "text": "Checkpoint 1 bundles migrations, schemas for 15 types, step tables, seven verbs, hash ids, the skill, the hook and the check, and waits on AIP-1's checkpoint 1. The fix that most cuts 'acting on what no longer holds' is a read.",
-   "answer": "open",
-   "note": "Proposed: checkpoint 1: holds() into ui/wiki.js, the supersedes form, brain prime, holds and get, the hook, the CLAUDE.md line; checkpoint 2: the writes, the event check (D-46) and schemas; checkpoint 3: the reflection, the link graph, c6, c2; checkpoint 4: the rename and copied lists. D-46 ('the only door from the first checkpoint') would then start at checkpoint 2: Samuel's call."
+   "answer": "fix",
+   "note": "Applied in revision 9: checkpoint 1: holds() into ui/wiki.js, the supersedes form, brain prime, holds and get, the hook, the CLAUDE.md line; checkpoint 2: the writes, the event check (D-46) and schemas; checkpoint 3: the reflection, the link graph, c6, c2; checkpoint 4: the rename and copied lists. D-46 ('the only door from the first checkpoint') would then start at checkpoint 2: Samuel's call."
   },
   {
    "sev": "Major",
    "scope": "the merge rule (c4, c9, protocol.check)",
    "text": "It fails every normal merge, and two appends to one events array conflict at the closing bracket with no named resolution.",
-   "answer": "open",
-   "note": "Proposed: non-merge commits checked against their parent; a merge only for what differs from both parents; resolution named: brain index again, and a small git merge driver that keeps both appends of a list that only grows."
+   "answer": "fix",
+   "note": "Applied in revision 9: non-merge commits checked against their parent; a merge only for what differs from both parents; resolution named: brain index again, and a small git merge driver that keeps both appends of a list that only grows."
   },
   {
    "sev": "Nit",
    "scope": "step gating per type",
    "text": "A step table in every type doc is more than the root cause needs.",
-   "answer": "open",
-   "note": "Proposed: only types D-40 limits (metric, lesson: Learn) are gated; the rest may be written at any step."
+   "answer": "fix",
+   "note": "Applied in revision 9: only types D-40 limits (metric, lesson: Learn) are gated; the rest may be written at any step."
   },
   {
    "sev": "Nit",
    "scope": "the hash id",
    "text": "A hash with a random salt is just random bytes.",
-   "answer": "open",
-   "note": "Proposed: '4 random hex characters, longer if taken'."
+   "answer": "fix",
+   "note": "Applied in revision 9: '4 random hex characters, longer if taken'."
   },
   {
    "sev": "Nit",
    "scope": "c12 wording",
    "text": "The parenthesis reads as if D-12 and AIP-3 are excepted.",
-   "answer": "open",
-   "note": "Proposed: as in r5-paraphrase."
+   "answer": "fix",
+   "note": "Applied in revision 9: as in r5-paraphrase."
   }
  ]
 }
