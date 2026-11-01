@@ -6,18 +6,21 @@
  "about": [
   "agent memory",
   "memory blocks",
-  "sleep-time"
+  "sleep-time",
+  "git-backed memory"
  ],
  "url": "https://github.com/letta-ai/letta-code",
- "by": "Letta, the team behind MemGPT. Read from the letta README, the letta-code README, and the archived server's memory tools (letta/functions/function_sets/base.py) and block schema (letta/schemas/block.py) on the archive branch. docs.letta.com and arxiv.org were blocked; the MemGPT and sleep-time papers were not read.",
- "summary": "An agent harness whose memory lives in the agent's own context as labelled blocks it edits with tools. Blocks have a label, a value, a character limit, a description and a read-only flag. Older text goes to archival memory, reached by insert and search tools. A second, sleep-time agent (now called dreaming) rewrites the blocks between conversations, and Letta Code tracks all of this context in git.",
+ "by": "Letta, the team behind MemGPT. Read from the letta README, the letta-code README, and the archived server's memory tools (letta/functions/function_sets/base.py) and block schema (letta/schemas/block.py) on the archive branch. Then from docs.letta.com: the llms.txt index, Memory (agent-sdk/memory), Creating agents (agent-sdk/agents), MemFS (concepts/memfs), Memory & dreaming (configuration/memory), Shared memory (concepts/shared-memory), and two pages marked legacy: Memory blocks (v1-sdk/memory/memory-blocks) and Archival memory (v1-sdk/memory/archival-memory). The MemGPT and sleep-time papers and the context-repositories blog post were not read.",
+ "summary": "An agent harness whose memory belongs to the agent. Today that memory is MemFS: a git repository of Markdown files that is checked out on whatever computer the agent runs on, and every memory edit is a commit. Files at the root are in the system prompt every turn; deeper folders stay out of context and are found through MEMORY.md indexes. The older API kept memory as labelled blocks edited with fixed tools; the docs now mark blocks and archival memory as legacy. Background subagents (dreaming, once called sleep-time) review recent conversations and update memory in their own git worktrees. There is no supersession or validity model: consistency comes from the agent rewriting files, and the history is git's.",
  "ideas": [
-  "Memory blocks: label, value, limit, description, read_only; they sit in the context window, so the agent always sees them.",
-  "Edit tools with exact names: core_memory_append and core_memory_replace (first set), later memory_replace, memory_insert, memory_apply_patch and memory_rethink, plus memory_finish_edits.",
-  "memory_replace needs an exact match of the old string, like a code edit; memory_rethink rewrites a whole block and is meant for reorganising, not small fixes.",
-  "Archival memory is outside the context: archival_memory_insert and archival_memory_search; conversation_search reads past messages.",
-  "Sleep-time agents (dreaming) do the consolidation in the background, so the main agent answers fast.",
-  "Letta Code's MemFS keeps all context, memory blocks included, in git, and can sync it to a GitHub repo."
+  "MemFS: memory is a git repository owned by the agent, projected onto each computer as a real checkout. An edit becomes memory only once it is committed and pushed; local-only agents commit to a repository on that machine.",
+  "Memory is addressed by path: the label persona is the file persona.md. Each file is Markdown with YAML frontmatter holding a name and a description.",
+  "Where a file sits decides whether the agent always sees it: root files (system/ on older agents) are loaded every turn; a folder with its own MEMORY.md stays out of context, and the root MEMORY.md lists it as a signpost. There is no vector index by default; the agent uses file search.",
+  "The agent edits MemFS with ordinary file tools and git. The legacy tools, from the archived code and not in the current docs, were core_memory_append and core_memory_replace, later memory_replace (exact match of the old text), memory_insert, memory_apply_patch, memory_rethink (rewrite a whole block) and memory_finish_edits.",
+  "Legacy blocks have a label, description, value and character limit, and can be read_only so the agent cannot change them. The docs call the description the main thing the agent uses to decide how to read and write a block.",
+  "Legacy archival memory sits outside the context: archival_memory_insert (with tags) and archival_memory_search. Agents cannot easily change or delete it; developers can, through the passages API.",
+  "Dreaming: background subagents review recent conversations, consolidate lessons and update memory. trigger is step-count, compaction-event or off; behavior is reminder or auto-launch. An optional second pass has the agent review the proposed updates before they apply, with no human approval. Dreaming and the memory doctor work in git worktrees so they do not block the main agent.",
+  "Shared memory is an organisation-owned git repository attached to several agents. Each agent commits and pushes; the others fast-forward their checkout. /remember teaches one lesson, /doctor audits placement, duplication and system-prompt token use."
  ],
  "took": [
   {
@@ -33,8 +36,16 @@
    "where": "the reflection"
   },
   {
-   "idea": "Agent memory kept as files in git",
+   "idea": "Agent memory kept as files in git, where a write counts only once it is committed",
    "where": "brain's storage"
+  },
+  {
+   "idea": "Background writers work on their own branch or worktree and land by commit, so they never block the main thread",
+   "where": "the reflection"
+  },
+  {
+   "idea": "A short index file per folder that says what is inside, so only signposts stay in context",
+   "where": "brain's read command"
   }
  ]
 }

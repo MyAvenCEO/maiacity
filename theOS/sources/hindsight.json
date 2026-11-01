@@ -9,20 +9,21 @@
   "provenance"
  ],
  "url": "https://github.com/vectorize-io/hindsight",
- "by": "Vectorize; MIT licensed. Read from its README and three pages of its docs source in the repo (developer/observations, developer/mental-models, developer/retain). hindsight.vectorize.io and arxiv.org were blocked, so the paper (arXiv 2512.12818) was not read.",
- "summary": "A memory server with three operations: retain (store), recall (search) and reflect (reason over memory). Raw facts are kept; in the background they are consolidated into observations, each with its evidence quotes and a proof count, refined rather than overwritten. Above them sit mental models: standing answers to a fixed question, rebuilt when facts in their scope change, and read without any model call.",
+ "by": "Vectorize; MIT licensed. Read from its README and three pages of its docs source in the repo (developer/observations, developer/mental-models, developer/retain). Then from hindsight.vectorize.io: llms.txt, and in llms-full.txt the pages Overview (developer/index), Retain (developer/retain), Observations (developer/observations), Mental Models (developer/mental-models), Memories API (developer/api/memories), MCP Server (developer/mcp-server) and Memory Defense (developer/memory-defense). The paper (arXiv 2512.12818) was not read.",
+ "summary": "A memory server with three operations: retain (store), recall (search) and reflect (reason over memory), each scoped to a bank. Retain extracts typed facts. In the background they are consolidated into observations, each with its evidence quotes and a proof count, refined rather than overwritten. Above them sit mental models (standing answers to a fixed question, read without any model call) and knowledge pages (living documents built from observations). Facts are not silently changed: curation marks one invalidated and keeps it. Reflect reads the settled layers first and cites only what it retrieved.",
  "ideas": [
-  "Three verbs: retain, recall, reflect, each scoped to a bank (one isolated memory per user, agent or project).",
-  "Layers: raw facts (ground truth, never changed), observations (consolidated beliefs with evidence and proof count) and mental models (curated standing answers).",
-  "A contradiction does not overwrite: the observation is rewritten to say what was believed before and what is believed now, and the raw facts stay for tracing.",
-  "Freshness: when new facts in its scope have not yet been consolidated, an observation or mental model is marked stale and reflect checks it against raw facts.",
-  "A mental model keeps its previous versions and the facts and observations it was built from.",
-  "Mental models can be refreshed incrementally, changing only what the new facts imply, because a model asked to rewrite a whole page drifts.",
-  "Near-duplicate observations are merged above a set similarity (0.97 by default), within one tag scope only."
+  "Three verbs per bank: retain, recall, reflect. The MCP server exposes them as tools (retain, sync_retain, recall, reflect) along with mental-model and bank tools such as create_mental_model and list_banks.",
+  "Layers: raw facts (world facts it was told, experience facts it did), observations (consolidated beliefs with evidence), mental models (curated standing answers) and knowledge pages (a tree of living documents that never cite each other, mountable as Markdown files).",
+  "Raw facts can be curated but not silently changed: PATCH edits, invalidates or restores a fact; each has a state, valid or invalidated, and an edited_at; invalidated rows are kept and listed by default so curation stays auditable. Retaining again with the same document_id replaces that document's previous version.",
+  "A contradiction does not overwrite: the observation is rewritten to say what was believed before and what is believed now, and the raw facts stay. Each observation keeps a refresh history you can read.",
+  "Freshness: when new facts in its scope have not yet been consolidated, an observation or mental model is marked stale; reflect still sees it but checks it against raw facts first.",
+  "A mental model is rebuilt only when something in its own scope changed, can be refreshed incrementally (only the changes new facts imply, because a model asked to rewrite a whole page drifts), and keeps its previous versions and the facts and observations it was built from.",
+  "Near-duplicate observations (cosine 0.97 or more by default, within one tag scope) go to a focused check that merges them or keeps them apart, so a different number, negation or name is not collapsed. Consolidation runs after retain by default and can be switched to an explicit call.",
+  "Reflect climbs a ladder: mental models and knowledge pages first, then observations, then raw facts. It must retrieve before it answers and may cite only ids it actually retrieved. recall takes a query_timestamp to ask as of a point in time."
  ],
  "took": [
   {
-   "idea": "Keep the raw record unchanged and build current views on top that cite it",
+   "idea": "Keep the raw record; curation marks a record invalidated instead of deleting it, and views on top cite it",
    "where": "holds()"
   },
   {
@@ -36,6 +37,10 @@
   {
    "idea": "Edit only what changed instead of regenerating a page",
    "where": "brain's write command"
+  },
+  {
+   "idea": "An answer may cite only the docs the read actually returned",
+   "where": "brain's read command"
   }
  ]
 }
