@@ -1,8 +1,11 @@
 {
- "title": "The flow",
+ "title": "avenCEO",
  "status": "draft 3",
  "date": "2026-11-01",
- "summary": "A self-improving flow to ship every improvement. Four steps (Understand, Specify, Build, Learn) and two moments for you: approve what must be true, then try it. Everything between runs on its own: the next action is computed from the record, every claim has a check, machines check first and a fresh agent second, and nothing passes an open gate. The flow measures every intent, and every change to the flow is itself an intent, kept only if its measurement moves.",
+ "summary": "avenCEO is our agent harness: a self-improving way to ship every improvement. Four steps (Understand, Specify, Build, Learn) and two moments for you: approve what must be true, then try it. Everything between runs on its own: the next action is computed from the record, every claim has a check, machines check first and fresh agents second, and nothing passes an open gate. avenCEO measures every intent, and every change to avenCEO is itself an intent, kept only if its measurement moves.",
+ "records": [
+  "ceo/CEO-1.json"
+ ],
  "bands": [
   {
    "name": "Meaning",
@@ -97,12 +100,12 @@
    "n": 4,
    "name": "Learn",
    "writes": "measurement · new intents",
-   "question": "Did the outcome claim come true, and what did the flow itself get wrong?",
+   "question": "Did the outcome claim come true, and what did avenCEO itself get wrong?",
    "do": [
     "Measure the outcome claim. Use it daily; a first-time agent that can't read the code uses it like a newcomer.",
-    "The flow's own metrics are computed from the records of every intent.",
+    "avenCEO's own metrics are computed from the records of every intent.",
     "A drift check compares the spec (Architecture panels, rule IDs) with Lean and the code, and reports only the differences. Each rule ID links its theorem and its function, so the check stays mechanical.",
-    "Surprises become product intents. Signals about the flow become flow intents, and they go through this same flow (see How the flow improves itself).",
+    "Surprises become product intents. Signals about avenCEO become avenCEO intents, and they go through avenCEO itself (see How avenCEO improves itself).",
     "Keep the full artifacts, never summaries."
    ],
    "output": "measurement · new intents",
@@ -145,7 +148,7 @@
   {
    "from": 4,
    "to": 1,
-   "when": "new intents: product and flow"
+   "when": "new intents: product and avenCEO"
   }
  ],
  "checkpoints": {
@@ -191,12 +194,12 @@
    },
    {
     "n": 3,
-    "name": "Flow intent",
+    "name": "avenCEO intent",
     "writes": "one change, its outcome claim"
    },
    {
     "n": 4,
-    "name": "Same flow",
+    "name": "Same steps",
     "writes": "Understand, Specify, Build"
    },
    {
@@ -209,7 +212,7 @@
    {
     "id": "A",
     "after": 3,
-    "what": "You approve the change to the flow at its Gate A, like any intent."
+    "what": "You approve the change to avenCEO at its Gate A, like any intent."
    }
   ],
   "loops": [
@@ -233,11 +236,11 @@
    "Add a rule, and cut one."
   ],
   "guards": [
-   "One change to the flow at a time per area, so its effect isn't confounded.",
-   "The flow is tested too: a change to it first passes the flow's own test scenarios (fixed situations with the expected next action), then it is measured.",
-   "Every change is a new version of this page, with its outcome claim; if the metric doesn't move over the next intents, it is undone and \"keep as is\" wins.",
+   "One change to avenCEO at a time per area, so its effect isn't confounded.",
+   "avenCEO is tested too: a change to it first passes avenCEO's own test scenarios (fixed situations with the expected next action), then it is measured.",
+   "Every change is a new version of avenCEO's definition, with its outcome claim; if the metric doesn't move over the next intents, it is undone and \"keep as is\" wins.",
    "A lesson needs evidence: each change is rated helped, hurt, no effect or confounded; confounded never becomes a rule.",
-   "The flow can't change its invariants on its own: your two gates, nobody checks their own work, evidence is data. Those change only through your Gate A."
+   "avenCEO can't change its invariants on its own: your two gates, nobody checks their own work, evidence is data. Those change only through your Gate A."
   ]
  },
  "principles": [
@@ -245,7 +248,7 @@
   "You give meaning and judge experience; machines check the rest. You are needed twice: to approve what must be true, and to try it.",
   "Every claim has a check, and a mechanical check beats a judgment. Every judgment that can become a mechanical check becomes one.",
   "Nobody checks their own work: machines first, then fresh checkers that see only the record and what it links, never the conversation that made it.",
-  "Delete before adding, smallest first, automate last. The flow improves itself: it measures every intent, and every change to it is an intent, kept only if its measurement moves."
+  "Delete before adding, smallest first, automate last. avenCEO improves itself: it measures every intent, and every change to it is an intent, kept only if its measurement moves."
  ],
  "stage": [
   [
@@ -402,7 +405,7 @@
  "assumptions": [
   {
    "holds": "Claims can say precisely enough what you want.",
-   "else": "The paraphrase at Gate A and your try at Gate B catch the gap; the miss becomes a flow intent about writing claims."
+   "else": "The paraphrase at Gate A and your try at Gate B catch the gap; the miss becomes an avenCEO intent about writing claims."
   },
   {
    "holds": "Mechanical checks are trustworthy.",
@@ -448,8 +451,8 @@
   },
   {
    "what": "A separate path for lessons",
-   "now": "a lesson is a flow intent and goes through the same flow",
-   "why": "one flow, for the product and for itself"
+   "now": "a lesson is an avenCEO intent and goes through avenCEO itself",
+   "why": "one harness, for the product and for itself"
   },
   {
    "what": "The middle risk level",
@@ -480,7 +483,7 @@
  "record": {
   "id": "AIP-n",
   "source": "idea | audit | bug | report | research | measurement | lesson · link · who raised it",
-  "kind": "product | flow",
+  "kind": "product | avenCEO",
   "problem": "who · what they experience · root cause · truths · assumptions · risk: can be undone or not",
   "claims": "[ promise · how it could fail · check: mechanical | review | person | measured · result ] + one outcome claim",
   "mockup": "slides + Architecture panel diff (rule IDs); a clickable page for a screen",
@@ -524,13 +527,13 @@
   {
    "cue": "A process grows with every lesson.",
    "lesson": "Prefer deleting, or a mechanical check, over a new rule; when a rule is added, cut one.",
-   "evidence": "The first draft of this flow had twelve principles, fourteen rules, eleven roles and eight steps; the second has five, six, five and four.",
+   "evidence": "The first draft of avenCEO had twelve principles, fourteen rules, eleven roles and eight steps; the second has five, six, five and four.",
    "confidence": "medium"
   }
  ],
  "automate": {
   "now": [
-   "The orchestrator is the main session, following this page.",
+   "The orchestrator is the main session, following avenCEO's definition.",
    "Checks are started by hand, including Lean."
   ],
   "later": [
@@ -565,6 +568,38 @@
   {
    "label": "Claude Code team's review process, as retold in an AI Labs video (original article not read)",
    "url": ""
+  }
+ ],
+ "added": [
+  {
+   "what": "A paraphrase next to your Gate A",
+   "replaces": "trusting that the claims say what you meant",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "The Review gate on the spec, before Gate A",
+   "replaces": "you judging a spec nobody had checked",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "Fix, contest with evidence, escalate, decline",
+   "replaces": "free arguing between worker and checker",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "Clean rounds, settled findings, churn, not run",
+   "replaces": "an unclear \"three failed rounds\"",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "Drift as a metric",
+   "replaces": "noticing by chance that the spec and the code disagree",
+   "from": "Elephant-Goldfish Model"
+  },
+  {
+   "what": "Test scenarios for avenCEO itself",
+   "replaces": "measuring a broken change to avenCEO before seeing it is broken",
+   "from": "Elephant-Goldfish Model"
   }
  ],
  "protocols": [
@@ -1280,38 +1315,6 @@
      "url": "https://medium.com/@drensin/elephants-goldfish-and-the-new-golden-age-of-software-engineering-c33641a48874"
     }
    ]
-  }
- ],
- "added": [
-  {
-   "what": "A paraphrase next to your Gate A",
-   "replaces": "trusting that the claims say what you meant",
-   "from": "Elephant-Goldfish Model"
-  },
-  {
-   "what": "The Review gate on the spec, before Gate A",
-   "replaces": "you judging a spec nobody had checked",
-   "from": "Elephant-Goldfish Model"
-  },
-  {
-   "what": "Fix, contest with evidence, escalate, decline",
-   "replaces": "free arguing between worker and checker",
-   "from": "Elephant-Goldfish Model"
-  },
-  {
-   "what": "Clean rounds, settled findings, churn, not run",
-   "replaces": "an unclear \"three failed rounds\"",
-   "from": "Elephant-Goldfish Model"
-  },
-  {
-   "what": "Drift as a metric",
-   "replaces": "noticing by chance that the spec and the code disagree",
-   "from": "Elephant-Goldfish Model"
-  },
-  {
-   "what": "Test scenarios for the flow itself",
-   "replaces": "measuring a broken flow change before seeing it is broken",
-   "from": "Elephant-Goldfish Model"
   }
  ]
 }

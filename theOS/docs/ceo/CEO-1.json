@@ -1,0 +1,330 @@
+{
+ "id": "CEO-1",
+ "title": "Build avenCEO, our agent harness",
+ "kind": "avenCEO",
+ "source": {
+  "type": "idea",
+  "by": "Samuel",
+  "at": "2026-11-01",
+  "text": "Apply our own flow to building the flow engine. Call the agent harness avenCEO. Implement it now.",
+  "links": [
+   "theOS/docs/avenceo.json"
+  ]
+ },
+ "problem": {
+  "who": [
+   "Samuel, the one person who decides, whose attention is the scarcest resource.",
+   "The agents that do the work, in 20 to 50 parallel threads (CLAUDE.md).",
+   "Anyone who later needs to know why something is the way it is."
+  ],
+  "experience": "Samuel catches problems the agents should have caught, repeats corrections, and decisions are spread over chats, the avenDB log, the theOS intents and CLAUDE.md.",
+  "evidence": [
+   "The intent detail page broke: a chip took the page's .stage grid. Found by Samuel.",
+   "The scenario table squeezed its first column into a tall strip. Found by Samuel.",
+   "The intents and decisions pages did not scroll. Found by Samuel.",
+   "The board scrolled as a whole instead of per column. Found by Samuel.",
+   "The published page was not updated after a change. Found by Samuel.",
+   "Not every \"rule\" was renamed to \"policy\". Found by Samuel.",
+   "Slides kept an old operations shape after its source of truth changed. Found by Samuel.",
+   "Agents were modelled without their own identity, and coops with members. Corrected by Samuel.",
+   "An audit leaned on summaries; Samuel rejected it as a bad audit.",
+   "Decisions were listed oldest first. Corrected by Samuel."
+  ],
+  "baseline": "At least ten corrections by Samuel in one session (this one, 31 Oct to 1 Nov 2026), outside any gate.",
+  "whys": [
+   "Samuel catches problems the agent should have caught. Why? The agent checks its own work, and only what it thinks of.",
+   "Why? Nothing independent checks it, and nothing says beforehand what must be true.",
+   "Why? The process lives in chat and prompts: advice an agent can forget, not gates it can't pass.",
+   "Why? There is no record a program can read: the state of the work lives in conversations, which are lost to compaction and to container restarts.",
+   "Root cause: the state, rules and decisions of the work live in conversations instead of in records that a deterministic engine reads and enforces."
+  ],
+  "truths": [
+   "A language model is not deterministic; programs and proofs are.",
+   "Context windows are finite; compaction and new sessions lose what is not written down.",
+   "A cloud container is reclaimed; only what is committed and pushed survives.",
+   "Many threads editing one shared file conflict; one file per thing merges cleanly.",
+   "Git keeps every version and who made it.",
+   "Claude Code runs subagents in fresh contexts, skills, workflows and hooks; a Stop hook that exits with code 2 keeps the agent working."
+  ],
+  "assumptions": [
+   "avenCEO runs inside Claude Code first: skills, subagents, hooks and small Bun scripts.",
+   "Records are JSON files in this repository, shown in the theOS docs app.",
+   "Samuel is the only one who passes a gate.",
+   "avenCEO lives beside theOS and avenDB and changes neither."
+  ],
+  "risk": "Can be undone: everything is files in git. Except actions that reach outside (pushing to main, deploying, publishing, messaging people): in the first version those stay manual, behind Gate B."
+ },
+ "reuse": [
+  {
+   "what": "aven/ops/devx/check.mjs",
+   "use": "Runs the checks next to a change: the base of the Mechanical gate."
+  },
+  {
+   "what": "aven/ops/devx/collect.mjs",
+   "use": "Merges finished task branches into a goal branch: checkpoints into an intent's branch."
+  },
+  {
+   "what": "aven/ops/devx/decisions.mjs",
+   "use": "Checks that a log only grows: the append-only check for history."
+  },
+  {
+   "what": "aven/ops/devx/measure.mjs, leadtime.mjs, goal.mjs",
+   "use": "Count tasks, lead time and CI time: the first metrics."
+  },
+  {
+   "what": "aven/DB2/brain/DECISIONS.md and ARCHITECTURE.md",
+   "use": "The proven split: an append-only history, and a mutable latest truth."
+  },
+  {
+   "what": ".claude/agents, .claude/workflows, .claude/hooks, .claude/settings.json",
+   "use": "Where checker agents, multi-agent workflows and the Stop hook live."
+  },
+  {
+   "what": ".claude/skills: lean-proofs, spec-compliance, diff-review, fp-check, devx-speed",
+   "use": "Checker lenses that exist already."
+  },
+  {
+   "what": "theOS/docs: the Intents board and the avenCEO page",
+   "use": "The viewer."
+  },
+  {
+   "what": "aven/DB2/architecture/spec/vectors/rules.json",
+   "use": "Rule status written by Lean and read by the docs."
+  }
+ ],
+ "options": [
+  {
+   "name": "Keep as is",
+   "note": "The process stays in chat and prompts. Rejected: the evidence shows at least ten escapes in one session.",
+   "chosen": false
+  },
+  {
+   "name": "Adopt an existing harness whole",
+   "note": "EGM covers spec review only; Helix is internal; neither keeps our records, gates or Lean. They stay sources, not the product.",
+   "chosen": false
+  },
+  {
+   "name": "Compose avenCEO from what exists, plus a record, a router, gates and checkers",
+   "note": "Reuses the devx tools, the decision-log split, Claude Code's agents and hooks, and the docs app; adds only what is missing.",
+   "chosen": true
+  }
+ ],
+ "claims": [
+  {
+   "id": "c1",
+   "promise": "The next action is a pure function of the record: the same record gives the same next action.",
+   "fails": "The router reads the clock, the network or the chat.",
+   "check": "Fixed scenarios, and a property test over random records.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c2",
+   "promise": "Nothing is released without Gate A and Gate B recorded for the version it releases.",
+   "fails": "A path skips a gate, or a gate approved an older version of the claims.",
+   "check": "Scenarios over every path; the router refuses a release without both.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c3",
+   "promise": "An intent's stage is computed, never stored.",
+   "fails": "A stored stage drifts from the record.",
+   "check": "The schema has no stage field; the viewer computes it.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c4",
+   "promise": "History only grows: no event is edited or removed.",
+   "fails": "An edit rewrites what was decided.",
+   "check": "An append-only check like decisions.mjs, in the Mechanical gate.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c5",
+   "promise": "A fresh agent can resume any intent from the repository alone.",
+   "fails": "Something it needs lives only in a conversation.",
+   "check": "A restart test: a fresh agent given only the record names the next action and its inputs.",
+   "kind": "review",
+   "result": "open"
+  },
+  {
+   "id": "c6",
+   "promise": "An agent can't end its turn while a gate it owns is open.",
+   "fails": "The agent stops and calls it done.",
+   "check": "A test of the Stop hook: exit code 2 while a gate is open.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c7",
+   "promise": "Every claim has a check, or is an assumption you approved.",
+   "fails": "A claim passes with nothing behind it.",
+   "check": "The schema, and the router refuses Gate A otherwise.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c8",
+   "promise": "A checker never sees the worker's conversation: only the record and what it links.",
+   "fails": "The reviewer agrees with the builder.",
+   "check": "The dispatch log records exactly what each checker was given.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c9",
+   "promise": "Threads working on different intents never conflict.",
+   "fails": "Two threads edit the same file.",
+   "check": "One file per intent; a merge test of two parallel changes.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c10",
+   "promise": "avenCEO's metrics are computed from the records.",
+   "fails": "Numbers are typed by hand.",
+   "check": "A script computes them; the page shows only its output.",
+   "kind": "mechanical",
+   "result": "open"
+  }
+ ],
+ "outcome": {
+  "promise": "Over the next intents built with avenCEO, your actions outside the two gates fall from at least ten per session toward none, and problems that escape past Gate B fall.",
+  "kind": "measured",
+  "result": "open"
+ },
+ "checkpoints": [
+  {
+   "n": 1,
+   "adds": "The record: a schema for an intent, one file per intent, an append-only event list, the stage function; the 91 theOS intents moved into it.",
+   "claims": [
+    "c3",
+    "c4",
+    "c7",
+    "c9"
+   ]
+  },
+  {
+   "n": 2,
+   "adds": "The viewer: the Intents board reads the files, with columns computed from the records; each intent shows its steps as tabs.",
+   "claims": [
+    "c3"
+   ],
+   "screen": true
+  },
+  {
+   "n": 3,
+   "adds": "The router: next(record), a command that prints the next action, and avenCEO's own test scenarios.",
+   "claims": [
+    "c1",
+    "c2"
+   ]
+  },
+  {
+   "n": 4,
+   "adds": "Gates enforced: the Stop hook, and gate approvals recorded with your words, the time and the version they approve.",
+   "claims": [
+    "c2",
+    "c6"
+   ]
+  },
+  {
+   "n": 5,
+   "adds": "Checkers: goldfish agents (paraphrase, zoom out, critic, readiness, code review, first-time user), the review rules, the findings format and the clean-round function.",
+   "claims": [
+    "c8"
+   ]
+  },
+  {
+   "n": 6,
+   "adds": "The Mechanical gate: one runner over check.mjs, Lean and the vectors, writing results into the record.",
+   "claims": [
+    "c7"
+   ]
+  },
+  {
+   "n": 7,
+   "adds": "Learn: the metrics computed from the records, the lessons file, avenCEO intents, the restart test.",
+   "claims": [
+    "c5",
+    "c10"
+   ]
+  }
+ ],
+ "memory": [
+  {
+   "kind": "History",
+   "how": "Every intent keeps an append-only list of events: who did what and when, with a link to the evidence (gate approvals with your words and the version they approve, findings and their answers, checkpoint results, supersedes). Git keeps every version on top. The decision log, newest first, is generated from the gate events and never written by hand: the same split as avenDB's DECISIONS.md (history) and ARCHITECTURE.md (latest truth)."
+  },
+  {
+   "kind": "Truth",
+   "how": "The record is the latest truth of one intent. The Architecture panels and specs are the latest truth of the product, tied to the records by rule IDs."
+  },
+  {
+   "kind": "Lessons",
+   "how": "One lessons file: cue, lesson, evidence, confidence, the avenCEO intent that made it and the metric it moved. Only a few are always on (CLAUDE.md: add one, cut one); the rest are skills, loaded when their cue fires."
+  },
+  {
+   "kind": "Answers",
+   "how": "When a checker escalates something only you know, your answer is written down as an answer record and linked from the intents that needed it, so the next goldfish can read it."
+  },
+  {
+   "kind": "Sessions",
+   "how": "Chats and contexts are disposable; nothing durable lives in them. A fresh agent continues from the repository alone (c5)."
+  }
+ ],
+ "questions": [
+  {
+   "q": "Where does avenCEO live?",
+   "options": [
+    "aven/CEO, beside aven/DB2 and aven/ops; the devx tools move into it",
+    "theOS/avenCEO, beside the theOS docs"
+   ]
+  },
+  {
+   "q": "One record format for both decision sequences?",
+   "options": [
+    "Yes: avenDB's A-n log and theOS's AIP-n become avenCEO records, and DECISIONS.md becomes a generated view",
+    "Not yet: avenCEO starts with theOS's intents; avenDB's log stays as it is"
+   ]
+  },
+  {
+   "q": "What counts as your approval at a gate?",
+   "options": [
+    "Your chat message, quoted into the record with its time, for now; a passkey-signed approval later",
+    "Only a signed approval, from the start"
+   ]
+  },
+  {
+   "q": "What may avenCEO do on its own in the first version?",
+   "options": [
+    "Merge into its own branches; pushing to main and deploying stay manual",
+    "Nothing: every merge waits for you"
+   ]
+  }
+ ],
+ "review": [],
+ "events": [
+  {
+   "at": "2026-11-01",
+   "by": "Samuel",
+   "what": "source",
+   "text": "Apply our own flow to building it; call it avenCEO; implement it now."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "understood",
+   "text": "Problem, evidence, root cause, truths, assumptions, risk and reuse written."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "specified",
+   "text": "Claims c1 to c10, the outcome claim, seven checkpoints, the memory design and four open questions drafted."
+  }
+ ]
+}
