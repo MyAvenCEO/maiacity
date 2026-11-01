@@ -30,8 +30,9 @@ permissions: {}
 
 # Per ref: two branches pushing the same new inputs at once may both build them (the same image, twice); one after
 # another, the second finds it built and builds nothing.
+# A draft's run (which runs nothing) never cancels a ready one: the draft state is part of the group.
 concurrency:
-  group: avensandbox-image-${{ github.ref }}
+  group: avensandbox-image-${{ github.ref }}-${{ github.event.pull_request.draft && 'draft' || 'run' }}
   cancel-in-progress: true
 
 jobs:

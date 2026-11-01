@@ -1,0 +1,48 @@
+# theOS's undo (theOS/aip/aip-59ad.json, c4), by hand: Actions, theOS undo, Run workflow, from production. It switches
+# aven.maia.city back to the build before, or to the build named (26.10.31v6 is avenOS), on v1's server, through
+# theOS/release/undo.sh; it writes nothing but the links current and previous. The next push to production that changes
+# theOS/ deploys again.
+name: theOS undo
+
+on:
+  workflow_dispatch:
+    inputs:
+      to:
+        description: The build to go back to (empty for the one before; 26.10.31v6 is avenOS; theos-<12 hex> a theOS build)
+        type: string
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: theos-refs/heads/production
+  cancel-in-progress: false
+
+jobs:
+  undo:
+    name: Undo on aven.maia.city
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: production
+    permissions:
+      contents: read
+    env:
+      SITE: aven.maia.city
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: SSH to the server, its host keys pinned
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: theOS/release/ssh.sh "$SITE"
+      - name: Undo
+        shell: bash
+        env:
+          TO: ${{ inputs.to }}
+        run: |
+          [[ -z $TO || $TO =~ ^[A-Za-z0-9._-]+$ ]] || { echo "::error::not a build name: $TO"; exit 1; }
+          ssh prod 'mkdir -p theos-release'
+          scp -q theOS/release/undo.sh prod:theos-release/
+          ssh prod "bash theos-release/undo.sh /opt/maia-city/site/aven $TO" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: What aven.maia.city serves now
+        run: curl -sS --max-time 15 "https://$SITE/" | grep -o '<title>[^<]*</title>' | head -n 1 | tee -a "$GITHUB_STEP_SUMMARY"

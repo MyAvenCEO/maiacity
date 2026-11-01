@@ -57,9 +57,27 @@ else:
     if j.get('environment') != 'production': errors.append('the deploy is not in the environment production')
     if sorted(j.get('needs') or []) != ['box', 'check']: errors.append(f'the deploy needs {j.get("needs")}, not box and check')
     if not str(j.get('if', '')).startswith("github.event_name == 'push' && needs.box.result == 'success' && needs.check.result == 'success'"): errors.append('the deploy may run off a push or without both checks green')
+    steps = j.get('steps') or []
+    first = [i for i, x in enumerate(steps) if x.get('id') == 'switch']
+    if not first: errors.append('the deploy has no switch step')
+    else:
+        for x in steps[first[0] + 1:]:
+            if x.get('if') != "steps.switch.outputs.go == 'true'": errors.append(f'the deploy step {x.get("name")!r} runs while the switch is off')
+        for x in steps[:first[0]]:
+            if 'secrets.' in yaml.safe_dump(x): errors.append('a step before the switch reads a secret')
+    sw = yaml.safe_dump(steps[first[0]]) if first else ''
+    if 'github.event.before' not in sw: errors.append('the deploy does not skip a push that leaves theOS/ as it was')
+    for x in steps:
+        if '|' in str(x.get('run', '')) and 'ssh prod' in str(x.get('run', '')) and x.get('shell') != 'bash': errors.append(f'step {x.get("name")!r} pipes without pipefail')
     if 'echo "$SSH_KEY' in text or 'echo $SSH_KEY' in text: errors.append('the key is printed')
 for u in re.findall(r'uses:\s*(\S+)', text):
     if not u.startswith('./') and not re.search(r'@[0-9a-f]{40}$', u): errors.append(f'{u} is not pinned by commit')
+u = yaml.safe_load(open(path.replace('theos.yml', 'theos-undo.yml')))
+uon = u.get(True) or u.get('on')
+if list(uon) != ['workflow_dispatch']: errors.append('theOS undo runs on more than workflow_dispatch')
+for k, j in u['jobs'].items():
+    if j.get('environment') != 'production': errors.append('theOS undo is not in the environment production')
+    if sorted(set(re.findall(r'secrets\.([A-Z_]+)', yaml.safe_dump(j)))) != ['DEPLOY_KNOWN_HOSTS', 'DEPLOY_SSH_KEY']: errors.append('theOS undo reads other secrets')
 for e in errors: print('FAIL', e)
 sys.exit(1 if errors else 0)
 PY
@@ -100,6 +118,9 @@ bash "$here/undo.sh" "$site" > /dev/null 2>&1; [ "$(cur)" = releases/theos-22222
 rm "$site/previous"; ln -s releases/theos-111111111111 "$site/current"; rm "$site/current"; ln -s releases/26.10.31v6 "$site/current"
 bash "$here/deploy.sh" "$T1" "$scratch/one.tar.gz" "$site" > /dev/null 2>&1; bash "$here/undo.sh" "$site" > /dev/null 2>&1
 [ "$(cur)" = releases/26.10.31v6 ] && [ -f "$site/releases/26.10.31v6/index.html" ] && ok "undo after the first deploy: avenOS is current again" || bad "undo after the first deploy: current $(cur)"
+bash "$here/deploy.sh" "$T2" "$scratch/two.tar.gz" "$site" > /dev/null 2>&1; bash "$here/undo.sh" "$site" 26.10.31v6 > /dev/null 2>&1
+[ "$(cur)" = releases/26.10.31v6 ] && ok "undo to a build named: avenOS after two theOS deploys" || bad "undo to avenOS by name: current $(cur)"
+bash "$here/undo.sh" "$site" nothing-here > /dev/null 2>&1 && bad "undo to a missing build passed" || { [ "$(cur)" = releases/26.10.31v6 ] && ok "undo to a missing build: refused, current where it was" || bad "undo to a missing build moved current"; }
 ls "$site/releases" | grep -q 26.10.31v6 && [ "$(ls "$site/releases" | wc -l)" = 3 ] && ok "nothing is deleted: avenOS and both theOS builds are kept" || bad "builds kept: $(ls "$site/releases" | xargs)"
 
 # The health check against a local server that serves a tree and the Aven Peer's paths
@@ -107,7 +128,7 @@ serve=$scratch/serve; mkdir -p "$serve"; cp -r "$scratch/t/." "$serve/" 2> /dev/
 mk three; cp -r "$scratch/t/." "$serve/"; tree=$scratch/tree; mkdir -p "$tree"; cp -r "$scratch/t/." "$tree/"
 for p in avenCEO brain aip; do mkdir -p "$serve/$p" "$tree/$p"; done
 for f in avenCEO/index.html brain/index.html brain/ids.json aip/aip-59ad.json; do echo "$f" > "$tree/$f"; cp "$tree/$f" "$serve/$f"; done
-echo pong > "$serve/ping"; echo ok > "$serve/healthz"; echo '{"network":"aven"}' > "$serve/aven.json"
+echo pong > "$serve/ping"; echo ok > "$serve/healthz"; : > "$serve/generate_204"; echo '{"network":"aven"}' > "$serve/aven.json"
 port=$((20000 + RANDOM % 20000)); (cd "$serve" && exec python3 -m http.server "$port" --bind 127.0.0.1) > /dev/null 2>&1 & srv=$!
 for _ in $(seq 50); do curl -s -o /dev/null "http://127.0.0.1:$port/" && break; sleep 0.1; done
 base=http://127.0.0.1:$port
@@ -117,7 +138,10 @@ cp "$serve/index.html" "$serve/brain/ids.json"   # Caddy's fallback: the dashboa
 "$here/health.sh" after "$base" "$tree" "$scratch/peer.txt" > /dev/null && bad "health passed the dashboard in place of a missing file" || ok "health: the dashboard in place of a missing file is red"
 cp "$tree/brain/ids.json" "$serve/brain/ids.json"; echo '{"network":"other"}' > "$serve/aven.json"
 "$here/health.sh" after "$base" "$tree" "$scratch/peer.txt" > /dev/null && bad "health passed a changed /aven.json" || ok "health: a changed /aven.json is red"
-echo '{"network":"aven"}' > "$serve/aven.json"; rm "$serve/ping"
+echo '{"network":"aven"}' > "$serve/aven.json"; mv "$serve/ping" "$scratch/ping.kept"
+"$here/health.sh" before "$base" "$scratch/down.txt" > /dev/null
+"$here/health.sh" after "$base" "$tree" "$scratch/down.txt" > /dev/null && bad "health passed a /ping that was down before too" || ok "health: a /ping already down before the deploy is red"
+mv "$scratch/ping.kept" "$serve/ping"; rm "$serve/ping"
 "$here/health.sh" after "$base" "$tree" "$scratch/peer.txt" > /dev/null && bad "health passed a /ping that stopped answering" || ok "health: a /ping that stopped answering is red"
 
 if [ "${1:-}" = --box ]; then
@@ -125,6 +149,11 @@ if [ "${1:-}" = --box ]; then
 		&& bad "a box that is not published passed" || ok "a box that is not published: fails"
 	"$here/box.sh" > /dev/null 2>&1 && ok "this commit's box: passes" || bad "this commit's box failed"
 fi
+
+[ "$(tr -d '[:space:]' < "$here/deploy.on")" = off ] && ok "the deploy is off (deploy.on), until Gate B" \
+	|| echo "note: the deploy is on (theOS/release/deploy.on): a push to production that changes theOS/ deploys"
+grep -q "draft && 'draft' || 'run'" "$repo/.github/workflows/avensandbox-image.yml" && ok "a draft's run can't cancel a ready run of the box's workflow" \
+	|| bad "avenSANDBOX's image workflow lets a draft's run cancel a ready one"
 
 [ $fails = 0 ] && echo "theOS's release test: green" || echo "theOS's release test: $fails failed"
 [ $fails = 0 ]

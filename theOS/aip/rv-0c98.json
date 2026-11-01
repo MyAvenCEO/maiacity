@@ -1,0 +1,75 @@
+{
+ "type": "review",
+ "id": "rv-0c98",
+ "intent": "aip-59ad",
+ "checkpoint": 2,
+ "lens": "critic",
+ "checker": "a fresh agent (Agent tool, general-purpose), seeing only the record, avenCEO's Review gate (g-6de7), the diff, the files and the legacy deploy files",
+ "rounds": [
+  {
+   "round": 1,
+   "commit": "7eea72eff",
+   "reviewed": "git diff fc4b66f9a 7eea72eff -- .github theOS/release, and the files",
+   "prompt": "A goldfish critic doing avenCEO's Review gate (g-6de7) on aip-59ad's checkpoint 2, read-only: no push, GitHub, SSH or fetch of aven.maia.city, no docker or check command; test.sh without --box allowed. Read aip-59ad (c3, c4, c5, checkpoint 2, assumptions, deferred, events, problem.evidence) and the Review gate; rv-d660 is settled; the server as the legacy files describe it (avendeploy.yml, caddy.sh, the Caddyfile's aven.maia.city block). Review commit 7eea72eff: theos.yml's deploy job, theOS/release/deploy.sh, undo.sh, ssh.sh, health.sh, test.sh. Questions: do the work and its tests keep c3, c4, c5; will the deploy work against the server as described (paths, the deploy user's rights, the link through /srv/site, relative targets, what caddy.sh left); can it write outside releases and the two links, touch the peer or Caddy, or leave the site half-switched; is health.sh's comparison sound (compression, redirects, caching, certificate, DNS); is the undo sound after several deploys; can the key leak; what breaks on the first real run; what is unproven before Gate B. Findings with severity, kind, file and line, reasoning, fix, evidence; at most 500 words.",
+   "result": "0 Blocker, 2 Major, 5 Nit: not clean.",
+   "findings": [
+    {
+     "sev": "Major",
+     "kind": "contradiction",
+     "scope": "theos.yml deploy job, c3, c4",
+     "text": "Every push to production runs deploy.sh, which switches whenever current is not the commit's tree, so after an undo the next push that does not touch theOS/ puts the undone build back.",
+     "answer": "fix",
+     "note": "The switch step skips the deploy when the tree before the push (github.event.before, fetched) equals the commit's; test.sh asserts the step reads it."
+    },
+    {
+     "sev": "Major",
+     "kind": "missing check",
+     "scope": "undo.sh, theos.yml, c4, Gate B",
+     "text": "undo.sh never reaches the server and nothing runs it; undo goes one step deep, so after two deploys no command reaches avenOS; and once this is on production the first merge is the first real deploy, not Gate B's.",
+     "answer": "fix",
+     "note": "A workflow, theOS undo (.github/workflows/theos-undo.yml), run by hand in the environment production, copies undo.sh and runs it; undo.sh takes a build by name (26.10.31v6 is avenOS), tested after two deploys and for a missing name; the deploy also copies undo.sh. The deploy is off until Gate B: theOS/release/deploy.on holds off, and every deploy step needs it on (test.sh asserts the switch, and that no step before it reads a secret)."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "theos.yml, the deploy step's pipe",
+     "text": "bash -e without pipefail: a failed deploy.sh shows green.",
+     "answer": "fix",
+     "note": "shell: bash (pipefail) on the piped steps; test.sh asserts it (tried by a mutation)."
+    },
+    {
+     "sev": "Nit",
+     "kind": "wrong fact",
+     "scope": "c3's check",
+     "text": "It lists /sources/index.html and /aip/index.json, which no longer exist.",
+     "answer": "fix",
+     "note": "c3 names the paths health.sh checks."
+    },
+    {
+     "sev": "Nit",
+     "kind": "wrong fact",
+     "scope": "c3",
+     "text": "The folder is theos-<first 12 hex of the tree>; the job leaves ~deploy/theos-release/ on the server.",
+     "answer": "fix",
+     "note": "c3 says both."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "deploy.sh 31-32",
+     "text": "previous switched before current: a run dying between them loses the real previous.",
+     "answer": "fix",
+     "note": "current is switched first, then previous."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "health.sh",
+     "text": "Six files, not the whole tree; /generate_204 unchecked; a peer already down stays green ('none' equals 'none').",
+     "answer": "fix",
+     "note": "/generate_204 added; a peer path that did not answer 200 or 204 before is red; c3 says six files."
+    }
+   ]
+  }
+ ]
+}

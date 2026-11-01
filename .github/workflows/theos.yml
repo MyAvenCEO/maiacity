@@ -88,22 +88,45 @@ jobs:
       SITE: aven.maia.city
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The switch (Gate B, Samuel's): the deploy is off until theOS/release/deploy.on holds the word on. Until then the
+      # job reads no secret and touches no server: it says so and ends green.
+      # A push that leaves theOS/ as it was deploys nothing, so an undo holds until theOS/ changes again (rv c2, 1).
+      - name: Is the deploy on, and did theOS/ change?
+        id: switch
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$(tr -d '[:space:]' < theOS/release/deploy.on 2> /dev/null)" != on ]; then
+            echo "The deploy is off (theOS/release/deploy.on): nothing deployed. Gate B switches it on." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          now=$(git rev-parse HEAD:theOS)
+          if [[ $BEFORE =~ ^[0-9a-f]{40}$ ]] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+            && git fetch -q --depth=1 origin "$BEFORE" && [ "$(git rev-parse "$BEFORE:theOS" 2> /dev/null)" = "$now" ]; then
+            echo "theOS/ is as it was before this push: nothing deployed." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
       - name: SSH to the server, its host keys pinned
+        if: steps.switch.outputs.go == 'true'
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: theOS/release/ssh.sh "$SITE"
       - name: The Aven Peer's answers before
+        if: steps.switch.outputs.go == 'true'
         run: theOS/release/health.sh before "https://$SITE" peer-before.txt
       - name: The tree, packed and deployed
+        if: steps.switch.outputs.go == 'true'
+        shell: bash
         run: |
           tree=$(git rev-parse HEAD:theOS)
           git archive --format=tar.gz -o theos.tar.gz HEAD:theOS
           mkdir -p deployed && tar -xzf theos.tar.gz -C deployed
           ssh prod 'mkdir -p theos-release'
-          scp -q theOS/release/deploy.sh theos.tar.gz prod:theos-release/
+          scp -q theOS/release/deploy.sh theOS/release/undo.sh theos.tar.gz prod:theos-release/
           ssh prod "bash theos-release/deploy.sh $tree theos-release/theos.tar.gz" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Health
+        if: steps.switch.outputs.go == 'true'
+        shell: bash
         run: |
           { echo "### aven.maia.city: theOS $(git rev-parse --short=12 HEAD:theOS) (commit ${GITHUB_SHA:0:12})"; echo
             theOS/release/health.sh after "https://$SITE" deployed peer-before.txt; } | tee -a "$GITHUB_STEP_SUMMARY"

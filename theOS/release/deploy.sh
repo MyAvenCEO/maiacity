@@ -2,7 +2,7 @@
 # theOS's deploy, on the server (aip-59ad, c3): one commit's theOS/ tree into its own folder beside every earlier build,
 # then one link switched. The folder is named by the tree's git hash (git rev-parse <commit>:theOS), so a push that
 # changes nothing under theOS/ finds its build there and current already on it, and changes nothing. It writes nothing
-# but <site>/releases/theos-<tree> and the links <site>/current and
+# but <site>/releases/theos-<first 12 hex of the tree> and the links <site>/current and
 # <site>/previous: no Caddyfile, nothing in /opt/aven, no container (d-56). v1's Caddy serves <site>/current as
 # aven.maia.city (its block in aven/ops/deploy/Caddyfile; /opt/maia-city/site is its /srv/site). Learned from avenDB's
 # caddy.sh, not called. Run by the deploy job over SSH:
@@ -25,7 +25,8 @@ fi
 
 now=$(readlink "$site/current" || true)
 if [ "$now" = "releases/$name" ]; then echo "theOS $name is current already: nothing changed"; exit 0; fi
-# previous is what the undo goes back to: the build that was current until now
-if [ -n "$now" ]; then ln -sfn "$now" "$site/previous.next"; mv -fT "$site/previous.next" "$site/previous"; fi
 ln -sfn "releases/$name" "$site/current.next"; mv -fT "$site/current.next" "$site/current"
+# previous is what the undo goes back to: the build that was current until now (switched second, so a run that stops
+# between the two keeps the old previous, never one equal to current)
+if [ -n "$now" ]; then ln -sfn "$now" "$site/previous.next"; mv -fT "$site/previous.next" "$site/previous"; fi
 echo "theOS $name is current (previous: ${now:-none})"

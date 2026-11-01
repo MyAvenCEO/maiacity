@@ -106,7 +106,8 @@
  "reviews": [
   "rv-1e9d",
   "rv-4567",
-  "rv-d660"
+  "rv-d660",
+  "rv-0c98"
  ],
  "tasks": [
   {
@@ -637,6 +638,39 @@
    "how": "by hand, aip-59ad's thread",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T14:11Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "main is theOS's source of truth (d-6628): origin/main merged into this branch (03758e86e); its pull request to main follows. avenSANDBOX's image workflow: a draft's run can no longer cancel a ready one (the draft state is in its concurrency group), asked by avenMAIA.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [
+    ".github/workflows/avensandbox-image.yml"
+   ],
+   "reads": [
+    "d-6628"
+   ]
+  },
+  {
+   "at": "2026-11-01T14:11Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 1 on 7eea72eff: rv-0c98 (2 Major, 5 Nit). Not clean. Every finding fixed: a push that leaves theOS/ as it was deploys nothing; the undo workflow and an undo to a build named; the deploy ships off until Gate B; pipefail; current switched before previous; health checks /generate_204 and a peer already down.",
+   "how": "a fresh subagent, the critic",
+   "writes": [
+    "rv-0c98"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T14:11Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "theOS/release/test.sh green after the fixes (25 checks): the undo by name after two deploys, a missing name refused, a peer already down is red, the switch and the skip of an unchanged tree read off the workflow, pipefail (a mutation turns it red), the undo workflow's trigger, environment and secrets.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [],
+   "reads": []
   }
  ],
  "problem": {
@@ -769,7 +803,8 @@
    "avenSANDBOX stays a required check on production (d-c219): theOS's workflow reports it, as the proof that the box of the commit released is built and works. The box itself is built and published by aip-6fb1's image workflow, on every push that changes theOS/sandbox/box, whatever production does.",
    "DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS stay repository secrets (d-ca32). Accepted: a workflow pushed on any branch by someone with write access could read them; the environment's branch rule guards theOS's deploy job, not those secrets.",
    "production's ruleset is final for aip-59ad (Samuel, 1 Nov 10:52Z): it requires 'Only from main', 'avenSANDBOX' and 'theOS', all three from GitHub Actions; theOS's workflow must report jobs with exactly these names.",
-   "production's checks guard against mistakes, not against someone with write access (rv-d660, round 2): a pull request can report a required check's name from a workflow it adds. Only people with write access can merge into production. A guard no pull request can fake (an organization ruleset 'Require workflows to pass') is Samuel's to choose; asked."
+   "production's checks guard against mistakes, not against someone with write access (rv-d660, round 2): a pull request can report a required check's name from a workflow it adds. Only people with write access can merge into production. A guard no pull request can fake (an organization ruleset 'Require workflows to pass') is Samuel's to choose; asked.",
+   "The deploy is off (theOS/release/deploy.on holds off) until Gate B, so theOS's workflow can reach production before the first real release: Gate B's commit sets it on, and that push is the first deploy."
   ],
   "risk": "Can be undone, as long as the release touches only the served folder: every build stays on the server beside avenOS 26.10.31v6, and the undo switches site/aven/current back (c3). The undo is tried before it counts. Anything that touches the Aven Peer's key, its bucket, the passkeys' RP ID or the browsers' storage can't be undone and stays out of this intent (d-9364)."
  },
@@ -836,17 +871,17 @@
   },
   {
    "id": "c3",
-   "promise": "On a push to production that changes theOS/ and whose 'avenSANDBOX' and 'theOS' jobs are green, the deploy unpacks that commit's theOS/ tree into its own folder under site/aven/releases/, named by the tree's git hash (theos-<tree>), beside every earlier build, then switches the link site/aven/current to it; it writes nothing else: no Caddyfile, nothing in /opt/aven, no container, no DNS or firewall. aven.maia.city then serves exactly that tree, while /ping, /healthz and /aven.json answer as before. A push that changes nothing under theOS/ deploys nothing. production's pushes queue: a newer push replaces a waiting one, and the newest commit, which holds every earlier change, is the one checked and deployed.",
+   "promise": "On a push to production that changes theOS/ and whose 'avenSANDBOX' and 'theOS' jobs are green, the deploy unpacks that commit's theOS/ tree into its own folder under site/aven/releases/, named by the first 12 hex of the tree's git hash (theos-<12 hex>), beside every earlier build, then switches the link site/aven/current to it; it writes nothing else but its own copy of the archive and the scripts in ~deploy/theos-release/: no Caddyfile, nothing in /opt/aven, no container, no DNS or firewall. aven.maia.city then serves exactly that tree, while /ping, /healthz and /aven.json answer as before. A push that leaves theOS/ as it was deploys nothing, so an undo holds until theOS/ changes. The deploy is off until Gate B: theOS/release/deploy.on holds off. production's pushes queue: a newer push replaces a waiting one, and the newest commit, which holds every earlier change, is the one checked and deployed.",
    "fails": "The deploy touches the Aven Peer or Caddy's config (d-9364), serves a half-unpacked tree, or serves the dashboard in place of a missing file (Caddy's fallback) and still reports green.",
-   "check": "The server script runs against a temporary folder laid out like the server: a listing before and after shows changes only under releases/ and the current link, and a failing unpack leaves current where it was. After each real deploy the health step fetches /, /docs/index.html, /avenCEO/index.html, /sources/index.html and /aip/index.json and compares each body byte for byte with the same file in the commit's tree; /ping, /healthz and /aven.json give the same status, and /aven.json the same body, as before the deploy.",
+   "check": "The server script runs against a temporary folder laid out like the server: a listing before and after shows changes only under releases/ and the links, the same tree changes nothing, a broken archive or one without index.html leaves current where it was. After each real deploy the health step fetches /, /docs/index.html, /avenCEO/index.html, /brain/index.html, /brain/ids.json and /aip/aip-59ad.json and compares each body byte for byte with the same file in the commit's tree (six files, not the whole tree); /ping, /healthz and /generate_204 must answer 200 or 204 and as before, /aven.json with the same body.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c4",
-   "promise": "A theOS deploy is undone by one command that switches site/aven/current back to the build it pointed at before (kept as site/aven/previous): theOS's earlier build or avenOS 26.10.31v6; then aven.maia.city serves that build again.",
+   "promise": "A theOS deploy is undone by one command: Actions, 'theOS undo', Run workflow, from production (.github/workflows/theos-undo.yml, in the environment production), which runs theOS/release/undo.sh on the server and switches site/aven/current back to the build before (site/aven/previous), or to the build named: 26.10.31v6 is avenOS, theos-<12 hex> a theOS build. Then aven.maia.city serves that build until a push to production changes theOS/.",
    "fails": "The undo is untested, the earlier build is gone, or the undo leaves a mix.",
-   "check": "Tried in the temporary folder for theOS to theOS and theOS back to avenOS; then once on the server at Gate B with Samuel: deploy, undo to avenOS, deploy again, the health step green each time.",
+   "check": "Tried in the temporary folder: theOS to theOS, undo again forward, back to avenOS after the first deploy and by name after two, a missing name refused; then once on the server at Gate B with Samuel: deploy, undo to avenOS, deploy again, the health step green each time.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -875,7 +910,7 @@
   },
   {
    "n": 2,
-   "adds": "The deploy: theOS/release/deploy.sh (on the server: unpack beside every earlier build into theos-<tree hash>, keep the old target as previous, switch the link; the same tree changes nothing) and theOS/release/undo.sh, both tested in a temporary folder; theOS/release/ssh.sh (its own SSH setup, no legacy action) and health.sh (bytes compared, the Aven Peer's paths as before), tested against a local server; the deploy job in theos.yml, read by test.sh (c5). Gate B: the first real release, the undo to avenOS and back.",
+   "adds": "The deploy: theOS/release/deploy.sh (on the server: unpack beside every earlier build into theos-<tree hash>, keep the old target as previous, switch the link; the same tree changes nothing) and theOS/release/undo.sh, both tested in a temporary folder; theOS/release/ssh.sh (its own SSH setup, no legacy action) and health.sh (bytes compared, the Aven Peer's paths as before), tested against a local server; the deploy job in theos.yml, read by test.sh (c5). Gate B: the first real release, the undo to avenOS and back. The deploy ships off (deploy.on) with the undo workflow (theos-undo.yml); Gate B switches it on.",
    "claims": [
     "c3",
     "c4",
