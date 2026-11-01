@@ -43,7 +43,7 @@
   document.getElementById('n-ceo').innerHTML = chip(`${aips?.items.length ?? 0} AIPs`) + chip(`${decisions?.items.length ?? 0} decisions`) + chip(`${authors?.items.length ?? 0} authors`) + chip(`${sessions?.items.length ?? 0} sessions`);
   const refs = await Promise.all((sources?.items || []).map((p) => get(`${p}.json`)));
   document.getElementById('n-src').innerHTML = chip(`${refs.length} sources`) + chip(`${refs.filter((r) => r?.subtype === 'protocol').length} protocols`);
-  const open = (await Promise.all((aips?.items || []).map((p) => get(`${p}.json`)))).flatMap((I) => (I?.questions || []).filter((q) => !q.answered).map((q) => [I, q]));
+  const open = (await Promise.all((aips?.items || []).map((p) => get(`${p}.json`)))).flatMap((I) => (I?.questions || []).filter((q) => !q.answered && !q.replaced_by).map((q) => [I, q]));
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   if (open.length) {
     const w = document.getElementById('waiting'); w.hidden = false;
