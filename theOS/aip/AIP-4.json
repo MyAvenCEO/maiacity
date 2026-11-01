@@ -212,6 +212,18 @@
    "reads": [
     "avenCEO/steps/1-understand"
    ]
+  },
+  {
+   "at": "2026-11-01T10:59Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "brain's MCP server stays in AIP-3, not AIP-4; AIP-4 stays closed.",
+   "how": "in chat in AIP-4's thread, answering the conflict between his close of AIP-4 and D-55; your word polished; the decision doc, which would supersede D-55, is avenMAIA's to write",
+   "writes": [],
+   "reads": [
+    "decisions/D-55",
+    "decisions/D-47"
+   ]
   }
  ],
  "reviews": [],
