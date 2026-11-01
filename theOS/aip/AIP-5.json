@@ -127,8 +127,7 @@
    "step": 3,
    "who": "authors/samuel-andert",
    "steps": [
-    "Checkpoint 1, after theOS's workflow first reports on a pull request to production: remove 'avenSANDBOX' from the required checks, and set the source of 'theOS' to GitHub Actions.",
-    "Checkpoint 2: move DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS from the repository's secrets into the environment production."
+    "Checkpoint 1, after theOS's workflow first reports on a pull request to production: set the source of 'theOS' to GitHub Actions in production's ruleset. 'Only from main' and 'avenSANDBOX' stay as they are."
    ]
   },
   {
@@ -447,6 +446,28 @@
    "how": "to avenMAIA, for Samuel",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T12:05Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Keep avenSANDBOX: we still want it built and checked. Keep DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS where they are.",
+   "how": "in chat to AIP-5's thread, polished; the decision is avenMAIA's to write",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:05Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 3: theOS's workflow reports 'avenSANDBOX' too (this commit's box published and working), so the ruleset keeps all three checks and only 'theOS' is pinned; the deploy secrets stay repository secrets, the risk written down; c5 is about the deploy job only.",
+   "how": "by hand, AIP-5's thread",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": []
   }
  ],
  "problem": {
@@ -577,7 +598,9 @@
    "The server is reached as deploy@aven.maia.city over SSH with DEPLOY_SSH_KEY, trusting only DEPLOY_KNOWN_HOSTS (pinned under an alias, as v1's prod-ssh did); no Hetzner API is needed, since DNS and the firewall stay as they are.",
    "AIP-5 builds after AIP-1's checkpoint 1 and AIP-2's checkpoint 4, and its first release follows the goal pull request that brings theOS/ to main.",
    "Terms: v1 is maiaCITY's earlier app, which runs on the Hetzner server maia-city with the Caddy container maia-city-caddy; that Caddy serves /opt/maia-city/site on the server as /srv/site, so site/aven/current means /opt/maia-city/site/aven/current. The goal pull request is the repository's one pull request per goal into main (the repository's CLAUDE.md).",
-   "Settings are Samuel's: he set the environment's branch rule and the 'theOS' check (D-63); the swap, the pin and moving the deploy secrets into the environment are his steps in t3."
+   "Settings are Samuel's: he set the environment's branch rule and the 'theOS' check (D-63); the swap, the pin and moving the deploy secrets into the environment are his steps in t3.",
+   "avenSANDBOX stays a required check on production (Samuel, 1 Nov): theOS's workflow reports it, as the proof that the box of the commit released is built and works. The box itself is built and published by AIP-2's image workflow, on every push that changes theOS/sandbox/box, whatever production does.",
+   "DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS stay repository secrets (Samuel, 1 Nov). Accepted: a workflow pushed on any branch by someone with write access could read them; the environment's branch rule guards theOS's deploy job, not those secrets."
   ],
   "risk": "Can be undone, as long as the release touches only the served folder: every build stays on the server beside avenOS 26.10.31v6, and the undo switches site/aven/current back (c3). The undo is tried before it counts. Anything that touches the Aven Peer's key, its bucket, the passkeys' RP ID or the browsers' storage can't be undone and stays out of this intent (D-56)."
  },
@@ -636,9 +659,9 @@
  "claims": [
   {
    "id": "c1",
-   "promise": "theOS's release workflow reports 'Only from main' and 'theOS' on every pull request to production, and 'theOS' again on every push to production: 'Only from main' fails when the head is not main of this repository; 'theOS' runs theOS's check command (AIP-1) inside avenSANDBOX's image through theOS/sandbox/run.sh, on the pull request's merge commit and again on the commit pushed, and fails when the check fails.",
-   "fails": "A pull request from another branch merges; a red check passes; a check name differs from the ruleset's, so production stays blocked; the commit deployed is not the commit checked.",
-   "check": "Job names compared letter for letter with the ruleset's. A pull request from another branch shows 'Only from main' red; a commit with a planted failing page shows 'theOS' red, then green without it. Checkpoint 1 ends with Samuel's swap and a real merge from main into production, both checks green.",
+   "promise": "theOS's release workflow reports three checks on every pull request to production, the three production's ruleset requires, and 'avenSANDBOX' and 'theOS' again on every push to production: 'Only from main' fails when the head is not main of this repository; 'avenSANDBOX' fails unless the box this commit describes (theOS/sandbox/box, tag theos-<hash>, built by AIP-2's image workflow) is published for amd64 and arm64 and its tools answer inside it; 'theOS' runs theOS's check command (AIP-1) inside that box through theOS/sandbox/run.sh and fails when the check fails.",
+   "fails": "A pull request from another branch merges; a red check passes; a check name differs from the ruleset's, so production stays blocked; production gets a commit whose box was never built; the commit deployed is not the commit checked.",
+   "check": "Job names compared letter for letter with the ruleset's. A pull request from another branch shows 'Only from main' red; a commit whose box tag is not published shows 'avenSANDBOX' red; a commit with a planted failing page shows 'theOS' red, then green without it. Checkpoint 1 ends with Samuel pinning 'theOS' to GitHub Actions and a real merge from main into production, all three green.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -660,9 +683,9 @@
   },
   {
    "id": "c5",
-   "promise": "Only a job of a push to production reaches the server: the deploy runs in the environment production (branch production only, D-63), needs that push's green 'theOS' job, and uses only DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS, which live in that environment, not in the repository; the key is written to a file with mode 600 and never printed.",
-   "fails": "A job from another branch can reach the server, a red commit deploys, or the job reads a secret it does not need (MAIA_CITY_GUARDIAN_SECRET, D-61; the Hetzner keys).",
-   "check": "At Gate A and again at checkpoint 3's review: the workflow's trigger, needs and environment read, and a grep of every secrets.* it names compared with the two expected; after Samuel's move, the repository's secrets list no longer holds the two (his screenshot).",
+   "promise": "The deploy job runs only for a push to production: it runs in the environment production (branch production only, D-63), needs that push's green 'avenSANDBOX' and 'theOS' jobs, and uses only the repository secrets DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS, which stay where they are (Samuel, 1 Nov); the key is written to a file with mode 600 and never printed.",
+   "fails": "theOS's deploy runs from another branch or for a red commit, or reads a secret it does not need (MAIA_CITY_GUARDIAN_SECRET, D-61; the Hetzner keys).",
+   "check": "At Gate A and again at checkpoint 2's review: the workflow's trigger, needs and environment read, and a grep of every secrets.* it names compared with the two expected.",
    "kind": "review",
    "result": "open"
   }
@@ -676,14 +699,14 @@
  "checkpoints": [
   {
    "n": 1,
-   "adds": "theOS's release workflow (.github/workflows/theos.yml) with the jobs 'Only from main' and 'theOS' (theOS's check through run.sh). After AIP-1's checkpoint 1 (the check command), AIP-2's checkpoint 4 (the check in the image) and the goal pull request that brings theOS/ to main. Ends with Samuel's swap ('avenSANDBOX' out of the ruleset, 'theOS' pinned to GitHub Actions) and a real merge from main into production: production can merge again.",
+   "adds": "theOS's release workflow (.github/workflows/theos.yml) with the jobs 'Only from main', 'avenSANDBOX' (this commit's box published and working) and 'theOS' (theOS's check through run.sh). After AIP-1's checkpoint 1 (the check command), AIP-2's checkpoint 4 (the check in the image) and the goal pull request that brings theOS/ to main. Ends with Samuel pinning 'theOS' to GitHub Actions and a real merge from main into production: production can merge again.",
    "claims": [
     "c1"
    ]
   },
   {
    "n": 2,
-   "adds": "The deploy: theOS/release/deploy.sh (on the server: unpack beside every earlier build, keep the old target as previous, switch the link) and theOS/release/undo.sh, both tested in a temporary folder; the deploy job with its own SSH setup (no legacy action) and the health step; Samuel moves DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS into the environment production. Gate B: the first real release, the undo to avenOS and back.",
+   "adds": "The deploy: theOS/release/deploy.sh (on the server: unpack beside every earlier build, keep the old target as previous, switch the link) and theOS/release/undo.sh, both tested in a temporary folder; the deploy job with its own SSH setup (no legacy action) and the health step; Gate B: the first real release, the undo to avenOS and back.",
    "claims": [
     "c3",
     "c4",
@@ -714,7 +737,7 @@
   }
  ],
  "mockup": [
-  "The pull request to production: two checks, 'Only from main' and 'theOS', green",
+  "The pull request to production: three checks, 'Only from main', 'avenSANDBOX' and 'theOS', green",
   "The deploy run's summary: the commit, the link switched, each health row green with the bytes matched",
   "aven.maia.city on a phone and a Mac: theOS's dashboard"
  ]
