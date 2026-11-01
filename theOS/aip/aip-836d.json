@@ -1587,7 +1587,7 @@
    "at": "2026-11-01T12:23Z",
    "by": "a-6ffb",
    "what": "migrated",
-   "text": "The one migration (c12, D-49, D-53, D-65, D-69, D-76), on avenMAIA's go after AIP-1's checkpoint 1: 332 docs renamed to flat hash ids, 421 old names and paths in brain/renames.json; the docs brain keeps moved into brain/ (sources, decisions, sessions, terms, lessons, metrics, authors); the Sources app is brain's app; every reference rewritten as an id, review prompts verbatim, OLD-AIP-n kept. The audit: no old name, no dangling id. brain prime answers the same (75 decisions, 39 terms, 5 tasks for Samuel); brain's tests 11 of 11; AIP-1's check green (1271 states, 0 failed); 18 app pages show every doc as id and title, no bare id, no console error.",
+   "text": "The one migration (c12, d-3a9c, d-f83e, d-eaaf, d-eb50, d-4e7c), on avenMAIA's go after aip-31df's checkpoint 1: 332 docs renamed to flat hash ids, 421 old names and paths in brain/renames.json; the docs brain keeps moved into brain/ (sources, decisions, sessions, terms, lessons, metrics, authors); the Sources app is brain's app; every reference rewritten as an id, review prompts verbatim, OLD-AIP-n kept. The audit: no old name, no dangling id. brain prime answers the same (75 decisions, 39 terms, 5 tasks for Samuel); brain's tests 11 of 11; aip-31df's check green (1271 states, 0 failed); 18 app pages show every doc as id and title, no bare id, no console error.",
    "how": "node brain/migrate.mjs . from theOS/, one commit; the commit's SHA goes into brain/renames.json in the next",
    "writes": [],
    "reads": [],
@@ -1597,11 +1597,65 @@
    "at": "2026-11-01T12:26Z",
    "by": "a-6ffb",
    "what": "parked",
-   "text": "Parked at a clean cut (D-78), after the migration merged (ce208cd49). Next session, first: t28; t29; t30 (the follow-ups avenMAIA found). Then the rest of checkpoint 2: schemas in the type docs, about where a doc can be superseded, brain add, edit, append, index (with the skill written from the verb list) and install, brain check failing a doc changed without an event (the only door from here), copied lists deleted. Then checkpoint 3 (the reflection, the link graph, renamed words, lists that only grow, link versions) and checkpoint 4 (brain's MCP server).",
-   "how": "by the AIP-3 thread, at avenMAIA's ask",
+   "text": "Parked at a clean cut (d-8912), after the migration merged (ce208cd49). Next session, first: t28; t29; t30 (the follow-ups avenMAIA found). Then the rest of checkpoint 2: schemas in the type docs, about where a doc can be superseded, brain add, edit, append, index (with the skill written from the verb list) and install, brain check failing a doc changed without an event (the only door from here), copied lists deleted. Then checkpoint 3 (the reflection, the link graph, renamed words, lists that only grow, link versions) and checkpoint 4 (brain's MCP server).",
+   "how": "by the aip-836d thread, at avenMAIA's ask",
    "writes": [],
    "reads": [],
    "task": "t7"
+  },
+  {
+   "at": "2026-11-01T14:10Z",
+   "by": "a-6ffb",
+   "what": "resumed",
+   "text": "Resumed: brain is built now, beside the release, coming back to main through its own pull requests (d-b916).",
+   "how": "by the AIP-3 thread, at avenMAIA's ask",
+   "writes": [],
+   "reads": [
+    "d-b916"
+   ],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T14:10Z",
+   "by": "a-6ffb",
+   "what": "erratum",
+   "text": "The migration had also taken AIP-1's check report (avenCEO/checks/out/report.json, generated and git-ignored) for a doc: its id is removed from brain/ids.json and renames.json, the one text it rewrote in aip-31df is restored, and the migration now skips out/ and node_modules/. Old names written after the rename (in this record's events and tasks, and one in aip-31df) are rewritten as ids; AIP-14, AIP-22, AIP-90 to 92 are legacy OLD-AIP numbers with no doc and stay, as do review prompts.",
+   "how": "by the AIP-3 thread",
+   "writes": [
+    "aip-31df"
+   ],
+   "reads": [],
+   "task": "t28"
+  },
+  {
+   "at": "2026-11-01T14:10Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "No old name left in visible text, beyond legacy numbers and review prompts.",
+   "how": "a scan of every doc",
+   "writes": [],
+   "reads": [],
+   "task": "t28"
+  },
+  {
+   "at": "2026-11-01T14:10Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "brain's app is titled brain.",
+   "how": "brain/index.html, brain/app.js",
+   "writes": [],
+   "reads": [],
+   "task": "t29"
+  },
+  {
+   "at": "2026-11-01T14:10Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "An id inside a title shows by itself, so prime's titles stay short; in prose an id still reads as id and title.",
+   "how": "ui/wiki.js W.named",
+   "writes": [],
+   "reads": [],
+   "task": "t30"
   }
  ],
  "reviews": [
@@ -1779,14 +1833,14 @@
   },
   {
    "id": "t28",
-   "what": "Follow-up: this page still shows D-49, D-53, D-65, D-69 and D-76 in visible text (the migration event's own text, written after the rename); rename them to ids, or record why they stay",
+   "what": "Follow-up: this page still shows d-3a9c, d-f83e, d-eaaf, d-eb50 and d-4e7c in visible text (the migration event's own text, written after the rename); rename them to ids, or record why they stay",
    "step": 3,
    "for": "checkpoint 2",
    "who": "a-6ffb"
   },
   {
    "id": "t29",
-   "what": "Follow-up: brain/'s app is still titled Sources; title it brain (D-65)",
+   "what": "Follow-up: brain/'s app is still titled Sources; title it brain (d-eaaf)",
    "step": 3,
    "for": "checkpoint 2",
    "who": "a-6ffb"
