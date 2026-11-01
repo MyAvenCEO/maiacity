@@ -259,7 +259,14 @@ function allAt(git, sha, prefix, cwd) {
 // "since" on; then the tree as it is (c8: ids.json, the index docs and the copied lists equal what brain index writes).
 // A merge commit is checked where its result differs from every parent: there it must be what the merge driver gives.
 export function check(root, { range } = {}) {
-  const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' }).trim();
+  let top;
+  try { top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { top = null; }
+  if (!top) {
+    // no git repository here (theOS copied into the box): the commits cannot be read; the tree still is
+    const fails = [{ commit: '-', fails: ['no git repository here, so the commits are not checked (the pre-push hook checks them)'] }];
+    try { const { changed } = index(root, { dry: true }); if (changed.length) fails.push({ commit: 'tree', fails: changed.map((c) => `${c}: differs from what brain index writes (run: node brain/brain.mjs index)`) }); } catch (e) { fails.push({ commit: 'tree', fails: [e.message] }); }
+    return { range: null, commits: 0, fails, warnings: [] };
+  }
   // every git call runs from the repository's top, so a path filter and a path mean the same there (theOS is a subfolder)
   const git = (...a) => execFileSync('git', a, { cwd: top, encoding: 'utf8', maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   const prefix = relative(top, root) || '.';

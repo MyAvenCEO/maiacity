@@ -227,3 +227,12 @@ test('check warns when a doc that holds cites one that no longer holds (c10)', (
   // D-4 relates D-1 in the fixtures; D-1 is superseded by D-2
   assert.ok(check(root, { range: 'HEAD..HEAD' }).warnings.includes(`${names['D-4']} cites ${names['D-1']}, which no longer holds`));
 });
+
+test('check outside any git repository (theOS copied into the box): the commits are a note, the tree is still checked', () => {
+  const { root } = world();
+  const r = check(root);
+  assert.equal(r.commits, 0);
+  assert.ok(r.fails.every((f) => f.commit === '-'), JSON.stringify(r.fails));
+  const ids = J(root, 'brain/ids'); const ix = ids.ids[ids.index.decisions]; const x = J(root, ix); x.items = []; put(root, ix, x);
+  assert.ok(check(root).fails.some((f) => f.commit === 'tree'));
+});
