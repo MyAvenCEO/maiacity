@@ -702,6 +702,26 @@
     "theOS/release/test.sh"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T14:21Z",
+   "by": "a-4c7a",
+   "what": "gate-B",
+   "text": "Gate B: go for the first real release (d-820e).",
+   "how": "in chat to avenMAIA, relayed; your words kept in the decision",
+   "writes": [
+    "d-820e"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T14:21Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "#1783 (checkpoint 2, the deploy off) merged into main at 485545d12; #1784 (main into production, still off) running its checks; the switch to on is avenMAIA's pull request from claude/avendb-architect (b29d1adaf).",
+   "how": "by hand, aip-59ad's thread, relayed by avenMAIA",
+   "writes": [],
+   "reads": []
   }
  ],
  "problem": {
