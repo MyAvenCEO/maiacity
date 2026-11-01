@@ -1,11 +1,13 @@
 # theOS's release (theOS/aip/aip-59ad.json, c1): the three checks production's ruleset requires, each from GitHub
-# Actions and named exactly as the ruleset names them (d-70: 'Only from main', 'avenSANDBOX', 'theOS'). On a pull request
+# Actions and named exactly as the ruleset names them (d-c219: 'Only from main', 'avenSANDBOX', 'theOS'). On a pull request
 # to production all three report; on a push to production 'avenSANDBOX' and 'theOS' run again on the commit that landed,
-# so what is released is what was checked (d-58: green is theOS's check inside the box on the commit released).
+# so what is released is what was checked (d-4ca4: green is theOS's check inside the box on the commit released).
 # The jobs never need one another: a job skipped because another failed would count as passed for a required check.
 # No paths filter: a required check must report on every pull request. A draft runs nothing (the repository's rule);
 # a draft can't merge, and marking it ready runs all three. Nothing here deploys yet (checkpoint 2).
 # Actions are pinned by commit.
+# production's pushes queue in one group: a newer push replaces a waiting one, so the newest commit, which holds every
+# change before it, is the one checked (and, from checkpoint 2, deployed).
 name: theOS
 
 on:
@@ -68,3 +70,4 @@ jobs:
           name: theos-check-${{ github.sha }}
           path: theOS/avenCEO/checks/out/
           if-no-files-found: warn
+          overwrite: true

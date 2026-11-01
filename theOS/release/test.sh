@@ -3,7 +3,7 @@
 #  1. 'Only from main': passes for main of this repository (in any case of its name), fails for another branch, a fork's
 #     main, or no head at all.
 #  2. The workflow (.github/workflows/theos.yml): its three required jobs are named exactly as production's ruleset names
-#     them (d-70), none needs another (a skipped job counts as passed), the pull request trigger is production with no
+#     them (d-70), none needs another and none skips but on a draft (a skipped job counts as passed), the pull request trigger is production with no
 #     paths filter, push runs on production, no job reads a secret, and every action is pinned by commit.
 #  3. 'avenSANDBOX' refuses a box that is not published, and passes this commit's box (only with --box: it pulls the box).
 #   theOS/release/test.sh [--box]
@@ -31,8 +31,10 @@ errors = []
 names = {k: j.get('name') for k, j in w['jobs'].items()}
 want = {'Only from main', 'avenSANDBOX', 'theOS'}
 if set(names.values()) != want: errors.append(f'job names {sorted(names.values())} are not {sorted(want)}')
+allowed = {"github.event_name == 'pull_request' && !github.event.pull_request.draft", "github.event_name == 'push' || !github.event.pull_request.draft"}
 for k, j in w['jobs'].items():
     if j.get('needs'): errors.append(f'{k} needs {j["needs"]}')
+    if j.get('name') in want and j.get('if') not in allowed: errors.append(f'{k} runs only if {j.get("if")!r}: a required job may skip only a draft')
 pr = on.get('pull_request') or {}
 if pr.get('branches') != ['production']: errors.append(f'pull_request branches {pr.get("branches")}')
 if 'paths' in pr or 'paths-ignore' in pr: errors.append('pull_request has a paths filter')
