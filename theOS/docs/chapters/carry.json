@@ -97,7 +97,8 @@
     "never": [
      "content",
      "data keys and role keys",
-     "what any path holds"
+     "what any path holds",
+     "which file a Value is"
     ]
    },
    "deep": "This is the metadata a carrier learns, stated plainly, as Keyhive does for its relays: who may carry and read this data, by pseudonymous IDs, how big it is and when it changes. Content and keys stay sealed (D65)."

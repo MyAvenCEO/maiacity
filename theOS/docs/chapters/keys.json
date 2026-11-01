@@ -11,10 +11,69 @@
    "text": "Each agent has its own {lock}: a public key anyone can seal something to, which only that agent can open. A key sealed to a lock is an {envelope}. A {role key} is a lock shared by the agents that read for the identities in a role. A {data key} encrypts the data itself. No key is shared by all your agents: each gets only the envelopes its own policy covers.",
    "list": [
     "Agent lock: each agent's own, published in its own history.",
-    "Role key: a lock for the agents that read for a role's members.",
+    "Role key: a lock for the agents that read for the identities in a role.",
     "Data key: the key the data itself is encrypted with."
    ],
-   "deep": "Ed25519 for signing (signers). X25519, later hybrid X-Wing with ML-KEM, for locks. Data keys are 256-bit symmetric keys used with an AEAD (XChaCha20-Poly1305). Wrapping follows HPKE (RFC 9180). There is no identity-wide decryption key (D57), so a watch or a backup opens only what its own policy covers."
+   "deep": "Ed25519 for signing (signers and guardian keys). X25519, later hybrid X-Wing with ML-KEM, for locks. Data keys are 256-bit symmetric keys used with an AEAD (XChaCha20-Poly1305). Wrapping follows HPKE (RFC 9180). A guardian key only signs: it is never a lock. There is no identity-wide decryption key (D57, D91).",
+   "spec": {
+    "summary": "Every key in theOS, what it does, and what it never does.",
+    "records": [
+     {
+      "name": "key kinds",
+      "fields": [
+       [
+        "guardian key",
+        "ed25519",
+        "signs guardian acts; derived from the passkey, never stored, never a lock (D91)"
+       ],
+       [
+        "agent signer",
+        "ed25519",
+        "signs the agent's records; one per agent, rotated by pre-rotation"
+       ],
+       [
+        "agent lock",
+        "x25519 (later X-Wing)",
+        "the agent's own; envelopes are sealed to it (D57)"
+       ],
+       [
+        "role key",
+        "x25519",
+        "a lock shared by the reading agents of a role's identities"
+       ],
+       [
+        "data key",
+        "256-bit symmetric",
+        "encrypts a piece of data; turns when readers leave"
+       ],
+       [
+        "Value key",
+        "256-bit symmetric",
+        "encrypts one Value's segments; never turns (D72)"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "keys.guardian_signs_only",
+      "text": "A guardian key signs guardian acts and nothing is ever sealed to it."
+     },
+     {
+      "id": "keys.no_identity_lock",
+      "text": "No key is shared by all of an identity's agents; envelopes go to agent locks and role keys only (D57)."
+     },
+     {
+      "id": "keys.aead",
+      "text": "All symmetric encryption is XChaCha20-Poly1305 (24-byte nonces), so no nonce state has to be shared between devices."
+     }
+    ],
+    "decisions": [
+     "D57",
+     "D72",
+     "D91"
+    ]
+   }
   },
   {
    "title": "Reading is a chain of envelopes.",
@@ -153,7 +212,7 @@
      }
     ]
    },
-   "deep": "An envelope is addressed either to a lock (an agent's lock or a role key) or to another data key (a Value bound to its Doc). Same record, two kinds of address."
+   "deep": "An envelope is addressed either to a lock (an agent's lock or a role key) or to another data key (a Value bound to its Doc). Same record, two kinds of address. The Value key seals each 16 KiB segment with a nonce derived from its index (D72)."
   },
   {
    "title": "Which key turns when.",

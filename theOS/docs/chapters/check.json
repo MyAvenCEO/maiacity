@@ -30,11 +30,12 @@
    "text": "Every change has to pass two checks. Does it really come from Mia? Her own policies decide. May Mia do this to this data? The data's policies decide. Only both together let a change in.",
    "flow": [
     "signatures",
-    "own policies: who speaks?",
-    "the data's policies: may it?",
+    "the guardian behind them",
+    "who speaks?",
+    "may it?",
     "accepted"
    ],
-   "deep": "Agency and access stay apart. The chain signer → agent → owner (human or coop) only answers who is acting; policies on data only answer what that identity may do. Both use the same small policy language and are checked offline by every peer."
+   "deep": "Agency and access stay apart. The chain signer → agent → owner → … → that identity's guardian only answers who is acting; policies on data only answer what that identity may do. Both are checked offline by every peer."
   },
   {
    "title": "Under the hood, a policy is a capability.",
@@ -65,12 +66,59 @@
    "title": "Every device checks the same four things.",
    "text": "Before a change goes in, or before a single byte goes out, a device checks the policy behind it.",
    "list": [
-    "Every signature in the proof is valid, back to the birth record.",
+    "Every signature in the proof is valid, back to the birth record and the guardian behind each signer.",
     "The policy hasn't ended, and the change was made before its expiry (Endings chapter).",
     "The operation is listed in the policy.",
     "Every condition holds."
    ],
-   "deep": "Verification order: signatures along the chain, no ending in the causal past, operation covered, conditions hold. All deterministic, so every peer reaches the same verdict."
+   "deep": "Verification order: signatures along the chain, no ending in the causal past, operation covered, conditions hold. All deterministic, so every peer reaches the same verdict.",
+   "spec": {
+    "summary": "The verification every peer runs on every record, in order. Deterministic: the same records give the same verdict everywhere.",
+    "rules": [
+     {
+      "id": "verify.1_signature",
+      "text": "r.sig verifies under r.sig.key, and that key is the signer of r.sig.by at the revision r names (agent.rotation)."
+     },
+     {
+      "id": "verify.2_record_key",
+      "text": "r is the next record of its signer: its after includes the signer's previous record, and (agent, epoch, seq) is unique (D61, D69)."
+     },
+     {
+      "id": "verify.3_agent",
+      "text": "The signing agent's policy on its owner is live and covers the act: act for data operations, own for policies and ownership acts (D58)."
+     },
+     {
+      "id": "verify.4_guardian",
+      "text": "That policy, and every policy in the chain, traces back to the owner's guardian (guardian.root, D91)."
+     },
+     {
+      "id": "verify.5_identity_chain",
+      "text": "If r acts for an identity X other than the agent's owner, a chain of live identity policies leads from the owner to X, one role per hop (policy.chain)."
+     },
+     {
+      "id": "verify.6_data_policy",
+      "text": "A live policy on r's data, given to a role that holds X, covers r's operation, path and conditions (D56)."
+     },
+     {
+      "id": "verify.7_not_ended",
+      "text": "No ending of a policy in the chain is in r's causal past, and r's signed time is before every used policy's expiry (D60)."
+     },
+     {
+      "id": "verify.8_schema",
+      "text": "r fits the exact schema version it names; its type is a root schema ref (D66, D90)."
+     }
+    ],
+    "decisions": [
+     "D56",
+     "D58",
+     "D60",
+     "D61",
+     "D66",
+     "D69",
+     "D90",
+     "D91"
+    ]
+   }
   },
   {
    "title": "Every change is checked on arrival.",

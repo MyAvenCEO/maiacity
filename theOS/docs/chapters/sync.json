@@ -125,7 +125,7 @@
      "value": "…"
     }
    },
-   "deep": "BLAKE3 verified streaming: every received range is checked against the root hash before use. Ranges can come from several peers at once. The proof runs through the movie's metadata Doc, since a Value has no policies of its own."
+   "deep": "BLAKE3 verified streaming over the sealed bytes: every received range is checked against the Value's name before use, by readers and carriers alike. Ranges can come from several peers at once. The proof runs through the movie's metadata Doc, since a Value has no policies of its own (D72)."
   },
   {
    "title": "News travels by gossip.",

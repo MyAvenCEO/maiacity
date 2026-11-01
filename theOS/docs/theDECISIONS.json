@@ -426,7 +426,7 @@
    "id": "D21",
    "title": "Data is a Doc or a Value",
    "status": "decided",
-   "decision": "A Doc is JSON that changes, made of CRDT data types (Loro underneath). A Value is bytes that never change, named by their BLAKE3 hash, streamed in checked ranges. Every Value has a small metadata Doc; the Value's keyring holds one envelope, addressed to that Doc's data key, so read on the Doc means read on the Value.",
+   "decision": "A Doc is JSON that changes, made of CRDT data types (Loro underneath). A Value is bytes that never change, named by the BLAKE3 hash of their sealed bytes (D72), streamed in checked ranges. Every Value has a small metadata Doc; the Value's keyring holds one envelope, addressed to that Doc's data key, so read on the Doc means read on the Value.",
    "why": "Mergeable structure where it helps, plain files where it does not.",
    "sources": [
     {
@@ -1482,10 +1482,10 @@
   },
   {
    "id": "D72",
-   "title": "Values named by the hash of their ciphertext",
-   "status": "proposed",
+   "title": "Values named by the hash of their sealed bytes",
+   "status": "decided",
    "date": "2026-10-31",
-   "decision": "Sealed Values are stored and named by the BLAKE3 hash of their ciphertext; the plaintext hash appears only inside the sealed metadata Doc. Encryption runs in segments aligned to iroh-blobs' 16 KiB groups, so ranges stay decryptable.",
+   "decision": "A Value is sealed before it is named: its plaintext is cut into 16 KiB segments, aligned to iroh-blobs' chunk groups, and each segment is sealed with the Value's own fresh key (XChaCha20-Poly1305) and a nonce derived from its index. The Value's ID is the BLAKE3 root over the sealed bytes, so carriers and readers verify every range against it. The plaintext's hash appears only inside the sealed metadata Doc, never in a name, a want or a news record. There is no convergent encryption: equal files sealed twice get different names.",
    "why": "Carriers can't check a plaintext hash, and the name lets anyone confirm that you hold a file they know.",
    "sources": [
     {
@@ -1499,7 +1499,10 @@
    ],
    "slides": [
     "data-6",
-    "sync-6"
+    "data-7",
+    "keys-10",
+    "sync-6",
+    "carry-5"
    ]
   },
   {
@@ -1944,7 +1947,13 @@
     "identity-5",
     "identity-6",
     "identity-8",
-    "identity-11"
+    "identity-11",
+    "data-3",
+    "policies-8",
+    "check-2",
+    "check-4",
+    "end-4",
+    "keys-2"
    ]
   }
  ]

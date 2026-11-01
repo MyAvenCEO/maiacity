@@ -49,7 +49,61 @@
      "value": "…"
     }
    },
-   "deep": "A revoke is a signed certificate in the policy set (a grow-only set). It cannot be undone; access returns only through a new policy."
+   "deep": "A revoke is a signed certificate in the policy set (a grow-only set). It cannot be undone; access returns only through a new policy.",
+   "spec": {
+    "summary": "An ending is a permanent, owner-signed event; it never grants anything.",
+    "records": [
+     {
+      "name": "ending record",
+      "fields": [
+       [
+        "kind",
+        "revoke or lapse",
+        "revoke at any time; lapse once the date has passed"
+       ],
+       [
+        "ends",
+        "policy ID",
+        "the policy it ends; renewals of it end too (D60)"
+       ],
+       [
+        "after",
+        "heads",
+        "what the owner had seen; the ended holder's changes outside it are dropped"
+       ],
+       [
+        "sig",
+        "signature",
+        "by an agent acting for the owner with own"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "ending.issuer",
+      "text": "An ending is valid only if signed along a chain of own on the owner of the ended policy's target, back to its guardian (D91)."
+     },
+     {
+      "id": "ending.permanent",
+      "text": "An ending can't be undone; access returns only through a new policy."
+     },
+     {
+      "id": "ending.scope",
+      "text": "It drops only the ended holder's own changes that it didn't list as seen (D60, D62)."
+     },
+     {
+      "id": "ending.no_grant",
+      "text": "An ending never grants anything; it can only remove."
+     }
+    ],
+    "decisions": [
+     "D59",
+     "D60",
+     "D62",
+     "D91"
+    ]
+   }
   },
   {
    "title": "When time runs out, the owner says so.",

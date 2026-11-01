@@ -114,7 +114,35 @@
   {
    "title": "Its first policy makes you the owner.",
    "text": "The birth record names a single owner: you. The owner may do everything, for good, including writing the policies for everyone else. There is always exactly one owner: one identity, a person or a coop, never a list of people.",
-   "deep": "The owner is an identity ID inside the birth record. Its authority never expires and never moves: there is no hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
+   "deep": "The owner is an identity ID inside the birth record. Every ownership act traces back to that identity's guardian (D91). Its authority never expires and never moves: there is no hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)",
+   "spec": {
+    "summary": "Exactly one owner per piece of data, an identity; everything the owner does traces back to its guardian.",
+    "rules": [
+     {
+      "id": "owner.identity",
+      "text": "The owner is the one identity named in the data's birth record policy; never a role, never a set, never an agent."
+     },
+     {
+      "id": "owner.acts",
+      "text": "Ownership acts: writing and ending policies, retain, erase, opening the archive, migrating the schema, starting a successor (D30, D67, D71)."
+     },
+     {
+      "id": "owner.through_guardian",
+      "text": "An ownership act is valid only if signed along a chain of own that traces back to the owner's guardian (D91)."
+     },
+     {
+      "id": "owner.never_moves",
+      "text": "The owner never changes; a successor keeps the same owner (D54, D71)."
+     }
+    ],
+    "decisions": [
+     "D5",
+     "D30",
+     "D54",
+     "D71",
+     "D91"
+    ]
+   }
   },
   {
    "title": "Data comes in two kinds.",
@@ -147,14 +175,67 @@
   },
   {
    "title": "A Value never changes.",
-   "text": "Its name is the hash of its bytes, so it can't be swapped without everyone noticing. It travels in ranges, and you fetch only the parts you need: the first minute of a movie, page 3 of a PDF.",
+   "text": "Its name is the hash of its sealed bytes, so it can't be swapped without everyone noticing, and carriers can check every byte without reading any. It travels in ranges, and you fetch only the parts you need: the first minute of a movie, page 3 of a PDF.",
    "code": {
     "type": "data:b3:Rf3…@b3:2b6…#value",
     "id": "value:b3:9f2c…#movie",
     "size": 1503238554,
-    "tree": "BLAKE3, 1 KiB blocks"
+    "sealed": "XChaCha20-Poly1305, 16 KiB segments",
+    "tree": "BLAKE3 over the sealed bytes"
    },
-   "deep": "BLAKE3 builds a hash tree over 1 KiB blocks, so any range can be verified against the root hash alone. Change one byte and the name changes."
+   "deep": "The name hashes the sealed bytes, never the plaintext, so nobody can confirm that you hold a file they know; the plaintext's hash sits only inside the sealed metadata Doc. Each 16 KiB segment is sealed on its own, aligned to iroh-blobs' chunk groups, so any range can be fetched, verified and decrypted alone (D72).",
+   "spec": {
+    "summary": "A Value is immutable sealed bytes, named by the BLAKE3 hash of exactly what carriers store.",
+    "records": [
+     {
+      "name": "value record",
+      "fields": [
+       [
+        "id",
+        "value ID",
+        "value:b3: and the BLAKE3 root over the sealed bytes"
+       ],
+       [
+        "size",
+        "integer",
+        "plaintext length in bytes"
+       ],
+       [
+        "sealed",
+        "cipher, segment size",
+        "XChaCha20-Poly1305, 16 KiB segments"
+       ],
+       [
+        "key",
+        "in its keyring",
+        "sealed to the metadata Doc's data key (D21)"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "value.name",
+      "text": "A Value's ID is the BLAKE3 root hash of its sealed bytes; carriers and readers verify every range against it."
+     },
+     {
+      "id": "value.segments",
+      "text": "Plaintext is cut into 16 KiB segments; segment i is sealed with the Value's own key and a nonce derived from i, so each segment decrypts alone."
+     },
+     {
+      "id": "value.plain_hash_sealed",
+      "text": "The plaintext hash appears only inside the sealed metadata Doc, never in a name, a want or a news record."
+     },
+     {
+      "id": "value.fresh_key",
+      "text": "Every Value gets a fresh random key; there is no convergent encryption, so equal files sealed twice get different names."
+     }
+    ],
+    "decisions": [
+     "D21",
+     "D72"
+    ]
+   }
   },
   {
    "title": "Every Value has its own Doc.",
@@ -163,6 +244,7 @@
     "type": "data:b3:Rcb…@b3:030…#meta",
     "id": "data:b3:Mm3…#movie-meta",
     "value": "value:b3:9f2c…#movie",
+    "plain": "b3:7d1…",
     "schema": "data:b3:Mt7…@b3:4c2…#media-meta",
     "name": "Our summer",
     "notes": "For grandma"

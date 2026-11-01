@@ -128,14 +128,39 @@
   },
   {
    "title": "Owning means writing the policies.",
-   "text": "Owning is not an operation you give to someone. It is the one policy in the data's birth record, and it does what no other policy can: write policies and end them, keep data longer, erase it, open its archive. The owner's agents do this for it, through the owner's own policies (Identity chapter).",
+   "text": "Owning is not an operation you give to someone. It is the one policy in the data's birth record, and it does what no other policy can: write policies and end them, keep data longer, erase it, open its archive. The owner's agents do this for it, through policies that trace back to the owner's guardian (Identity chapter).",
    "flow": [
     "birth record",
     "owner",
-    "owner's agent",
+    "owner's guardian",
+    "agents with own",
     "policies for roles"
    ],
-   "deep": "Ownership acts belong to the owner alone (D30, D54): writing and ending policies, retain, erase and opening the archive. An agent performs them only if its identity policy gives it own over its owner (D46). Nobody else writes policies, and ownership is never handed over: whoever needs to work on the data gets a policy."
+   "deep": "Ownership acts belong to the owner alone (D30, D54): writing and ending policies, retain, erase and opening the archive. An agent performs them only through a chain of own that traces back to the owner's guardian (D91). Nobody else writes policies, and ownership is never handed over: whoever needs to work on the data gets a policy.",
+   "spec": {
+    "summary": "Who may write a data policy: only the owner, through a chain of own back to its guardian.",
+    "rules": [
+     {
+      "id": "policy.data.issuer",
+      "text": "A policy on data is valid only if signed along a chain of own on the data's owner, back to the owner's guardian (D91)."
+     },
+     {
+      "id": "policy.data.to_role",
+      "text": "Data policies are given to roles, never to agents or single identities directly (D6)."
+     },
+     {
+      "id": "policy.data.no_widening",
+      "text": "A holder of own writes only within its own operations and conditions (D59)."
+     }
+    ],
+    "decisions": [
+     "D6",
+     "D30",
+     "D54",
+     "D59",
+     "D91"
+    ]
+   }
   },
   {
    "title": "Only the owner never expires.",
