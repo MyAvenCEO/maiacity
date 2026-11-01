@@ -8,7 +8,7 @@
   "theOS": 189,
   "note": "commits touching theOS/ from 31 October to the end of this session, the intents' threads included"
  },
- "summary": "The theOS explainer (13 chapters with Architecture panels), the security audits and research that became the 91 current intents, then avenCEO: from a flow definition to aip-31df, built with its own steps. On 1 November each intent got its own Claude Code thread, with avenMAIA orchestrating: aip-31df built theOS's check (a crawl of every page state, green on 1,266 states); aip-6fb1 brought avenSANDBOX into theOS and ran the check inside its image; aip-836d gave brain its read verbs and moved every doc into brain/ under a flat hash id, shown by id and title; aip-59ad specified theOS's release and passed Gate A; aip-a195 was dropped. A clean cut was set (d-8912), then Samuel chose to finish aip-31df and aip-6fb1 in this session (d-93eb), and both closed: avenSANDBOX shipped for GitHub and the cloud (d-f20b), theOS's check at today's coverage (d-690b). aip-836d and aip-59ad stay parked.",
+ "summary": "The theOS explainer (13 chapters with Architecture panels), the security audits and research that became the 91 current intents, then avenCEO: from a flow definition to aip-31df, built with its own steps. On 1 November each intent got its own Claude Code thread, with avenMAIA orchestrating: aip-31df built theOS's check (a crawl of every page state, green on 1,266 states); aip-6fb1 brought avenSANDBOX into theOS and ran the check inside its image; aip-836d gave brain its read verbs and moved every doc into brain/ under a flat hash id, shown by id and title; aip-59ad specified theOS's release and passed Gate A; aip-a195 was dropped. A clean cut was set (d-8912), then Samuel chose to finish aip-31df and aip-6fb1 in this session (d-93eb), and both closed: avenSANDBOX shipped for GitHub and the cloud (d-f20b), theOS's check at today's coverage (d-690b). Then Samuel resumed both (d-f1a0, d-b916) and made main theOS's source of truth (d-6628). aip-59ad built theOS's release: production takes changes from main only, requires the checks Only from main, avenSANDBOX and theOS, deploys theOS's pages to aven.maia.city by itself, rolls back on red health, and has an undo. At its Gate B (d-820e) theOS went live at aven.maia.city, and the undo was tried both ways. production's checks catch mistakes; write access is the guard (d-be19). aip-836d built brain's four checkpoints: the door for writes (brain add, edit, append; brain check refuses a hand edit at push time), the reflection and the link graph, and brain's MCP server; it waits at Gate B.",
  "asks": [
   {
    "about": "theOS explainer",
@@ -159,7 +159,8 @@
   "d-f1a0",
   "d-6628",
   "d-b916",
-  "d-820e"
+  "d-820e",
+  "d-be19"
  ],
  "corrections": [
   {
