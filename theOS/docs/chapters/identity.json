@@ -228,7 +228,15 @@
     "on": "human:b3:q4x7…#you",
     "operations": {
      "act": {
-      "data": "data:b3:4Hb…#health"
+      "data": {
+       "data:b3:4Hb…#health": {
+        "read": {},
+        "create": {},
+        "update": {
+         "at": "/entries"
+        }
+       }
+      }
      }
     },
     "proof": [
@@ -259,18 +267,13 @@
        ],
        [
         "operations",
-        "object",
-        "keyed by name: act, own, govern (D56)"
+        "Operations (D56)",
+        "keyed by name: act, own, govern"
        ],
        [
         "operations.act.data",
-        "data ID or list",
-        "only this data"
-       ],
-       [
-        "operations.act.operations",
-        "object",
-        "only these data operations, keyed by name"
+        "data ID → Operations",
+        "optional: only these pieces of data, each with an ordinary Operations object, conditions included"
        ],
        [
         "expires",
@@ -297,6 +300,10 @@
      {
       "id": "policy.agent.both_layers",
       "text": "An agent may do an operation on data only if its policy on its owner covers it and the owner's roles and policies on the data cover it (D58)."
+     },
+     {
+      "id": "policy.agent.scope",
+      "text": "act without data covers all of the owner's data; act with data covers only the listed data, and for each only its Operations object, checked exactly like a data policy's (D56)."
      }
     ],
     "decisions": [

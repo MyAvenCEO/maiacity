@@ -41,10 +41,11 @@
     "on": "human:b3:q4x7…#you",
     "operations": {
      "act": {
-      "data": "data:b3:7Hq…#house-list",
-      "operations": {
-       "want": {},
-       "keep": {}
+      "data": {
+       "data:b3:7Hq…#house-list": {
+        "want": {},
+        "keep": {}
+       }
       }
      }
     },

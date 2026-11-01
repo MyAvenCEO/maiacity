@@ -73,20 +73,24 @@
        "type": [
         "string",
         "array"
-       ],
-       "default": ""
+       ]
       },
       "where": {
        "type": "object"
       },
       "limit": {
        "type": "integer"
+      },
+      "data": {
+       "additionalProperties": {
+        "$ref": "#"
+       }
       }
      },
      "additionalProperties": false
     }
    },
-   "deep": "One shape, one schema (D56): operations is an object keyed by operation name, so no operation appears twice. The names come from the plugin registry (D48): create, read, update, delete, want, keep, sync on data; act, own, govern on identities. Each value holds its conditions: at (a JSON Pointer or a list of them, default \"\", the whole data), where, limit. An engine operation is allowed when a policy names its broad operation, its path lies under at, and where and limit hold."
+   "deep": "One shape, one schema (D56): operations is an object keyed by operation name, so no operation appears twice; the names come from the plugin registry (D48). Each value holds its conditions: at (a JSON Pointer or a list, default \"\": all of it), where, limit, and for act on an identity, data: a map from data ID to this same Operations object. One recursive schema serves data policies, agent scopes and engine operations."
   },
   {
    "title": "Conditions make a policy narrower.",
