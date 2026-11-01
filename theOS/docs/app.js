@@ -130,8 +130,8 @@ async function openIntents(st, i) {
   if (!x) {
     const col = (stage) => all.filter((y) => y.stage === stage).sort((p, q) => stage === 'decided' ? q.n - p.n
       : (rank[p.learn?.severity] ?? 4) - (rank[q.learn?.severity] ?? 4) || p.n - q.n);
-    $('#intents').innerHTML = `<header class="dhead"><h1>${esc(intents.title)}</h1><p>${esc(intents.note)}</p></header>
-      <div class="board">${intents.stages.map((s) => { const ys = col(s.id); return `<section class="col"><h2>${esc(s.title)} <span>${ys.length}</span></h2>${ys.length ? ys.map((y) =>
+    $('#intents').classList.add('isboard');
+    $('#intents').innerHTML = `<div class="board">${intents.stages.map((s) => { const ys = col(s.id); return `<section class="col"><h2>${esc(s.title)} <span>${ys.length}</span></h2>${ys.length ? ys.map((y) =>
         `<a class="mini ${stateOf(y)}" href="#intents-${y.n}"><span class="mtop"><b>${y.id}</b>${y.learn?.severity ? chip('sev ' + y.learn.severity, y.learn.severity) : ''}${y.stage === 'decided' ? chip(y.outcome, y.outcome) : ''}</span><span class="mt">${esc(y.title)}</span>${y.learn ? `<span class="mc">${esc(chap[y.learn.chapter]?.title || '')}</span>` : ''}</a>`).join('')
         : '<p class="mnone">Nothing here.</p>'}</section>`; }).join('')}</div>`;
     $('#intents').scrollTo?.(0, 0);
@@ -163,6 +163,7 @@ async function openIntents(st, i) {
         return `<li><a href="#${r}">${esc(titles[sid] || sid)} ${n}: ${esc(s?.title || '')}</a>${s?.spec ? ` <a class="specl" href="#${r}-spec">Architecture · ${(s.spec.rules || []).length} rules</a>` : ''}</li>`; }).join('')}</ul>` : ''}`;
   }
   const sources = (current === 'decided' ? x.decision?.sources : current === 'propose' ? x.proposal?.sources : null) || [];
+  $('#intents').classList.remove('isboard');
   $('#intents').innerHTML = `<a class="iback" href="#intents-0">← Intents</a>
     <article class="dcard intent ${stateOf(x)}">
       <div class="dtop"><span class="did">${x.id}</span>${chip('phase', x.stage)}${x.outcome ? chip(x.outcome, x.outcome) : ''}${x.learn?.severity ? chip('sev ' + x.learn.severity, x.learn.severity) : ''}${x.learn ? `<a class="achap" href="#${x.learn.chapter}-1">${esc(chap[x.learn.chapter]?.title || '')}</a>` : ''}<span class="ddate">${esc(x.date)}</span></div>
@@ -181,6 +182,7 @@ async function openSources(st) {
   story = st;
   document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === st.id));
   if (!intents) intents = await (await fetch(st.file)).json();
+  $('#intents').classList.remove('isboard');
   $('#intents').innerHTML = `<header class="dhead"><h1>Sources</h1><p>Everything the intents were learned from: papers, specifications, design notes and code of the systems compared.</p></header>
     <article class="dcard"><ul class="dsrc srclist">${intents.sources.map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a></li>`).join('')}</ul></article>`;
   $('#intents').scrollTo?.(0, 0);

@@ -282,9 +282,16 @@ body {
 @media (max-width: 760px) { .sgrid { grid-template-columns: 1fr; gap: 8px; } }
 /* Intents and Sources are light: the same tokens on a paper ground; the chapter nav stays dark. */
 .show-intents .stage > .main { --stage: #ece3d2; --stage-ink: #15242f; --stage-soft: #5b666b; --chip: #e1d6c1; --line: #cbbda3; color-scheme: light;
-  background: var(--stage); color: var(--stage-ink); border-radius: 10px; padding: clamp(14px, 2vw, 24px); }
+  background: var(--stage); color: var(--stage-ink); border-radius: 10px; padding: clamp(14px, 2vw, 24px); box-sizing: border-box; }
 .show-intents .dcard, .show-intents .mini { background: #fbf7ee; }
 .show-intents .mini { box-shadow: 0 1px 0 rgba(21, 36, 47, .08); }
 @media (min-width: 901px) { .stories .navdec + .navdec { margin-top: 6px; } }
 .srclist { columns: 2 280px; column-gap: 32px; font-size: 14px; }
 .srclist li { break-inside: avoid; margin-bottom: 5px; }
+/* The board fills the panel; each column scrolls on its own, its heading stays. */
+@media (min-width: 901px) {
+  .intents.isboard { overflow: hidden; grid-template-rows: minmax(0, 1fr); padding-right: 0; }
+  .isboard .board { min-height: 0; height: 100%; align-items: stretch; }
+  .isboard .col { min-height: 0; overflow-y: auto; align-content: start; padding-top: 0; }
+  .isboard .col h2 { position: sticky; top: 0; z-index: 1; margin: 0 -10px; padding: 12px 14px 8px; background: var(--chip); }
+}
