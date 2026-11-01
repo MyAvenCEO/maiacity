@@ -20,7 +20,8 @@
     "Yes",
     "Change: tell me what",
     "Send it back"
-   ]
+   ],
+   "answered": "decisions/D-38"
   },
   {
    "q": "Checkpoint 2's Review gate ran three rounds without a clean one (c2-review: 3, 2 and 1 Major; every finding answered). Round 3's only Major (the smoke could not fail on a wrong platform) is fixed, tried here, and proven by the image workflow's run on the fixed commit (in the events). By the rule, patching stopped: pass the gate with that run as proof, run one more round, or send checkpoint 2 back to Understand?",
@@ -28,22 +29,8 @@
     "Pass it: the fix is proven by its run (recommended: the open finding was mechanical and a machine now checks it)",
     "One more round",
     "Back to Understand"
-   ]
-  },
-  {
-   "q": "Gate B for AIP-2: try avenSANDBOX as you would use it. Ship, change, or send back?",
-   "try": [
-    "1. In the cloud environment's settings (claude.ai/code, this environment, Setup script), replace the script with the contents of theOS/sandbox/environment-setup.sh. It only finds theOS/sandbox/cloud-setup.sh, which pulls the box; it never fails a session and stops after 600 s (killed at 630 s). The previous script is kept in theOS/sandbox/environment-setup.previous.sh: pasting it back is the undo.",
-    "2. This needs the work on main first (the snapshot clones main): the goal pull request you ask avenMAIA for.",
-    "3. Start a new cloud session and run: theOS/sandbox/run.sh rustc --version. It should answer at once, with no pull (the box was warmed before the snapshot).",
-    "4. On your Mac, with OrbStack running, in a checkout of the same commit: theOS/sandbox/run.sh uname -m (it should say aarch64), then theOS/sandbox/test.sh (it should end with \"avenSANDBOX's test: green\").",
-    "5. After AIP-1's checkpoint 1 is in (checkpoint 4): theOS/sandbox/run.sh with theOS's check command, on your Mac and in the session; the same result as the image workflow's last step on the same commit."
    ],
-   "options": [
-    "Ship",
-    "Change: tell me what",
-    "Send it back"
-   ]
+   "answered": "decisions/D-51"
   },
   {
    "q": "avenCEO changes proposed by AIP-2's run (one avenCEO intent each, measured before kept). Which do you want as intents?",
@@ -53,7 +40,8 @@
     "3. Every finding carries a kind, in the review type and both checker prompts (lessons/a-metric-has-no-field-to-read). Measured by: the share of findings with a kind (today 0 of 55 in spec review).",
     "4. Spec review stops at one round when you are reachable: the zoom-out lens checks deletions against the source first, and three rounds turn into one round plus your answer (lessons/a-yagni-review-cuts-what-the-person-asked-for). Measured by: spec rounds and your corrections per intent (AIP-2: 3 rounds, 6 agents, 55 findings, 1 correction).",
     "None now"
-   ]
+   ],
+   "answered": "decisions/D-52"
   }
  ],
  "problem": {
@@ -829,6 +817,43 @@
    "text": "Questions for Samuel written into the record: checkpoint 2's Review gate after three rounds (pass with its run as proof, one more round, or back); Gate B (what to paste, what to run on the Mac); and the avenCEO changes this run proposes.",
    "how": "AIP-2's thread (D-44), by hand",
    "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "authors/avenmaia",
+   "what": "answer",
+   "text": "Samuel's answers, relayed by avenMAIA and read on its branch at b979bafd6 (merged here): checkpoint 2's Review gate passes, its run as proof (D-51); all four avenCEO changes become intents, AIP-7 to AIP-10 (D-52). The Gate A question was stale: Gate A passed by D-38.",
+   "how": "AIP-2's thread (D-44): avenMAIA's message, checked against decisions/D-51 and D-52 on its branch",
+   "writes": [],
+   "reads": [
+    "decisions/D-51",
+    "decisions/D-52"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 2 passed both gates: its Review gate by D-51, with run 41296956609 as proof of round 3's fix.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Questions marked answered (Gate A: D-38; checkpoint 2's gate: D-51; avenCEO changes: D-52). The lessons point at their intents: a check run by hand and a check claimed before all its parts ran at AIP-7, hand-typed times at AIP-8, a metric with no field at AIP-9, a YAGNI cut at AIP-10. The Gate B question is taken out until checkpoint 4 is built; its draft, to put back then: paste theOS/sandbox/environment-setup.sh into the environment's setup script (environment-setup.previous.sh is the undo); the work on main first; in a new session theOS/sandbox/run.sh rustc --version answers with no pull; on the Mac with OrbStack, run.sh uname -m says aarch64 and theOS/sandbox/test.sh is green; then theOS's check through run.sh, the same result as the image workflow's last step.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "lessons/a-check-is-claimed-before-all-its-parts-ran",
+    "lessons/a-check-run-by-hand-is-not-kept",
+    "lessons/a-time-is-typed-by-hand",
+    "lessons/a-metric-has-no-field-to-read",
+    "lessons/a-yagni-review-cuts-what-the-person-asked-for"
+   ],
    "reads": []
   }
  ],
