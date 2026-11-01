@@ -667,7 +667,7 @@
    "at": "2026-11-01T14:11Z",
    "by": "a-6ffb",
    "what": "verified",
-   "text": "theOS/release/test.sh green after the fixes (25 checks): the undo by name after two deploys, a missing name refused, a peer already down is red, the switch and the skip of an unchanged tree read off the workflow, pipefail (a mutation turns it red), the undo workflow's trigger, environment and secrets.",
+   "text": "theOS/release/test.sh green after the fixes (24 checks): the undo by name after two deploys, a missing name refused, a peer already down is red, the switch and the skip of an unchanged tree read off the workflow, pipefail (a mutation turns it red), the undo workflow's trigger, environment and secrets.",
    "how": "by hand, aip-59ad's thread",
    "writes": [],
    "reads": []
