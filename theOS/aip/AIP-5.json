@@ -67,7 +67,7 @@
     "Automatically after every green release from production",
     "By hand as before, from any branch"
    ],
-   "answer": "production starts the deploy automatically, as today.",
+   "answer": "production starts the deploy automatically, the moment a change is merged into production and its release is green.",
    "note": "The record shows avenDEPLOY started by hand each time (workflow_dispatch by Samuel; run 20 began 38 s after the release). Read as: every green release from production deploys by itself, which is a change from avendeploy.yml."
   }
  ],
@@ -186,6 +186,17 @@
    "what": "changed",
    "text": "Answers written on the five questions; assumptions updated (peer kept in parallel, avenOS nowhere, green defined, the deploy automatic); task t3 for Samuel with the ruleset steps.",
    "how": "by hand, AIP-5's thread",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:40Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "The deploy starts the moment a change lands in production.",
+   "how": "in chat to AIP-5's thread, polished",
    "writes": [
     "aip/AIP-5"
    ],
