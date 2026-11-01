@@ -350,3 +350,9 @@ body {
 .outcome { margin: 10px 0 0; font-size: 14px; } .gq > li + li { margin-top: 8px; } .gq ul { margin-top: 4px; }
 .dsec p { font-size: 14.5px; line-height: 1.55; }
 @media (max-width: 760px) { .para { grid-template-columns: 1fr; } }
+.round + .round { margin-top: 22px; padding-top: 14px; border-top: 1px dashed var(--line); } .round > h3 { margin: 0 0 10px; font: 500 13px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.rv h4 { margin: 0 0 8px; font: 500 15px var(--display); text-transform: capitalize; } .rv h4 .dnote { text-transform: none; margin-left: 6px; font-size: 13px; }
+details.prompt { margin: 0 0 10px; font-size: 13px; } details.prompt summary { cursor: pointer; color: var(--ink-soft); }
+details.prompt pre { margin: 8px 0 0; padding: 12px 14px; border-radius: 6px; background: var(--ink); color: var(--paper); font: 12px/1.6 var(--mono); white-space: pre-wrap; }
+.evg { margin: 10px 0 2px; font: 500 12px var(--mono); color: var(--ink-soft); }
+a.commit { font: 500 12px var(--mono); color: var(--ink); background: #ece2cf; border-radius: 4px; padding: 1px 5px; text-decoration: none; }

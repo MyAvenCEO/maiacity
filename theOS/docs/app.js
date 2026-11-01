@@ -223,32 +223,44 @@ function flowSvg(F, key = 'f') {
 
 // One avenCEO record, as its intent page: where it stands, then every part of the record in step order.
 const stageOf = (R) => { const has = (w) => R.events.some((e) => e.what === w);
-  return !R.problem ? [1, 'Understand'] : !has('gate-A') ? [2, R.review.length ? 'Specify: waiting for Gate A' : 'Specify: waiting for the spec review'] : !has('gate-B') ? [3, 'Build'] : !has('measured') ? [4, 'Learn'] : [5, 'Closed']; };
+  const last = Math.max(0, ...R.review.map((r) => r.round || 1));
+  const clean = last && !R.review.filter((r) => (r.round || 1) === last).some((r) => r.findings.some((f) => f.sev !== 'Nit'));
+  const spec = !last ? 'Specify: waiting for the spec review' : clean ? 'Specify: waiting for Gate A' : `Specify: spec review round ${last + 1}`;
+  return !R.problem ? [1, 'Understand'] : !has('gate-A') ? [2, spec] : !has('gate-B') ? [3, 'Build'] : !has('measured') ? [4, 'Learn'] : [5, 'Closed']; };
 function renderRecord(R, F) {
   const [at, stage] = stageOf(R);
-  const table = (heads, rows) => `<table class="dtable"><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, k) => `<td>${k ? linkify(c) : `<b>${esc(c)}</b>`}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-  const ul = (xs) => `<ul>${xs.map((v) => `<li>${linkify(v)}</li>`).join('')}</ul>`;
+  const commit = (h) => `<a class="commit" href="https://github.com/myavenceo/maiacity/commit/${esc(h)}" target="_blank" rel="noopener">${esc(h)}</a>`;
+  const table = (heads, rows) => `<table class="dtable"><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, k) => `<td>${k ? esc(c) : `<b>${esc(c)}</b>`}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  const ul = (xs) => `<ul>${xs.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>`;
   const sec = (h, body, note = '') => `<section class="dsec"><h2>${h}</h2>${note ? `<p class="dnote">${note}</p>` : ''}${body}</section>`;
   const p = R.problem;
-  const review = R.review.length ? R.review.map((r) => `<div class="rv"><h3>${esc(r.checker)}</h3>
+  const rounds = [...new Set(R.review.map((r) => r.round || 1))];
+  const review = R.review.length ? rounds.map((n) => `<div class="round"><h3>Round ${n}</h3>${R.review.filter((r) => (r.round || 1) === n).map((r) => {
+      const count = ['Blocker', 'Major', 'Nit'].map((v) => [v, r.findings.filter((f) => f.sev === v).length]).filter(([, c]) => c).map(([v, c]) => `${c} ${v}`).join(', ') || 'no findings';
+      return `<div class="rv"><h4>${esc(r.checker)} <span class="dnote">${count}</span></h4>
+      ${r.prompt ? `<details class="prompt"><summary>The exact prompt it got</summary><pre>${esc(r.prompt)}</pre></details>` : ''}
       ${r.paraphrase ? `<div class="para"><div><b class="ilabel">What this proposes</b><p>${esc(r.paraphrase.proposes)}</p></div><div><b class="ilabel">How the existing system works, per this record</b><p>${esc(r.paraphrase.existing)}</p></div></div>` : ''}
-      ${r.findings.length ? `<table class="dtable"><thead><tr><th>Severity</th><th>Where</th><th>Finding</th><th>Answer</th></tr></thead><tbody>${r.findings.map((f) => `<tr><td><span class="chipx sevx ${esc(f.sev.toLowerCase())}">${esc(f.sev)}</span></td><td>${esc(f.scope)}</td><td>${esc(f.text)}</td><td><b>${esc(f.answer || 'open')}</b>${f.note ? ` ${linkify(f.note)}` : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="dnote">No findings.</p>'}</div>`).join('')
+      ${r.findings.length ? `<table class="dtable"><thead><tr><th>Severity</th><th>Where</th><th>Finding</th><th>Answer</th></tr></thead><tbody>${r.findings.map((f) => `<tr><td><span class="chipx sevx ${esc(f.sev.toLowerCase())}">${esc(f.sev)}</span></td><td>${esc(f.scope)}</td><td>${esc(f.text)}</td><td><b>${esc(f.answer || 'open')}</b>${f.note ? ` ${esc(f.note)}` : ''}</td></tr>`).join('')}</tbody></table>` : ''}</div>`; }).join('')}</div>`).join('')
     : '<p class="dnote">Not run yet.</p>';
   return `<article class="doc">
     <header class="dochead"><div class="dtop"><span class="chipx">${esc(R.kind)}</span><span class="chipx stagechip">${esc(stage)}</span><span class="ddate">${esc(R.source.at)}</span></div>
-      <h1>${esc(R.id)}: ${esc(R.title)}</h1><p class="dlead">${esc(R.source.text)} <span class="dby">(${esc(R.source.by)}, ${esc(R.source.type)})</span></p></header>
+      <h1>${esc(R.id)}: ${esc(R.title)}</h1><p class="dlead">${esc(R.source.text)} <span class="dby">(${esc(R.source.by)}, ${esc(R.source.type)})</span></p>
+      ${R.note ? `<p class="dnote">${esc(R.note)}</p>` : ''}</header>
     <div class="dsvg">${flowSvg({ ...F, at }, 'r')}</div>
-    <p class="dnote">The highlighted step is where this intent stands, computed from the record.</p>
+    <p class="dnote">The highlighted step is where this AIP stands, computed from the record.</p>
     ${sec('1 · Understand: the problem', `<p><b>Who</b></p>${ul(p.who)}<p><b>What they experience</b> ${esc(p.experience)}</p>
-      <p><b>Evidence</b> ${esc(p.baseline)}</p>${ul(p.evidence)}<p><b>Why, until the root</b></p><ol>${p.whys.map((w) => `<li>${esc(w)}</li>`).join('')}</ol>
-      <div class="agrid"><div><b>Truths</b><ul>${p.truths.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div><div><b>Assumptions</b><ul>${p.assumptions.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div></div>
+      <p><b>Evidence</b> ${esc(p.baseline)}</p>${p.evidence.map((g) => `<p class="evg">${esc(g.group)}</p><ul>${g.items.map((x) => `<li>${esc(x.text)}${x.commit ? ` <span class="dnote">fixed in</span> ${commit(x.commit)}` : ''}</li>`).join('')}</ul>`).join('')}
+      <p><b>Why, until the root</b></p><ol>${p.whys.map((w) => `<li>${esc(w)}</li>`).join('')}</ol>${p.whys_note ? `<p class="dnote">${esc(p.whys_note)}</p>` : ''}
+      <div class="agrid"><div><b>Truths</b>${ul(p.truths)}</div><div><b>Assumptions</b>${ul(p.assumptions)}</div></div>
       <p><b>Risk</b> ${esc(p.risk)}</p>`)}
     ${sec('What exists already', table(['What', 'Used as'], R.reuse.map((r) => [r.what, r.use])), 'The zoom-out question first: what can we reuse instead of build?')}
     ${sec('2 · Specify: options', table(['Option', 'Why', ''], R.options.map((o) => [o.name, o.note, o.chosen ? 'chosen' : ''])))}
-    ${sec('Claims', table(['Claim', 'Promise', 'How it could fail', 'Check', 'Kind', 'Result'], R.claims.map((c) => [c.id, c.promise, c.fails, c.check, c.kind, c.result])) + `<p class="outcome"><b>Outcome claim</b> ${esc(R.outcome.promise)} <span class="dnote">(${esc(R.outcome.kind)}, ${esc(R.outcome.result)})</span></p>`, 'Each claim is a promise with the check that would catch it failing. You approve these at Gate A.')}
-    ${sec('Checkpoints', table(['#', 'Adds', 'Claims'], R.checkpoints.map((c) => [String(c.n), c.adds + (c.screen ? ' (has a screen)' : ''), c.claims.join(', ')])), 'Smallest first; each passes the Mechanical and Review gates before the next starts.')}
-    ${sec('Memory and decision history', table(['Kind', 'How it is kept'], R.memory.map((m) => [m.kind, m.how])))}
-    ${sec('Spec review', review, 'Fresh checkers that saw only this record and the files it names, never the conversation that wrote it.')}
+    ${sec('Claims', table(['Claim', 'Promise', 'How it could fail', 'Check', 'Kind', 'Result'], R.claims.map((c) => [c.id, c.promise, c.fails, c.check, c.kind, c.result])) + `<p class="outcome"><b>Outcome claim</b> ${esc(R.outcome.promise)} ${esc(R.outcome.how || '')} <span class="dnote">(${esc(R.outcome.kind)}, ${esc(R.outcome.result)})</span></p>${R.gaps?.length ? `<p class="dnote">Not covered yet: ${R.gaps.map(esc).join(' ')}</p>` : ''}`, 'Each claim is a promise with the check that would catch it failing. You approve these at Gate A.')}
+    ${R.mockup ? sec('Mockup', ul(R.mockup)) : ''}
+    ${sec('Checkpoints', table(['#', 'Adds', 'Claims'], R.checkpoints.map((c) => [String(c.n), c.adds, c.claims.join(', ')])), 'Smallest first; each passes the Mechanical and Review gates before the next starts.')}
+    ${R.deferred ? sec('Deferred, on purpose', table(['What', 'Until'], R.deferred.map((d) => [d.what, d.until])), 'Deleted from this AIP, each with what would bring it back.') : ''}
+    ${R.design ? sec(esc(R.design.title), table(['Kind', 'How it is kept'], R.design.rows.map((m) => [m.kind, m.how]))) : ''}
+    ${sec('Spec review', review, 'Fresh checkers that saw only this record and the files it names, never the conversation that wrote it. Every finding is answered: fix, contest with evidence, escalate to you, or decline a Nit.')}
     ${sec('Gate A: your questions', `<ol class="gq">${R.questions.map((q) => `<li><b>${esc(q.q)}</b><ul>${q.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ul></li>`).join('')}</ol>`, 'What only you can decide. Your answers are written into this record, with the time.')}
     ${sec('History', table(['When', 'Who', 'What', ''], R.events.slice().reverse().map((e) => [e.at, e.by, e.what, e.text])), 'Append-only, newest first.')}
   </article>`;
@@ -301,15 +313,15 @@ async function openDoc(st, i = 0) {
     <tbody>${F.roles.map((r) => `<tr><td>${esc(r.role)}</td>${F.steps.map((s) => `<td class="dot">${r.steps.includes(s.n) ? '●' : ''}</td>`).join('')}<td>${esc(r.does)}</td></tr>`).join('')}</tbody></table>`;
   const risk = `<table class="dtable"><thead><tr><th>Risk</th><th>Means</th><th>Evidence</th><th>Gates</th><th>Build</th></tr></thead>
     <tbody>${F.risk.map((r) => `<tr><td><b>${esc(r.level)}</b></td><td>${esc(r.means)}</td><td>${esc(r.evidence)}</td><td>${esc(r.gates)}</td><td>${esc(r.build)}</td></tr>`).join('')}</tbody></table>`;
-  const stage = `<table class="dtable"><thead><tr><th>First output still missing</th><th>The intent stands at</th></tr></thead>
-    <tbody>${F.stage.map(([o, t]) => `<tr><td>${esc(o)}</td><td><b>${esc(t)}</b></td></tr>`).join('')}</tbody></table>`;
+  const stage = `<p>${esc(F.stage.rule)}</p><table class="dtable"><thead><tr><th>Still missing</th><th>The AIP stands at</th></tr></thead>
+    <tbody>${F.stage.rows.map((r) => `<tr><td>${esc(r.missing)}</td><td><b>${esc(r.at)}</b></td></tr>`).join('')}</tbody></table>`;
   const loops = `<table class="dtable"><thead><tr><th>From</th><th>Back to</th><th>When</th></tr></thead>
     <tbody>${F.loops.map((l) => `<tr><td>${esc(F.steps[l.from - 1].name)}</td><td>${esc(F.steps[l.to - 1].name)}</td><td>${esc(l.when)}</td></tr>`).join('')}</tbody></table>`;
   const gates = `<table class="dtable"><thead><tr><th>Gate</th><th>After</th><th>What</th></tr></thead>
     <tbody>${F.gates.map((g) => `<tr><td><b>${g.id}</b></td><td>${esc(F.steps[g.after - 1].name)}</td><td>${esc(g.what)}</td></tr>`).join('')}</tbody></table>`;
   const lessons = `<table class="dtable"><thead><tr><th>Cue</th><th>Lesson</th><th>Evidence</th><th>Confidence</th></tr></thead>
     <tbody>${F.lessons.map((l) => `<tr><td>${esc(l.cue)}</td><td>${esc(l.lesson)}</td><td>${linkify(l.evidence)}</td><td>${esc(l.confidence)}</td></tr>`).join('')}</tbody></table>`;
-  const record = `<pre class="drec">${Object.entries(F.record).map(([k, v]) => `<b>${esc(k.padEnd(9))}</b>${esc(v)}`).join('\n')}</pre>`;
+  const record = `<pre class="drec">${Object.entries(F.record).map(([k, v]) => `<b>${esc(k.padEnd(12))}</b>${esc(v)}`).join('\n')}</pre>`;
   const cps = `<ul>${F.checkpoints.rules.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>
     <div class="cpflow">${F.checkpoints.cycle.map((c, k, all) => `<span class="${k === all.length - 1 ? 'cpnext' : F.checkpoints.gates.some((g) => c.startsWith(g.name)) ? '' : 'cpwork'}">${esc(c)}</span>`).join('<i>→</i>')}</div>
     <table class="dtable"><thead><tr><th>Gate</th><th>Checks</th><th>Who</th><th>When</th></tr></thead><tbody>${F.checkpoints.gates.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td>${esc(g.checks)}</td><td>${esc(g.who)}</td><td>${esc(g.when)}</td></tr>`).join('')}</tbody></table>`;
@@ -331,7 +343,7 @@ async function openDoc(st, i = 0) {
     ${sec('How avenCEO improves itself', improve, 'Its base: every change to avenCEO is an intent of kind avenCEO, measured like any other, and kept only if its metric moves.')}
     ${sec('Measured', table(['Metric', 'What', 'Want'], F.metrics.map((m) => [m.name, m.what, m.want])), 'Computed from the records of every intent; they are the signals the flow learns from.')}
     ${sec('Going back', loops, 'Going back is normal: it is how a wrong idea dies cheaply.')}
-    ${sec('Where an intent stands', stage, 'Computed, never set by hand.')}
+    ${sec('Where an AIP stands', stage)}
     ${sec('Who does what', roles)}
     ${sec('Risk decides depth', risk, 'One question: can it be undone?')}
     ${sec('Rules in every step', ol(F.rules))}
@@ -341,6 +353,7 @@ async function openDoc(st, i = 0) {
     ${sec('The record', record, 'One per intent. Everything else is derived from it.')}
     ${sec('Learned so far', lessons, 'In the lesson format: the shape of situation it fires on, the operation, the evidence, the confidence.')}
     ${sec('Automate last', `<div class="agrid"><div><b>By hand now</b><ul>${F.automate.now.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div><div><b>After three runs by hand</b><ul>${F.automate.later.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div></div>`)}
+    ${F.glossary ? sec('Words', table(['Word', 'Means'], F.glossary)) : ''}
     ${sec('Sources', src(F.sources))}
   </article>`;
   $('#intents').scrollTo?.(0, 0);

@@ -4,7 +4,7 @@
  "date": "2026-11-01",
  "summary": "avenCEO is our agent harness: a self-improving way to ship every improvement. Four steps (Understand, Specify, Build, Learn) and two moments for you: approve what must be true, then try it. Everything between runs on its own: the next action is computed from the record, every claim has a check, machines check first and fresh agents second, and nothing passes an open gate. avenCEO measures every intent, and every change to avenCEO is itself an intent, kept only if its measurement moves.",
  "records": [
-  "ceo/CEO-1.json"
+  "aip/AIP-1.json"
  ],
  "bands": [
   {
@@ -56,7 +56,7 @@
    "question": "What can we delete? If nothing: what is the simplest change, and what must be true afterwards?",
    "do": [
     "Delete first. \"Keep as is\" is always an option, and it may win. More options only when more than one is viable, from fresh agents that can't see each other.",
-    "Write the claims. Each is a promise, how it could fail, and its check: mechanical (test, vector, proof, screenshot diff), review, person, or measurement. A claim without a check gets one, or is written down as an assumption.",
+    "Write the claims. Each is a promise, how it could fail, and its check: mechanical (test, vector, proof, screenshot diff), review, person, or measured. A claim without a check gets one, or is written down as an assumption.",
     "One outcome claim says what will be measured after release, and what would count as success.",
     "Make the mockup: the slides and the Architecture panel diff with rule IDs; for a screen, a clickable page.",
     "Plan the checkpoints, smallest first. If it can't be undone, checkpoint 1 is the Lean model and its theorems, before any code.",
@@ -174,7 +174,7 @@
    },
    {
     "name": "Review",
-    "checks": "Two fresh checkers per round that see only the record, the work and what they link, never the conversation that made it. Findings are Blocker, Major or Nit, each named by kind. The worker fixes, contests with evidence the checker could read, escalates what only you know, or declines a Nit. The gate passes on a clean round: no open Blocker or Major. Wherever it can, a finding becomes a new mechanical check.",
+    "checks": "Two fresh checkers per round, each with one lens, that see only the record, the work and what they link, never the conversation that made it. For a spec: paraphrase and zoom out; for a checkpoint: a critic and a code reviewer. Findings are Blocker, Major or Nit, each named by kind. The worker fixes, contests with evidence the checker could read, escalates what only you know, or declines a Nit. The gate passes on a clean round: no open Blocker or Major. Wherever it can, a finding becomes a new mechanical check.",
     "who": "two checkers and a worker",
     "when": "the spec before Gate A, and every checkpoint; with a screen, the checkers also judge how it looks and behaves"
    }
@@ -250,32 +250,31 @@
   "Nobody checks their own work: machines first, then fresh checkers that see only the record and what it links, never the conversation that made it.",
   "Delete before adding, smallest first, automate last. avenCEO improves itself: it measures every intent, and every change to it is an intent, kept only if its measurement moves."
  ],
- "stage": [
-  [
-   "a source only",
-   "Inbox"
-  ],
-  [
-   "the problem",
-   "Understand"
-  ],
-  [
-   "Gate A",
-   "Specify"
-  ],
-  [
-   "every checkpoint through its gates, Gate B, the release",
-   "Build"
-  ],
-  [
-   "the measurement",
-   "Learn"
-  ],
-  [
-   "nothing",
-   "Closed"
+ "stage": {
+  "rule": "An AIP stands at the first step whose output is still missing. The viewer computes it from the record's events; it is never stored.",
+  "rows": [
+   {
+    "missing": "the problem",
+    "at": "Understand"
+   },
+   {
+    "missing": "your approval at Gate A",
+    "at": "Specify"
+   },
+   {
+    "missing": "every checkpoint through its gates, your try at Gate B, the release",
+    "at": "Build"
+   },
+   {
+    "missing": "the measurement of the outcome claim",
+    "at": "Learn"
+   },
+   {
+    "missing": "nothing",
+    "at": "Closed"
+   }
   ]
- ],
+ },
  "roles": [
   {
    "role": "You",
@@ -481,17 +480,21 @@
   }
  ],
  "record": {
-  "id": "AIP-n",
-  "source": "idea | audit | bug | report | research | measurement | lesson · link · who raised it",
+  "id": "AIP-n: avenCEO's one sequence (the 91 current intents are consolidated later)",
   "kind": "product | avenCEO",
-  "problem": "who · what they experience · root cause · truths · assumptions · risk: can be undone or not",
-  "claims": "[ promise · how it could fail · check: mechanical | review | person | measured · result ] + one outcome claim",
-  "mockup": "slides + Architecture panel diff (rule IDs); a clickable page for a screen",
-  "plan": "[ checkpoint · what it adds · its claims · result per gate ]",
-  "gates": "A: approved · B: tried",
-  "release": "version · tested undo",
-  "learned": "measurement · new intents",
-  "stage": "computed"
+  "source": "idea | audit | bug | report | research | measurement | lesson · who · when · text · links",
+  "problem": "who · what they experience · evidence · baseline · whys to the root · truths · assumptions · risk: can be undone or not",
+  "reuse": "[ what exists · what it is used as ]",
+  "options": "[ name · why · chosen ] · always including keep as is",
+  "claims": "[ id · promise · how it could fail · check · kind: mechanical | review | person | measured · result ]",
+  "outcome": "promise · how it is measured · measured · result",
+  "mockup": "the pages or slides that show it",
+  "checkpoints": "[ n · what it adds · its claims ]",
+  "deferred": "[ what · until when ]",
+  "questions": "[ question · options ]: part of Gate A",
+  "review": "[ round · checker · its exact prompt · paraphrase · findings: severity · where · finding · answer (fix | contest | escalate | decline) · note ]",
+  "events": "[ when · who · what · text ]: append-only",
+  "stage": "computed by the viewer from the events, never stored"
  },
  "lessons": [
   {
@@ -1316,5 +1319,63 @@
     }
    ]
   }
+ ],
+ "glossary": [
+  [
+   "AIP",
+   "One intent: anything we want to change, with its record. Numbered AIP-1, AIP-2 and on in avenCEO's sequence."
+  ],
+  [
+   "Record",
+   "The JSON file of one AIP: its problem, claims, checkpoints, review and events."
+  ],
+  [
+   "Claim",
+   "A promise about the result, with how it could fail and the check that would catch it."
+  ],
+  [
+   "Check",
+   "What shows a claim holds: mechanical (a test, a proof, a screenshot diff), a review, a person, or a measurement."
+  ],
+  [
+   "Gate A, Gate B",
+   "Your two moments: approving what must be true, and trying the result."
+  ],
+  [
+   "Checkpoint",
+   "The smallest slice of the work that works end to end; it passes the Mechanical and Review gates before the next starts."
+  ],
+  [
+   "Worker",
+   "An agent that writes: understands, specifies, builds, fixes."
+  ],
+  [
+   "Checker (goldfish)",
+   "A fresh agent that reviews with no history: only the record and what it links."
+  ],
+  [
+   "Orchestrator",
+   "The session that keeps the records and starts every other agent. Today the main session; a program (the router) later."
+  ],
+  [
+   "Escape",
+   "A problem found after the work was called done."
+  ],
+  [
+   "Correction",
+   "Something you had to correct outside Gate A and Gate B."
+  ],
+  [
+   "Architecture panel",
+   "The part of a theOS slide that holds its exact records and rules with stable IDs."
+  ],
+  [
+   "avenMAIA",
+   "The architect session that orchestrates the threads and writes the decision logs."
+  ],
+  [
+   "Lean, Aeneas, vectors",
+   "Lean proves claims about a model; Aeneas translates Rust into Lean; vectors are examples Lean writes for the Rust tests."
+  ]
  ]
 }

@@ -1,0 +1,589 @@
+{
+ "id": "AIP-1",
+ "title": "Build avenCEO, our agent harness",
+ "kind": "avenCEO",
+ "note": "The first AIP of avenCEO's new sequence: avenCEO is built with its own steps, by hand, before any of it is automated. The 91 current intents (theOS/docs/intents.json, also numbered AIP-1 to AIP-91) are consolidated into this format later, in their own AIP.",
+ "source": {
+  "type": "idea",
+  "by": "Samuel",
+  "at": "2026-11-01",
+  "text": "Apply our own flow to building the flow engine. Call the agent harness avenCEO. Implement it now.",
+  "links": [
+   "theOS/docs/avenceo.json"
+  ]
+ },
+ "problem": {
+  "who": [
+   "Samuel, the one person who decides, whose attention is the scarcest resource.",
+   "The agents that do the work, in 20 to 50 parallel threads (CLAUDE.md).",
+   "Anyone who later needs to know why something is the way it is."
+  ],
+  "experience": "Samuel catches problems the agents should have caught, and repeats corrections.",
+  "evidence": [
+   {
+    "group": "Layout, caught only by looking",
+    "items": [
+     {
+      "text": "The intent detail page broke: two parts of the page shared one CSS class name.",
+      "commit": "106ba0e5f"
+     },
+     {
+      "text": "The scenario table squeezed its first column into a tall strip.",
+      "commit": "3ddc07339"
+     },
+     {
+      "text": "The intents and decisions pages did not scroll."
+     },
+     {
+      "text": "The board scrolled as a whole instead of per column.",
+      "commit": "b1d105b39"
+     }
+    ]
+   },
+   {
+    "group": "Incomplete sweeps after a decision",
+    "items": [
+     {
+      "text": "Not every \"rule\" was renamed to \"policy\" after that was decided."
+     },
+     {
+      "text": "Slides kept an old shape of operations after its single source of truth changed."
+     },
+     {
+      "text": "The published page was not updated after a change."
+     }
+    ]
+   },
+   {
+    "group": "Judgement, which belongs at Gate A",
+    "items": [
+     {
+      "text": "Agents were modelled without their own identity, and coops with members."
+     },
+     {
+      "text": "An audit leaned on summaries instead of primary sources."
+     },
+     {
+      "text": "Decisions were listed oldest first."
+     }
+    ]
+   }
+  ],
+  "baseline": "Ten corrections by Samuel in one session (31 Oct to 1 Nov 2026), outside any gate: four layout, three sweeps, three judgement.",
+  "whys": [
+   "Samuel catches problems the agent should have caught. Why? The agent checks its own work, and only what it thinks of.",
+   "Why? Nothing independent checks the work against what a person sees, and nothing says beforehand what must be true.",
+   "Root cause: nothing independent checks the work against what a person sees, and nothing says beforehand what must be true."
+  ],
+  "whys_note": "The first draft went two whys further (the process lives in chat; there is no record). The zoom-out review showed that none of the ten came from lost context: those two whys described the planned solution, not the cause. They were removed.",
+  "truths": [
+   "A language model is not deterministic; programs and proofs are.",
+   "Layout mistakes are visible to a headless browser; sweep mistakes are visible to a text search.",
+   "A checker that shares the author's context tends to agree with it.",
+   "A cloud container is reclaimed; only what is committed and pushed survives.",
+   "Git keeps every version and who made it."
+  ],
+  "assumptions": [
+   "avenCEO changes no theOS architecture and no avenDB code. It adds one check under aven/ops/checks, one rule in check.mjs's plan(), one checker agent file, a list of decided terms, and one file per new intent.",
+   "theOS's current intents (theOS/docs/intents.json, 91 entries) stay as they are until a later AIP consolidates them into this format; avenDB's DECISIONS.md stays as it is.",
+   "Samuel is the only one who passes a gate.",
+   "Records are JSON files in this repository, shown in the theOS docs app."
+  ],
+  "risk": "Can be undone: everything is files in git. The first version does nothing outside: no push to main, no deploy, nothing published on its own."
+ },
+ "reuse": [
+  {
+   "what": "aven/ops/checks/app-scroll.mjs and app-dock.mjs",
+   "use": "Headless browser checks at phone and desktop size that fail when a page scrolls: the model for the render check."
+  },
+  {
+   "what": "aven/ops/devx/check.mjs, its plan()",
+   "use": "Picks the checks a change needs (it already runs decisions.mjs and Lean): the render and terms checks become two rules in it."
+  },
+  {
+   "what": ".claude/skills/devx-speed and docs/devx/cycles.md",
+   "use": "The improvement cycle already: measure, change one thing, keep or revert, with a verdict. avenCEO's lessons live there."
+  },
+  {
+   "what": "aven/ops/devx/decisions.mjs and aven/DB2/brain/DECISIONS.md",
+   "use": "avenDB's append-only decision log and its check; it stays as it is."
+  },
+  {
+   "what": "theOS/docs/intents.json",
+   "use": "The 91 current intents and their decisions; they stay as they are until they are consolidated."
+  },
+  {
+   "what": ".claude/agents/spec-compliance-checker.md and .claude/workflows/spec-compliance.js",
+   "use": "One claim checked with evidence lines, and divergences that independent agents try to refute: later, the drift check."
+  },
+  {
+   "what": "theOS/docs/app.js: stageOf() and renderRecord()",
+   "use": "The viewer: one file per record, its stage computed from its events."
+  }
+ ],
+ "options": [
+  {
+   "name": "Keep as is",
+   "note": "Rejected: ten escapes in one session.",
+   "chosen": false
+  },
+  {
+   "name": "Checks first",
+   "note": "A render check, a terms check, one goldfish checker pair and a done rule; one file per new AIP; measure over three AIPs; the router, the Stop hook and a metrics script only as new AIPs, and only if escapes remain.",
+   "chosen": true
+  },
+  {
+   "name": "The full harness now",
+   "note": "Records for every intent, a router, a Stop hook, a metrics script. Rejected for now: it would not have caught any of the ten, and avenCEO automates last.",
+   "chosen": false
+  },
+  {
+   "name": "Adopt an existing harness whole",
+   "note": "Rejected: none keeps our records, gates or Lean; they stay sources.",
+   "chosen": false
+  }
+ ],
+ "claims": [
+  {
+   "id": "c1",
+   "promise": "The render check fails at the commit before each layout fix (106ba0e5f, 3ddc07339, b1d105b39) and passes now.",
+   "fails": "It measures something other than what a person sees.",
+   "check": "Replay: run it at each of those commits' parents and at the current commit.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c2",
+   "promise": "The terms check fails when a decided term comes back, and passes now.",
+   "fails": "A sweep after a decision misses a place.",
+   "check": "One file of decided terms, each with the AIP that decided it; a test plants each old term once.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c3",
+   "promise": "check.mjs runs both checks for every change under theOS/docs.",
+   "fails": "A change goes out without them.",
+   "check": "A scenario test of plan() with a theOS/docs path.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c4",
+   "promise": "Every spec review runs fresh checkers that get only the record's path, and each review entry keeps the exact prompt they got.",
+   "fails": "A checker sees the worker's reasoning and agrees with it.",
+   "check": "The review entries: anyone can compare the prompt with the record.",
+   "kind": "review",
+   "result": "open"
+  },
+  {
+   "id": "c5",
+   "promise": "Every new AIP is one file in theOS/docs/aip/, and its stage is computed from its events, never stored.",
+   "fails": "A stored stage drifts from the record.",
+   "check": "A test: no record has a stage field; stageOf() over fixed records gives the expected stage.",
+   "kind": "mechanical",
+   "result": "open"
+  }
+ ],
+ "outcome": {
+  "promise": "Over the next three intents, layout and sweep escapes reach zero, and your corrections outside Gate A and Gate B fall below this session's ten.",
+  "how": "Each correction of yours is recorded as an event by Samuel, and tallied by hand per session.",
+  "kind": "measured",
+  "result": "open"
+ },
+ "gaps": [
+  "The published page not being updated (one of the ten) has no check yet: \"published\" becomes part of the done rule."
+ ],
+ "mockup": [
+  "theOS/docs: the avenCEO page (#avenceo-0)",
+  "theOS/docs: this record's page (#avenceo-1)"
+ ],
+ "checkpoints": [
+  {
+   "n": 1,
+   "adds": "The render check: app-scroll's approach pointed at theOS/docs. Every page at 390x844 and 1440x900: the document never scrolls, every scroll container scrolls, no column is narrower than its minimum, nothing overflows sideways.",
+   "claims": [
+    "c1"
+   ]
+  },
+  {
+   "n": 2,
+   "adds": "The terms check: one file of decided terms, each with its AIP; a search over theOS/docs; a test that plants each old term once.",
+   "claims": [
+    "c2"
+   ]
+  },
+  {
+   "n": 3,
+   "adds": "Both checks wired into check.mjs's plan() for theOS/docs; one goldfish checker agent file (paraphrase and zoom out); the done rule: check.mjs green, the checkers clean, the page published.",
+   "claims": [
+    "c3",
+    "c4",
+    "c5"
+   ]
+  }
+ ],
+ "deferred": [
+  {
+   "what": "The router: next(record)",
+   "until": "Three intents were run by hand and escapes remain."
+  },
+  {
+   "what": "The Stop hook",
+   "until": "Agents are measured stopping early. Then: only on branches with an open record, honouring stop_hook_active, never blocking on Gate A or B."
+  },
+  {
+   "what": "Consolidating the 91 current intents into this format",
+   "until": "A later AIP (Samuel, 1 Nov: \"we consolidate the current AIPs later into the new flow format\"). Their decisions have no claims or checkpoints yet, so that AIP decides how each maps."
+  },
+  {
+   "what": "Release gating by version",
+   "until": "avenCEO releases anything on its own."
+  },
+  {
+   "what": "A metrics script",
+   "until": "There are three or more records."
+  },
+  {
+   "what": "An append-only check for events",
+   "until": "Records multiply; git keeps their history meanwhile."
+  },
+  {
+   "what": "Moving the devx tools",
+   "until": "Not needed: avenCEO uses them where they are."
+  }
+ ],
+ "design": {
+  "title": "Memory and decision history",
+  "rows": [
+   {
+    "kind": "History",
+    "how": "The 91 current intents stay in theOS/docs/intents.json until they are consolidated; avenDB's A-numbers stay in DECISIONS.md, append-only, checked by decisions.mjs, written by avenMAIA. Each new AIP is one file with an append-only list of events: your gate approvals with your words and the time, findings and their answers, your corrections, checkpoint results. Git keeps every version underneath."
+   },
+   {
+    "kind": "Truth",
+    "how": "The record is the latest truth of one intent. The Architecture panels and specs are the latest truth of the product, tied to the records by rule IDs."
+   },
+   {
+    "kind": "Lessons",
+    "how": "The devx-speed improvement cycle and its table in docs/devx/cycles.md: measure, change one thing, keep or revert, with a verdict. No separate lessons file."
+   },
+   {
+    "kind": "Answers",
+    "how": "When a checker escalates something only you know, your answer goes into the record that needed it, so the next checker can read it."
+   },
+   {
+    "kind": "Sessions",
+    "how": "Chats and contexts are disposable. What an agent needs is in the record or linked from it."
+   }
+  ]
+ },
+ "questions": [
+  {
+   "q": "What counts as your approval at a gate?",
+   "options": [
+    "Your chat message, quoted into the record with its time, for now; a passkey-signed approval later",
+    "Only a signed approval, from the start"
+   ]
+  },
+  {
+   "q": "Where does the done rule apply?",
+   "options": [
+    "Only to theOS and avenCEO work, for now",
+    "To every thread: one line in the repository's CLAUDE.md"
+   ]
+  }
+ ],
+ "review": [
+  {
+   "round": 1,
+   "checker": "paraphrase",
+   "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead only this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/ceo/CEO-1.json\n\nIt is the record of one piece of planned work: building \"avenCEO\", an agent harness. The record names avenCEO's definition at theOS/docs/avenceo.json; read that too (you can skip its \"protocols\" array, which only summarises outside sources).\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenceo.json.\n\nReport in plain text, at most 700 words. No praise, no filler: lead with what is wrong or missing.",
+   "paraphrase": {
+    "proposes": "The record proposes building avenCEO, a harness that takes agent work through four steps with two approvals by Samuel: Gate A, where he approves the claims, and Gate B, where he tries the result. Each \"intent\" gets one JSON file in git with an append-only event list. A deterministic \"router\" works out the next action from that file, a Stop hook stops agents from quitting while a gate is open, fresh \"goldfish\" checkers review the work, and the metrics are computed from the records. The plan has seven checkpoints. The goal is to cut Samuel's corrections outside the gates from at least ten per session toward none.",
+    "existing": "The process lives in chats and prompts. Agents check their own work, Samuel catches the problems, and decisions are spread across chats, the avenDB log, the theOS intents and CLAUDE.md. Some tools already exist: the devx scripts, avenDB's split between DECISIONS.md (history) and ARCHITECTURE.md (latest truth), .claude hooks and agents, a docs app with an Intents board, and rules.json written by Lean. I can't paraphrase how the intents are stored today or how a release happens. The record never says."
+   },
+   "findings": [
+    {
+     "sev": "Blocker",
+     "scope": "assumptions vs checkpoints 1-2, questions 1-2",
+     "text": "The assumption says avenCEO changes neither theOS nor avenDB, but the plan moves the 91 intents, rewires the board, moves the devx tools and generates DECISIONS.md.",
+     "answer": "fix",
+     "note": "Revision 2 moves nothing; the assumption names exactly what it adds."
+    },
+    {
+     "sev": "Blocker",
+     "scope": "c2, risk, Gate B",
+     "text": "\"Release\" and \"version\" are undefined; with release manual, the router is not on the release path and can't refuse anything.",
+     "answer": "fix",
+     "note": "Revision 2 releases nothing; release gating is deferred."
+    },
+    {
+     "sev": "Blocker",
+     "scope": "c3, stage",
+     "text": "The stage table's meaning is unclear in the JSON, the record shape lists a stage field, and the old stages have no mapping.",
+     "answer": "fix",
+     "note": "avenCEO's stage table now carries its rule and column names; the record shape says computed, never stored; the 91 current intents keep their own stages until they are consolidated."
+    },
+    {
+     "sev": "Blocker",
+     "scope": "record vs avenCEO's record shape",
+     "text": "Ids, fields and the missing mockup don't match avenCEO's definition.",
+     "answer": "fix",
+     "note": "The record shape now matches this record; ids are AIP-n, in avenCEO's new sequence; the mockup is named."
+    },
+    {
+     "sev": "Major",
+     "scope": "kind avenCEO",
+     "text": "avenCEO's own rules say one change at a time and automate last; the plan automates the router, hook and metrics first.",
+     "answer": "fix",
+     "note": "Revision 2 automates nothing but checks; the rest waits for three hand runs."
+    },
+    {
+     "sev": "Major",
+     "scope": "outcome",
+     "text": "Baseline per session, metric per intent, no window or target; corrections in chat can't be computed from records.",
+     "answer": "fix",
+     "note": "Corrections are recorded as events by Samuel and tallied by hand; the window is the next three intents; the target is below ten, and zero layout and sweep escapes."
+    },
+    {
+     "sev": "Major",
+     "scope": "c1",
+     "text": "A property test in one process can't catch reading the clock or the network; the action set is undefined.",
+     "answer": "fix",
+     "note": "Deleted with the router (deferred)."
+    },
+    {
+     "sev": "Major",
+     "scope": "c6",
+     "text": "Samuel owns the gates; a shared Stop hook reaches every thread and can trap them all.",
+     "answer": "fix",
+     "note": "Deferred; when built: scoped to branches with an open record, honouring stop_hook_active, never blocking on Gate A or B."
+    },
+    {
+     "sev": "Major",
+     "scope": "c8",
+     "text": "A dispatch log records what a checker got but prevents nothing.",
+     "answer": "fix",
+     "note": "Dropped; each review entry keeps the checker's exact prompt (c4)."
+    },
+    {
+     "sev": "Major",
+     "scope": "c9",
+     "text": "One merge test can't back \"never\", and generated files would still conflict.",
+     "answer": "fix",
+     "note": "Deleted: no conflict has happened, and the single-writer rule already prevents it."
+    },
+    {
+     "sev": "Major",
+     "scope": "c4",
+     "text": "decisions.mjs checks a Markdown table; JSON events need their own check, and main has no CI.",
+     "answer": "fix",
+     "note": "Deferred until records multiply; git keeps their history meanwhile."
+    },
+    {
+     "sev": "Major",
+     "scope": "c7",
+     "text": "A schema can't judge whether a check is adequate.",
+     "answer": "fix",
+     "note": "Deleted; adequacy is the checkers' and Gate A's job."
+    },
+    {
+     "sev": "Major",
+     "scope": "whys, options",
+     "text": "The evidence is mostly rendering and naming slips; the cheaper option of adding checks to the current process was not weighed.",
+     "answer": "fix",
+     "note": "That is now the chosen option."
+    },
+    {
+     "sev": "Major",
+     "scope": "c5",
+     "text": "The restart test only names the next action, it doesn't carry it out.",
+     "answer": "fix",
+     "note": "Deferred with the router."
+    },
+    {
+     "sev": "Major",
+     "scope": "terms",
+     "text": "Many project terms are undefined (intent, router, goldfish, avenMAIA, Architecture panels, the A-n log and more).",
+     "answer": "fix",
+     "note": "avenCEO's definition has a glossary; the evidence no longer uses code names."
+    },
+    {
+     "sev": "Nit",
+     "scope": "checkpoint 5",
+     "text": "Six checker lenses against two checkers per round.",
+     "answer": "fix",
+     "note": "One pair in revision 2: paraphrase and zoom out."
+    },
+    {
+     "sev": "Nit",
+     "scope": "outcome kind, questions",
+     "text": "\"measured\" and \"measurement\" both used; unclear whether the questions block Gate A.",
+     "answer": "fix",
+     "note": "One word, measured; the questions are part of Gate A."
+    }
+   ]
+  },
+  {
+   "round": 1,
+   "checker": "zoom out",
+   "prompt": "You are a \"goldfish\" reviewer with the persona of a skeptical architect: a fresh reader with no history of this project, who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/ceo/CEO-1.json\n\nIt is the record of planned work: building \"avenCEO\", an agent harness that runs inside Claude Code. Its definition is theOS/docs/avenceo.json (skip its \"protocols\" array).\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Reuse: SEARCH the repository (for example aven/ops/devx, .claude/, CLAUDE.md, .claude/skills/devx-speed, aven/DB2/brain) for things that already do part of what is proposed, beyond what the record's \"reuse\" list already names. Name files and what they do.\n3. Root problem: does the plan address the root cause it states, or a symptom?\n4. Order: is the checkpoint order really smallest-first, with each one useful on its own? Propose a smaller first slice if there is one.\n5. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part (field or claim/checkpoint id), and the reasoning, with a concrete simpler alternative where you have one. At most 800 words, plain text, no praise, lead with what is wrong.",
+   "findings": [
+    {
+     "sev": "Blocker",
+     "scope": "whys",
+     "text": "None of the ten came from lost context; whys 3 and 4 restate the solution as the cause. A record, router and stage function would have caught none of them.",
+     "answer": "fix",
+     "note": "The root cause stops at why 2."
+    },
+    {
+     "sev": "Major",
+     "scope": "checkpoint order",
+     "text": "The parts that address the evidence come last; a smaller first slice exists: a render check, one checker, one file per new intent, then measure.",
+     "answer": "fix",
+     "note": "Adopted as checkpoints 1 to 3."
+    },
+    {
+     "sev": "Major",
+     "scope": "checkpoint 1, c9",
+     "text": "Migrating the 91 intents would invent fields; c9 solves a conflict nobody has seen.",
+     "answer": "fix",
+     "note": "Deferred; intents.json stays the log."
+    },
+    {
+     "sev": "Major",
+     "scope": "c2",
+     "text": "With release manual, there is no release to refuse.",
+     "answer": "fix",
+     "note": "Deferred."
+    },
+    {
+     "sev": "Major",
+     "scope": "c6",
+     "text": "A global Stop hook blocks every thread, may loop, and must never block on your gates.",
+     "answer": "fix",
+     "note": "Deferred with those three constraints written down."
+    },
+    {
+     "sev": "Major",
+     "scope": "outcome, c10",
+     "text": "Corrections reach a record only by self-reporting.",
+     "answer": "fix",
+     "note": "Correction events by Samuel plus a hand tally; no metrics script before three records."
+    },
+    {
+     "sev": "Major",
+     "scope": "question 1",
+     "text": "Moving the devx tools touches 37 files and gains nothing (verified: 37).",
+     "answer": "fix",
+     "note": "Dropped; avenCEO uses them where they are."
+    },
+    {
+     "sev": "Major",
+     "scope": "question 2",
+     "text": "Generating DECISIONS.md contradicts aven/DB2/CLAUDE.md, where avenMAIA writes the log (verified), and breaks decisions.mjs.",
+     "answer": "fix",
+     "note": "Dropped."
+    },
+    {
+     "sev": "Major",
+     "scope": "reuse",
+     "text": "Not named: app-scroll.mjs, check.mjs's plan(), the spec-compliance agent and workflow, the devx-speed improvement cycle with docs/devx/cycles.md, the viewer's stageOf().",
+     "answer": "fix",
+     "note": "Verified and added to what exists already; lessons live in the improvement cycle."
+    },
+    {
+     "sev": "Nit",
+     "scope": "c1",
+     "text": "A property test for a five-branch function is premature.",
+     "answer": "fix",
+     "note": "Deleted."
+    },
+    {
+     "sev": "Nit",
+     "scope": "c8",
+     "text": "Store the checker's prompt in its review entry instead of a dispatch log.",
+     "answer": "fix",
+     "note": "Done (c4)."
+    },
+    {
+     "sev": "Nit",
+     "scope": "c7",
+     "text": "c7 restates the schema.",
+     "answer": "fix",
+     "note": "Deleted."
+    },
+    {
+     "sev": "Nit",
+     "scope": "checkpoint 5",
+     "text": "The first version needs one checker pair.",
+     "answer": "fix",
+     "note": "Done."
+    }
+   ]
+  }
+ ],
+ "events": [
+  {
+   "at": "2026-11-01",
+   "by": "Samuel",
+   "what": "source",
+   "text": "Apply our own flow to building it; call it avenCEO; implement it now."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "understood",
+   "text": "Problem, evidence, root cause, truths, assumptions, risk and reuse written."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "specified",
+   "text": "Claims c1 to c10, the outcome claim, seven checkpoints, the memory design and four open questions drafted."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "checkers",
+   "what": "spec review",
+   "text": "Round 1: paraphrase (4 Blocker, 11 Major, 2 Nit) and zoom out (1 Blocker, 8 Major, 4 Nit). Not clean."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "verified",
+   "text": "The zoom-out's facts checked against the repository: app-scroll.mjs exists and fails when a page scrolls; check.mjs's plan() runs decisions.mjs and Lean; aven/DB2/CLAUDE.md says avenMAIA writes the log; devx-speed has the improvement cycle and docs/devx/cycles.md; 37 files name aven/ops/devx."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "Samuel",
+   "what": "answer",
+   "text": "We still call them AIPs: AIP, not CEO-1."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "renamed",
+   "text": "CEO-1 is now AIP-92, the next number of the one AIP sequence (AIP-1 to AIP-91 are theOS's)."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "revised",
+   "text": "Revision 2: the root cause stops at why 2; the plan shrinks to a render check, a terms check, one checker pair and the done rule; the router, Stop hook, migration and metrics script are deferred; three questions dropped."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "Samuel",
+   "what": "answer",
+   "text": "AIP 1: we consolidate the current AIPs later into the new flow format."
+  },
+  {
+   "at": "2026-11-01",
+   "by": "avenMAIA",
+   "what": "renamed",
+   "text": "AIP-92 is now AIP-1, the first of avenCEO's new sequence; the 91 current intents are consolidated later, in their own AIP."
+  }
+ ]
+}
