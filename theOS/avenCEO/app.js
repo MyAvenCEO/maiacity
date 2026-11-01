@@ -40,9 +40,28 @@ function taskStatus(I, id) {
 const statusChip = (s) => `<span class="chip ${s === 'done' ? 'sage' : s === 'doing' ? 'ochre' : ''}">${s}</span>`;
 function tasks(I) {
   const ts = I.tasks || [];
+  if (!ts.length) return '';
   const n = ts.filter((t) => taskStatus(I, t.id) === 'done').length;
-  return sec(`Tasks · ${n} of ${ts.length} done`, table(['#', 'Task', 'Step', 'For', 'Who', 'Status'], ts.map((t) => [e(t.id), T(t.what), W.stepLink(t.step, HERE, G.docs), e(t.for || ''), W.isPath(t.who) ? who(t.who) : T(t.who || ''), statusChip(taskStatus(I, t.id))])),
-    'What is left, step by step. A task is done when an event in the trace says so.');
+  const steps = [...new Set(ts.map((t) => t.step))].sort();
+  const item = (t) => {
+    const st = taskStatus(I, t.id);
+    const meta = [t.for ? e(t.for) : '', W.isPath(t.who) ? who(t.who) : e(t.who || '')].filter(Boolean).join(' · ');
+    return `<li class="task ${st}"><span class="tick" aria-label="${st}"></span><div class="body"><span class="what">${T(t.what)}</span>${meta ? `<span class="meta">${meta}</span>` : ''}</div>${st === 'doing' ? '<span class="chip ochre">doing</span>' : ''}</li>`;
+  };
+  return `<section class="sec tasks-sec"><h2>Tasks</h2>
+    <div class="progress"><span class="bar"><span style="width:${ts.length ? Math.round(100 * n / ts.length) : 0}%"></span></span><span class="count">${n} of ${ts.length} done</span></div>
+    ${steps.map((k) => `<div class="tgroup"><span class="label">${W.stepLink(k, HERE, G.docs)}</span><ul class="tasks">${ts.filter((t) => t.step === k).map(item).join('')}</ul></div>`).join('')}
+    <p class="note">A task is done when an event in the trace says so.</p></section>`;
+}
+
+// An intent's progress, pinned at the top of the page: the four steps and the two gates, the current one marked.
+function stepper(I) {
+  const [at, label] = stageOf(I), ev = I.events || [];
+  const passed = (g) => ev.some((x) => x.what === `gate-${g}`);
+  const step = (n) => { const s = G.def.steps.find((q) => q.startsWith(`avenCEO/steps/${n}-`)); const cls = n < at ? 'done' : n === at ? 'at' : '';
+    return `<a class="st ${cls}" href="#${s}"><span class="n">${n < at ? '✓' : n}</span>${W.STEPS[n - 1]}</a>`; };
+  const gate = (g) => `<span class="gt ${passed(g) ? 'done' : ''}" title="Gate ${g}"><span>${g}</span></span>`;
+  return `<nav class="stepper" aria-label="Where ${e(I.id)} stands">${step(1)}<span class="ln"></span>${step(2)}<span class="ln"></span>${gate('A')}<span class="ln"></span>${step(3)}<span class="ln"></span>${gate('B')}<span class="ln"></span>${step(4)}<span class="where"><b>${e(I.id)}</b> ${e(label)}</span></nav>`;
 }
 
 // Every page with four or more sections gets a nav of them on the right; the one in view is marked.
@@ -53,7 +72,9 @@ function toc() {
   if (secs.length < 4) return;
   const page = document.createElement('div');
   page.className = 'page';
+  const bar = $('#main > .stepper');
   doc.replaceWith(page);
+  if (bar) { page.classList.add('pinned'); page.append(bar); }
   page.append(doc);
   const nav = document.createElement('nav');
   nav.className = 'toc';
@@ -190,7 +211,6 @@ const PAGES = {
     const reviews = (I.reviews || []).map((x) => G.docs.get(x)).filter(Boolean);
     const rounds = [...new Set(reviews.map((r) => r.round))];
     return `${head(I, [`<span class="chip">${e(I.kind)}</span>`, `<span class="chip clay">${e(stage)}</span>`], `<p class="lead">${T(I.source?.text)} ${I.source?.ref ? L(I.source.ref) : ''}</p>${I.note ? `<p class="note">${T(I.note)}</p>` : ''}`)}
-      <div class="svgwrap">${flowSvg(flowDef(at), 'r')}</div>
       ${sec('Waiting for you', (I.questions || []).filter((q) => !q.answered).map((q) => `<div class="wait"><b>${T(q.q)}</b><ul>${q.options.map((o) => `<li>${T(o)}</li>`).join('')}</ul></div>`).join(''), 'Asked here in chat; your answers become decision docs.')}
       ${tasks(I)}
       ${sec('1 · Understand: the problem', p.who ? `<p><b>Who</b></p>${ul(p.who)}<p><b>What they experience</b> ${T(p.experience)}</p><p><b>Evidence</b> ${T(p.baseline)}</p>
@@ -272,7 +292,7 @@ async function show() {
   else if (LISTS.some(([k]) => k === route)) { const [k, t, type] = LISTS.find(([x]) => x === route); html = ['decision', 'term'].includes(type) ? reflected(t, type) : list(k, t, type); }
   else {
     const d = G.docs.get(route) || await W.get(route);
-    html = d && PAGES[d.type] ? `<article class="doc">${PAGES[d.type](d)}${d.type === 'intent' ? '' : traceOf(route)}${backlinks(route)}</article>` : `<article class="doc"><h1>Not found</h1><p class="path">${e(route)}</p></article>`;
+    html = d && PAGES[d.type] ? `${d.type === 'intent' ? stepper(d) : ''}<article class="doc">${PAGES[d.type](d)}${d.type === 'intent' ? '' : traceOf(route)}${backlinks(route)}</article>` : `<article class="doc"><h1>Not found</h1><p class="path">${e(route)}</p></article>`;
   }
   $('#main').innerHTML = html;
   toc();
