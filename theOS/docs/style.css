@@ -338,3 +338,7 @@ body {
 .cpflow i { font-style: normal; color: var(--ink-soft); }
 .psteps b { margin-right: 6px; }
 @media (max-width: 760px) { .dstep { grid-template-columns: 28px minmax(0, 1fr); gap: 10px; } .dsdl { grid-template-columns: 1fr; } .dsdl dt { padding-top: 6px; } }
+.cpflow span.cpwork { background: #ece2cf; color: var(--ink); border: 1px dashed var(--line); }
+.agrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; color: var(--ink); }
+.agrid.three ol { margin: 4px 0 0; padding-left: 18px; } .agrid.three li + li { margin-top: 4px; }
+@media (max-width: 900px) { .agrid.three { grid-template-columns: minmax(0, 1fr); } }

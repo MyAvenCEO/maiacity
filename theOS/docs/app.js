@@ -193,7 +193,7 @@ async function openSources(st) {
 }
 
 // Flow: how we work, as one draft document. The diagram is drawn from the same JSON as the text below it.
-function flowSvg(F) {
+function flowSvg(F, key = 'f') {
   const n = F.steps.length, W = 1000, gap = 22, w = (W - 40 - gap * (n - 1)) / n, h = 74, y = F.bands?.length ? 58 : 16, chars = Math.floor((w - 16) / 6.3);
   const x = (k) => 20 + (k - 1) * (w + gap), mid = (k) => x(k) + w / 2;
   const loops = [...F.loops].sort((p, q) => Math.abs(p.from - p.to) - Math.abs(q.from - q.to) || p.from - q.from);
@@ -209,15 +209,15 @@ function flowSvg(F) {
     <rect x="${x(s.n)}" y="${y}" width="${w}" height="${h}" rx="8"/>
     <text class="fnum" x="${x(s.n) + 10}" y="${y + 20}">${s.n}</text><text class="fname" x="${x(s.n) + 24}" y="${y + 20}">${esc(s.name)}</text>
     ${words(s.writes, chars).slice(0, 3).map((l, k) => `<text class="fwrite" x="${x(s.n) + 10}" y="${y + 40 + k * 13}">${esc(l)}</text>`).join('')}</g>`).join('');
-  const arrows = F.steps.slice(0, -1).map((s) => `<line class="fline" x1="${x(s.n) + w}" y1="${y + h / 2}" x2="${x(s.n + 1) - 2}" y2="${y + h / 2}" marker-end="url(#fhead)"/>`).join('');
+  const arrows = F.steps.slice(0, -1).map((s) => `<line class="fline" x1="${x(s.n) + w}" y1="${y + h / 2}" x2="${x(s.n + 1) - 2}" y2="${y + h / 2}" marker-end="url(#${key}head)"/>`).join('');
   const gates = (F.gates || []).filter((g) => g.after < n).map((g) => { const cx = x(g.after) + w + gap / 2, cy = y + h / 2;
     return `<g class="fgate"><title>${esc(g.what)}</title><path d="M${cx} ${cy - 11} L${cx + 11} ${cy} L${cx} ${cy + 11} L${cx - 11} ${cy} Z"/><text x="${cx}" y="${cy + 4}">${g.id}</text></g>`; }).join('');
   const back = loops.map((l) => { const d = depth.get(l), fx = at(l.from, l), tx = at(l.to, l), by = y + h;
-    return `<path class="floop" d="M${fx} ${by} C${fx} ${by + d} ${tx} ${by + d} ${tx} ${by + 3}" marker-end="url(#fback)"/>
+    return `<path class="floop" d="M${fx} ${by} C${fx} ${by + d} ${tx} ${by + d} ${tx} ${by + 3}" marker-end="url(#${key}back)"/>
       <text class="floopt" x="${(fx + tx) / 2}" y="${by + d * 0.75 + 4}">${esc(l.when)}</text>`; }).join('');
   return `<svg class="flowsvg" viewBox="0 0 ${W} ${Math.ceil(H)}" role="img" aria-label="The flow: ${F.steps.map((s) => s.name).join(', ')}">
-    <defs><marker id="fhead" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="fheadp" d="M0 0 L8 4 L0 8 Z"/></marker>
-    <marker id="fback" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="fbackp" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+    <defs><marker id="${key}head" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="fheadp" d="M0 0 L8 4 L0 8 Z"/></marker>
+    <marker id="${key}back" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="fbackp" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
     ${bands}${arrows}${back}${nodes}${gates}</svg>`;
 }
 
@@ -269,8 +269,14 @@ async function openDoc(st, i = 0) {
     <tbody>${F.lessons.map((l) => `<tr><td>${esc(l.cue)}</td><td>${esc(l.lesson)}</td><td>${linkify(l.evidence)}</td><td>${esc(l.confidence)}</td></tr>`).join('')}</tbody></table>`;
   const record = `<pre class="drec">${Object.entries(F.record).map(([k, v]) => `<b>${esc(k.padEnd(9))}</b>${esc(v)}`).join('\n')}</pre>`;
   const cps = `<ul>${F.checkpoints.rules.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>
-    <div class="cpflow">${F.checkpoints.gates.map((g) => `<span>${esc(g.name)}</span>`).join('<i>→</i>')}<i>→</i><span class="cpnext">next checkpoint</span></div>
+    <div class="cpflow">${F.checkpoints.cycle.map((c, k, all) => `<span class="${k === all.length - 1 ? 'cpnext' : F.checkpoints.gates.some((g) => c.startsWith(g.name)) ? '' : 'cpwork'}">${esc(c)}</span>`).join('<i>→</i>')}</div>
     <table class="dtable"><thead><tr><th>Gate</th><th>Checks</th><th>Who</th><th>When</th></tr></thead><tbody>${F.checkpoints.gates.map((g) => `<tr><td><b>${esc(g.name)}</b></td><td>${esc(g.checks)}</td><td>${esc(g.who)}</td><td>${esc(g.when)}</td></tr>`).join('')}</tbody></table>`;
+  const table = (heads, rows) => `<table class="dtable"><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, k) => `<td>${k ? esc(c) : `<b>${esc(c)}</b>`}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  const I = F.improve;
+  const improve = `<div class="dsvg">${flowSvg(I, 'i')}</div>
+    <div class="agrid three"><div><b>Signals</b><ul>${I.signals.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div>
+      <div><b>A change, in this order of preference</b><ol>${I.order.map((v) => `<li>${esc(v)}</li>`).join('')}</ol></div>
+      <div><b>Guards</b><ul>${I.guards.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div></div>`;
   $('#intents').innerHTML = `${tabs}<article class="doc">
     <header class="dochead"><div class="dtop"><span class="chipx draftchip">${esc(F.status)}</span><span class="ddate">${esc(F.date)}</span></div>
       <h1>${esc(F.title)}</h1><p class="dlead">${esc(F.summary)}</p></header>
@@ -280,11 +286,15 @@ async function openDoc(st, i = 0) {
     ${sec('The steps', steps)}
     ${sec('Gates', gates, 'Your gates. Inside Build, every checkpoint also passes its own gates (below).')}
     ${sec('Checkpoints and their gates', cps, 'A rule is advice; a gate is enforced. An attempt may be wrong; it may not ship until it isn\'t.')}
+    ${sec('How the flow improves itself', improve, 'The base of the flow: every change to it is an intent of kind flow, measured like any other, and kept only if its metric moves.')}
+    ${sec('Measured', table(['Metric', 'What', 'Want'], F.metrics.map((m) => [m.name, m.what, m.want])), 'Computed from the records of every intent; they are the signals the flow learns from.')}
     ${sec('Going back', loops, 'Going back is normal: it is how a wrong idea dies cheaply.')}
     ${sec('Where an intent stands', stage, 'Computed, never set by hand.')}
     ${sec('Who does what', roles)}
-    ${sec('Risk decides depth', risk, 'The question: what happens to a person if this is wrong?')}
+    ${sec('Risk decides depth', risk, 'One question: can it be undone?')}
     ${sec('Rules in every step', ol(F.rules))}
+    ${sec('Assumptions that must hold', table(['Holds', 'If it breaks'], F.assumptions.map((a) => [a.holds, a.else])), 'The deletions below are safe only while these hold. If one breaks, we add back what it needs.')}
+    ${sec('What we deleted, and why', table(['Deleted', 'Now', 'Why'], F.deleted.map((d) => [d.what, d.now, d.why])), 'From the first draft (in the git history), by asking of every part: what breaks if it goes?')}
     ${sec('The record', record, 'One per intent. Everything else is derived from it.')}
     ${sec('Learned so far', lessons, 'In the lesson format: the shape of situation it fires on, the operation, the evidence, the confidence.')}
     ${sec('Automate last', `<div class="agrid"><div><b>By hand now</b><ul>${F.automate.now.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div><div><b>After three runs by hand</b><ul>${F.automate.later.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div></div>`)}
