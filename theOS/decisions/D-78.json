@@ -1,0 +1,31 @@
+{
+ "type": "decision",
+ "id": "D-78",
+ "n": 78,
+ "title": "Wrap up at a clean cut",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "intents",
+  "sessions"
+ ],
+ "quote": "Yes: wrap up at a clean cut.",
+ "means": "This session ends at a clean cut, not at the goal's end. AIP-1's checkpoint 1 lands, AIP-3 runs its migration once and every thread merges it. Each open intent is then parked with its next step written in its record: AIP-2 checkpoint 4 and Gate B; AIP-3 checkpoints 2 to 4 after the migration; AIP-5's build after the goal pull request to main; AIP-6 to AIP-10 not started. The session record is updated, the finished threads are archived, and a new session picks up from brain prime.",
+ "intents": [
+  "aip/AIP-1",
+  "aip/AIP-2",
+  "aip/AIP-3",
+  "aip/AIP-5"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-43",
+  "decisions/D-44"
+ ],
+ "reflection": {
+  "checked": "every decision before D-78 that held",
+  "result": "supersedes nothing"
+ }
+}
