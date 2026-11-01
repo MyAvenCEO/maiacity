@@ -11,7 +11,7 @@
   "gates",
   "sandbox"
  ],
- "quote": "Don't test on the Mac for now.",
+ "quote": "Option (a): pass checkpoint 4 on that proof. And don't test on the Mac for now.",
  "means": "aip-6fb1's checkpoint 4 passes its review gate on the proof that theOS's check gives the same result on GitHub's runner, inside the box in a cloud session and outside it, after three rounds whose findings are all fixed. Gate B passes for GitHub and the cloud. Running the box on Samuel's Mac (OrbStack, arm64) is deferred until he tries it, and pasting environment-setup.sh into the cloud environment waits until theOS is on main; both are written in aip-6fb1's deferred list. aip-6fb1 then does Learn.",
  "intents": [
   "aip-6fb1"
