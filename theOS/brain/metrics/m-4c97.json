@@ -5,5 +5,11 @@
  "what": "your actions per intent",
  "want": "two: Gate A and Gate B",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "intent": "aip-59ad",
+   "value": 16,
+   "note": "Against the 2 the flow plans for. In this thread: the five answers, the deploy's trigger, three rounds of screenshots, two settings changes, keeping avenSANDBOX and the secrets, the pin, listing the claims. Through avenMAIA: Gate A, 'Do AIP 5', Gate B, the spoof answer, 'good', and the clean cut (d-8912)."
+  }
+ ]
 }

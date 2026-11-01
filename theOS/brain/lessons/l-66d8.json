@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-66d8",
+ "status": "proposed",
+ "cue": "Code that deploys must reach the branch it deploys from before the decision to go live.",
+ "lesson": "Ship it switched off by a committed switch, tested to read no secret and touch nothing while off; the go-live is the one commit that switches it on, and it can be reviewed and undone like any other.",
+ "evidence": "aip-59ad: theOS/release/deploy.on read off through #1783 and #1784 (run 41315961980 checked it and skipped every deploy step); Gate B was #1786, which set it on (run 41316332593 deployed).",
+ "confidence": "high",
+ "intent": "aip-59ad"
+}

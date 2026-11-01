@@ -12,6 +12,11 @@
    "count": 10,
    "commits": 67,
    "note": "the baseline, 31 Oct to 1 Nov 2026"
+  },
+  {
+   "intent": "aip-59ad",
+   "value": 2,
+   "note": "Samuel corrected the spec twice: keep avenSANDBOX as a required check (d-c219), and keep the deploy keys as repository secrets (d-ca32). avenMAIA's D-60 ('by hand'), against his answer, was corrected by d-06a8."
   }
  ]
 }

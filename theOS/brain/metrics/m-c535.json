@@ -5,5 +5,11 @@
  "what": "findings that needed knowledge only you had",
  "want": "falling, because each answer is written down",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "intent": "aip-59ad",
+   "value": 1,
+   "note": "A pull request can fake a required check by name; only Samuel could choose the guard (d-be19: accept, write access guards)."
+  }
+ ]
 }

@@ -805,6 +805,164 @@
     "s-ac54"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "lesson l-24e4",
+   "how": "brain add",
+   "writes": [
+    "l-24e4",
+    "ix-02b6.items"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "lesson l-66e7",
+   "how": "brain add",
+   "writes": [
+    "l-66e7",
+    "ix-02b6.items"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "lesson l-66d8",
+   "how": "brain add",
+   "writes": [
+    "l-66d8",
+    "ix-02b6.items"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "lesson l-0468",
+   "how": "brain add",
+   "writes": [
+    "l-0468",
+    "ix-02b6.items"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-05db.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-05db"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-e42c.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-e42c"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-db7a.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-db7a"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-4c97.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-4c97"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-c535.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-c535"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-296e.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-296e"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-ad06.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-ad06"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-0ae4.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-0ae4"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-8241.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-8241"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "edit",
+   "text": "aip-59ad: claims, outcome",
+   "how": "brain edit",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
   }
  ],
  "problem": {
@@ -1025,14 +1183,14 @@
    "fails": "theOS's deploy runs from another branch or for a red commit, or reads a secret it does not need (MAIA_CITY_GUARDIAN_SECRET, d-eb51; the Hetzner keys).",
    "check": "At Gate A and again at checkpoint 2's review: the workflow's trigger, needs and environment read, and a grep of every secrets.* it names compared with the two expected.",
    "kind": "review",
-   "result": "open"
+   "result": "pass"
   }
  ],
  "outcome": {
   "promise": "Over the first five theOS releases, or the first 30 days after the first one, whichever comes first, every merge into production that changes theOS/ is live at aven.maia.city within 15 minutes with no one starting anything by hand, and none needs an undo (the link switched back because the site served something wrong); Samuel opens aven.maia.city on his phone and his Mac and sees theOS's dashboard.",
   "how": "Read off the workflow's runs (merge time to the health step's green) and the record's events; Samuel's look at Gate B.",
   "kind": "measured",
-  "result": "open"
+  "result": "measuring"
  },
  "checkpoints": [
   {

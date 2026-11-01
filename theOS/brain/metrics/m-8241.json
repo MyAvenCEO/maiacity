@@ -5,5 +5,11 @@
  "what": "each intent's outcome claim, measured",
  "want": "met",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "intent": "aip-59ad",
+   "value": "measuring: 1 of 5 releases",
+   "note": "Release 1 (b20033fa3): merged 14:28Z, health green 14:31Z (3 min, no one started anything by hand), no undo needed; Samuel looked on his phone and Mac: 'good'. Open until five releases or 1 Dec 2026, whichever comes first."
+  }
+ ]
 }

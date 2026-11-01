@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-0468",
+ "status": "proposed",
+ "cue": "A YAML key or value is a bare on, off, yes or no.",
+ "lesson": "Quote it or pick another word: a YAML 1.1 parser (PyYAML, and GitHub's own top-level on:) reads it as a boolean, so a test that looks it up by the string finds nothing.",
+ "evidence": "aip-59ad, checkpoint 2: the deploy's switch step had id: on; test.sh's PyYAML read it as true and reported no switch step. Renamed to id: switch.",
+ "confidence": "high",
+ "intent": "aip-f663"
+}
