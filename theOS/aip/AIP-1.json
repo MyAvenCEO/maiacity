@@ -1010,6 +1010,20 @@
     "decisions/D-44"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:24Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "avenCEO's definition matched to the decisions that hold, at the AIP-3 thread's finding: the reflection rule for every type (D-32, D-50), the live list, the terms Reflection and Decision (new docs that supersede the old), and the decision type (polished words, D-36; hash ids coming, D-45, D-49).",
+   "how": "by avenMAIA, the only writer of the definition",
+   "writes": [
+    "avenCEO/avenCEO",
+    "avenCEO/terms/reflection-2",
+    "avenCEO/terms/decision-2",
+    "avenCEO/types/decision"
+   ],
+   "reads": []
   }
  ],
  "reviews": [

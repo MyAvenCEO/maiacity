@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/decision-2",
+ "word": "Decision",
+ "means": "Your words, polished, with the time: an answer, a gate approval or a correction. Numbered D-1, D-2 and on until brain's hash ids land; it holds until a later decision supersedes it.",
+ "supersedes": [
+  {
+   "term": "avenCEO/terms/decision-d-n",
+   "how": "redefined: your words polished (D-36), hash ids coming (D-45, D-49)"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes decision-d-n (redefined)"
+ }
+}
