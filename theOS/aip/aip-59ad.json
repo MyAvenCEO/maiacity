@@ -97,7 +97,8 @@
  ],
  "reviews": [
   "rv-1e9d",
-  "rv-4567"
+  "rv-4567",
+  "rv-d660"
  ],
  "tasks": [
   {
@@ -526,6 +527,71 @@
     "d-113f"
    ],
    "task": "t6"
+  },
+  {
+   "at": "2026-11-01T12:27Z",
+   "by": "a-6ffb",
+   "what": "parked",
+   "text": "Parked after Gate A (d-113f), at the clean cut (d-8912). Next step: checkpoint 1, theOS's release workflow with the checks 'Only from main', 'avenSANDBOX' and 'theOS', once aip-31df's checkpoint 1, aip-6fb1's checkpoint 4 and the goal pull request that brings theOS/ to main are in.",
+   "how": "by hand, aip-59ad's thread; time from date -u",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": [
+    "d-113f",
+    "d-8912"
+   ]
+  },
+  {
+   "at": "2026-11-01T13:49Z",
+   "by": "a-6ffb",
+   "what": "resumed",
+   "text": "Unparked to build now (d-f1a0): aip-31df's checkpoints 1 and 2 are closed (d-690b), aip-6fb1's checkpoint 4 and its Gate B too (d-f20b). Checkpoint 1 first.",
+   "how": "by hand, aip-59ad's thread; time from date -u",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": [
+    "d-f1a0",
+    "d-690b",
+    "d-f20b",
+    "d-47c5"
+   ]
+  },
+  {
+   "at": "2026-11-01T14:01Z",
+   "by": "a-6ffb",
+   "what": "built",
+   "text": "Checkpoint 1 at dbe0202d6: .github/workflows/theos.yml reports 'Only from main', 'avenSANDBOX' and 'theOS' on pull requests to production, the latter two again on a push to production; no job needs another, a draft runs nothing; theOS/release/from-main.sh, box.sh and test.sh.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [
+    ".github/workflows/theos.yml",
+    "theOS/release/from-main.sh",
+    "theOS/release/box.sh",
+    "theOS/release/test.sh"
+   ],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T14:01Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "Mechanical gate for checkpoint 1, in a cloud session: theOS/release/test.sh --box green ('Only from main' passes main of this repository in any case of its name and fails another branch, a fork's main and no head; the workflow's names, conditions, triggers, secrets and pins; an unpublished box fails; this commit's box theos-0ea6f9879aa33445 is published for amd64 and arm64 and node, bun, lean, rustc and Chromium answer in it). theOS/sandbox/check.sh inside the box: 1370 states, 0 failed, its own test 0 wrong, Playwright 1.64.1. Not yet on GitHub: the three checks on a real pull request to production.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T14:01Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 1's Review gate, round 1 on dbe0202d6: rv-d660 (1 Major, 5 Nit). Not clean. Every finding fixed; the Major in two steps (bootstrap now, pull_request_target at checkpoint 2).",
+   "how": "a fresh subagent, the critic",
+   "writes": [
+    "rv-d660"
+   ],
+   "reads": []
   }
  ],
  "problem": {
@@ -716,7 +782,7 @@
  "claims": [
   {
    "id": "c1",
-   "promise": "theOS's release workflow reports three checks on every pull request to production, the three production's ruleset requires, and 'avenSANDBOX' and 'theOS' again on every push to production: 'Only from main' fails when the head is not main of this repository; 'avenSANDBOX' fails unless the box this commit describes (theOS/sandbox/box, tag theos-<hash>, built by aip-6fb1's image workflow) is published for amd64 and arm64 and its tools answer inside it; 'theOS' runs theOS's check command (aip-31df) inside that box through theOS/sandbox/run.sh and fails when the check fails.",
+   "promise": "theOS's release workflow reports three checks on every pull request to production, the three production's ruleset requires, and 'avenSANDBOX' and 'theOS' again on every push to production: 'Only from main' fails when the head is not main of this repository; 'avenSANDBOX' fails unless the box this commit describes (theOS/sandbox/box, tag theos-<hash>, built by aip-6fb1's image workflow) is published for amd64 and arm64 and its tools answer inside it (on the runner's amd64; arm64's tools are proven by avenSANDBOX's image workflow, which smokes each platform by digest before it tags the box); 'theOS' runs theOS's check command (aip-31df) inside that box through theOS/sandbox/run.sh and fails when the check fails. From checkpoint 2, 'Only from main' runs on pull_request_target from production's own copy of its workflow, so a pull request can't change the test that judges it.",
    "fails": "A pull request from another branch merges; a red check passes; a check name differs from the ruleset's, so production stays blocked; production gets a commit whose box was never built; the commit deployed is not the commit checked.",
    "check": "Job names compared letter for letter with the ruleset's. A pull request from another branch shows 'Only from main' red; a commit whose box tag is not published shows 'avenSANDBOX' red; a commit with a planted failing page shows 'theOS' red, then green without it. Checkpoint 1 ends with a real merge from main into production, all three green.",
    "kind": "mechanical",
@@ -724,7 +790,7 @@
   },
   {
    "id": "c3",
-   "promise": "On a push to production that changes theOS/ and whose 'avenSANDBOX' and 'theOS' jobs are green, the deploy unpacks that commit's theOS/ tree into its own folder under site/aven/releases/ beside every earlier build, then switches the link site/aven/current to it; it writes nothing else: no Caddyfile, nothing in /opt/aven, no container, no DNS or firewall. aven.maia.city then serves exactly that tree, while /ping, /healthz and /aven.json answer as before. A push that changes nothing under theOS/ deploys nothing.",
+   "promise": "On a push to production that changes theOS/ and whose 'avenSANDBOX' and 'theOS' jobs are green, the deploy unpacks that commit's theOS/ tree into its own folder under site/aven/releases/ beside every earlier build, then switches the link site/aven/current to it; it writes nothing else: no Caddyfile, nothing in /opt/aven, no container, no DNS or firewall. aven.maia.city then serves exactly that tree, while /ping, /healthz and /aven.json answer as before. A push that changes nothing under theOS/ deploys nothing. production's pushes queue: a newer push replaces a waiting one, and the newest commit, which holds every earlier change, is the one checked and deployed.",
    "fails": "The deploy touches the Aven Peer or Caddy's config (d-9364), serves a half-unpacked tree, or serves the dashboard in place of a missing file (Caddy's fallback) and still reports green.",
    "check": "The server script runs against a temporary folder laid out like the server: a listing before and after shows changes only under releases/ and the current link, and a failing unpack leaves current where it was. After each real deploy the health step fetches /, /docs/index.html, /avenCEO/index.html, /sources/index.html and /aip/index.json and compares each body byte for byte with the same file in the commit's tree; /ping, /healthz and /aven.json give the same status, and /aven.json the same body, as before the deploy.",
    "kind": "mechanical",
@@ -763,7 +829,7 @@
   },
   {
    "n": 2,
-   "adds": "The deploy: theOS/release/deploy.sh (on the server: unpack beside every earlier build, keep the old target as previous, switch the link) and theOS/release/undo.sh, both tested in a temporary folder; the deploy job with its own SSH setup (no legacy action) and the health step; Gate B: the first real release, the undo to avenOS and back.",
+   "adds": "'Only from main' moves into its own workflow (.github/workflows/theos-from-main.yml) on pull_request_target, with no checkout and its test inline, and leaves theos.yml (rv-d660). The deploy: theOS/release/deploy.sh (on the server: unpack beside every earlier build, keep the old target as previous, switch the link) and theOS/release/undo.sh, both tested in a temporary folder; the deploy job with its own SSH setup (no legacy action) and the health step; Gate B: the first real release, the undo to avenOS and back.",
    "claims": [
     "c3",
     "c4",

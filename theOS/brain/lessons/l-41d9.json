@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-41d9",
+ "status": "proposed",
+ "cue": "A number in the record is copied from a log line.",
+ "lesson": "Copy figures from the artifact the claim rests on, by script, and stamp the event when the figures exist.",
+ "evidence": "aip-6fb1: the runner's 1279 states came from the run before's console line (its artifact says 1283), and an event at 12:24Z recorded results written at 12:28 and 12:29 (rv-8bd0 rounds 2 and 3, two wrong facts).",
+ "confidence": "high",
+ "intent": "aip-6219"
+}

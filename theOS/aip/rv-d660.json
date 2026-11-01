@@ -1,0 +1,67 @@
+{
+ "type": "review",
+ "id": "rv-d660",
+ "intent": "aip-59ad",
+ "checkpoint": 1,
+ "lens": "critic",
+ "checker": "a fresh agent (Agent tool, general-purpose), seeing only the record, avenCEO's Review gate (g-6de7), the diff and the files",
+ "rounds": [
+  {
+   "round": 1,
+   "commit": "dbe0202d6",
+   "reviewed": "git diff 2e8520a dbe0202d6 -- .github theOS/release, and the files",
+   "prompt": "You are a \"goldfish\" critic doing avenCEO's Review gate (g-6de7) on aip-59ad's checkpoint 1, read-only (no docker, run.sh, box.sh or check command; test.sh without --box allowed). Read aip-59ad (c1, checkpoint 1, the ruleset assumptions, the latest events) and the Review gate; review commit dbe0202d6: the diff of .github and theOS/release, .github/workflows/theos.yml, theOS/release/from-main.sh, box.sh, test.sh, and what they call (theOS/sandbox/check.sh, run.sh, tag.sh, avensandbox-image.yml). Worker's facts given: test.sh --box green in a cloud session; check.sh in the box green (1370 states); the ruleset requires the three checks from GitHub Actions. Questions: does the work keep c1's promise; will each required check report by exactly that name on a pull request from main to production, and could any pass when it should not (skipped job, draft, cancelled run, one-platform box, merge commit vs head); is 'avenSANDBOX' a real proof, could tag.sh name another box on the merge commit; bugs in triggers, conditions, permissions, concurrency, the artifact step and the scripts; what is unproven. Findings with severity, kind, file and line, reasoning, fix; at most 500 words.",
+   "result": "0 Blocker, 1 Major, 5 Nit: not clean.",
+   "findings": [
+    {
+     "sev": "Major",
+     "kind": "security",
+     "scope": "theos.yml 12, 34-40; from-main.sh",
+     "text": "Under pull_request GitHub runs the workflow and the script from the pull request's own merge commit, so a branch (or an approved fork) that edits from-main.sh or the job's if reports 'Only from main' green.",
+     "answer": "fix",
+     "note": "In two steps, because production holds no copy of the workflow yet and pull_request_target runs production's copy: checkpoint 1 bootstraps with pull_request for the one first merge, which comes from main (avenMAIA opens it from main); checkpoint 2 moves 'Only from main' into its own workflow, .github/workflows/theos-from-main.yml, on pull_request_target with no checkout and the test inline, so production's copy decides, removes the job from theos.yml (a skipped job of that name would count as passed), and test.sh asserts both. Written into c1 and checkpoint 2."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "theos.yml 65-70",
+     "text": "upload-artifact refuses a name already used in the run, so a re-run of 'theOS' could go red on the upload alone.",
+     "answer": "fix",
+     "note": "overwrite: true."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "box.sh 16",
+     "text": "The tools are tried on amd64 only; arm64's answer is inherited from the image workflow's smoke by digest.",
+     "answer": "fix",
+     "note": "c1 says so: arm64's tools are proven by avensandbox-image.yml's smoke of each platform before the join; box.sh checks the manifest for both and tries the tools on the runner's amd64."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "theos.yml 2, 4",
+     "text": "d-70 and d-58 do not resolve; they are d-c219 and d-4ca4.",
+     "answer": "fix",
+     "note": "Hash ids used."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "test.sh",
+     "text": "The test does not check the required jobs' if conditions; an added if that skips a ready pull request would pass.",
+     "answer": "fix",
+     "note": "test.sh asserts each required job's if is one of the two draft guards; tried: a job changed to run only on push turns the test red."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "theos.yml 21-23",
+     "text": "GitHub keeps one waiting run per concurrency group, so a third push to production cancels the second's waiting run.",
+     "answer": "fix",
+     "note": "Written in the workflow and in c3: the newest commit holds every earlier change and is the one checked and deployed."
+    }
+   ]
+  }
+ ]
+}

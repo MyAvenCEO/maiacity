@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// theOS's check command (AIP-1): serve theOS/, crawl every state a person can reach from an HTML entry page, and run
+// theOS's check command (aip-31df): serve theOS/, crawl every state a person can reach from an HTML entry page, and run
 // the docs check (docs-check.mjs) on each, at 390x844 and 1280x720; --fixtures runs the check's own test pages instead.
 // Exits 1 when a state fails, 2 when the check itself could not run.
 // Usage: node theOS/avenCEO/checks/check.mjs [--root <theOS dir>] [--entry <page under the root>] [--out <dir>] [--fixtures]
 import { createServer } from 'node:http';
 import { createRequire, Module } from 'node:module';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docsCheck } from './docs-check.mjs';
@@ -13,6 +13,7 @@ import { docsCheck } from './docs-check.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SIZES = [{ width: 390, height: 844 }, { width: 1280, height: 720 }];
 const WORKERS = 3; // pages per size, sharing one queue
+const LIMIT = 300; // seconds: c4, the check finishes in under 5 minutes or it is red
 const MOST = 5000; // states per size: more means a route shows new text each time (a clock), and the crawl would not end
 
 function args(argv) {
@@ -100,7 +101,7 @@ async function actions(page, origin) {
   const { hrefs, buttons } = await page.evaluate(() => {
     // getAttribute, not .href: a link inside an SVG has no string href.
     const hrefs = [...document.querySelectorAll('a[href]')].map((a) => { try { return new URL(a.getAttribute('href'), document.baseURI).href; } catch { return null; } });
-    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML, kind: b.tagName + [...b.classList].sort().map((c) => `.${c}`).join('') }));
+    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML, kind: window.__kind(b) }));
     return { hrefs, buttons };
   });
   const links = [...new Set(hrefs)].filter((h) => {
@@ -113,10 +114,13 @@ async function actions(page, origin) {
 // A state is a route and what it shows: the same URL with the same rendered text and the same view is one state.
 const keyOf = async (page) => `${page.url()}\n${await page.evaluate(() => `${document.body?.innerText ?? ''}\n${window.__view()}`)}`;
 
-// A view type: which boxes, by element and classes, the page renders, whatever their text. All decision pages are one view type,
-// unless one of them shows a part the others don't. Installed in every page, next to countFetches.
-// Only boxes count (an element that isn't inline), since they make the layout; inline text styling doesn't.
+// A view type: which boxes the page renders, whatever their text, each named by element and classes. All decision pages
+// are one view type, unless one of them shows a part the others don't. Only boxes count (an element that isn't inline),
+// since they make the layout; inline text styling doesn't. A button's kind adds the names of its data attributes, so a
+// tab (data-tab) isn't taken for a plain button. Installed in every page, next to countFetches.
 function pageView() {
+  window.__kind = (e) => e.tagName.toLowerCase() + [...e.classList].sort().map((c) => `.${c}`).join('')
+    + Object.keys(e.dataset).sort().map((k) => `[${k}]`).join('');
   window.__view = () => [...new Set([...document.querySelectorAll('body *')]
     .filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'inline')
     .map((e) => e.tagName.toLowerCase() + [...e.classList].sort().map((c) => `.${c}`).join('')))].sort().join(' ');
@@ -156,8 +160,8 @@ async function press(page, b) {
 
 // Every state a person can reach from the entry page at one size, by following links and pressing buttons, each checked
 // by the docs check when first reached. Buttons are pressed only in the first state of each view type, one of each kind:
-// a first version, for speed (Samuel, 1 Nov); a state behind one of several buttons of the same kind can be missed.
-async function crawl(browser, size, start, origin) {
+// a first version, for speed (d-5afb); a state behind one of several buttons of the same kind can be missed.
+async function crawl(browser, size, start, origin, out) {
   const context = await browser.newContext({ viewport: size });
   for (const f of [countFetches, pageButtons, pageView]) await context.addInitScript(f);
   context.on('page', async (p) => { if (await p.opener()) await p.close(); }); // a link or button that opens a new tab
@@ -170,7 +174,11 @@ async function crawl(browser, size, start, origin) {
     if (states.length >= MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
     keys.add(key);
     const state = { size: `${size.width}x${size.height}`, url: page.url().slice(origin.length + 1), recipe, key, fails: await page.evaluate(docsCheck) };
-    states.push(state);
+    states.push(state); // its number, read right after with no await between, names its screenshot: parallel pages mustn't share one
+    // A screenshot of the state as a person sees it in the window; settle() waited for document.fonts.ready.
+    state.shot = join('shots', state.size, `${String(states.length).padStart(4, '0')}.png`);
+    // A failed screenshot doesn't stop the check: the state's verdict stands without it.
+    await page.screenshot({ path: join(out, state.shot) }).catch(() => { state.shot = null; });
     for (const l of (await actions(page, origin)).links) if (!loaded.has(l)) { loaded.add(l); queue.push({ visit: l }); }
     const view = await page.evaluate(() => window.__view());
     if (!views.has(view)) { views.add(view); queue.push({ state }); }
@@ -203,7 +211,7 @@ async function crawl(browser, size, start, origin) {
         if ((await reach(page, state.recipe, state.key)) !== state.key) { state.inPlaceOnly = true; await found(page, { url: page.url(), clicks: [] }); continue; }
         const here = origin + '/' + state.url;
         let moved = false;
-        const kinds = new Set(); // one button of each kind (element and classes): the others of its kind lead to the same view types
+        const kinds = new Set(); // one button of each kind (window.__kind): the others of its kind lead to the same view types
         for (const b of (await actions(page, origin)).buttons) {
           if (kinds.has(b.kind)) continue;
           kinds.add(b.kind);
@@ -223,12 +231,14 @@ async function crawl(browser, size, start, origin) {
   return { states, views: views.size };
 }
 
-// Crawl from one entry page at both sizes; print what failed. Returns the report.
+// Crawl from one entry page at both sizes; write the report and a screenshot of every state to out/; print what
+// failed. Returns the report.
 async function run(browser, origin, root, entry, out) {
   const t0 = Date.now();
-  const runs = await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${entry}`, origin)));
+  rmSync(join(out, 'shots'), { recursive: true, force: true });
+  const runs = await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${entry}`, origin, out)));
   const states = runs.flatMap((r) => r.states), failed = states.filter((s) => s.fails.length);
-  const results = states.map(({ size, url, recipe, fails, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }) }));
+  const results = states.map(({ size, url, recipe, fails, shot, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), shot, fails, ...(inPlaceOnly && { inPlaceOnly }) }));
   const report = { root, entry, seconds: Math.round((Date.now() - t0) / 1000), reached: states.length, views: runs.reduce((n, r) => n + r.views, 0), failed: failed.length, results };
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 1));
@@ -237,6 +247,7 @@ async function run(browser, origin, root, entry, out) {
 }
 
 async function main() {
+  const t0 = Date.now(); // c4 times the whole command: start-up, the browser and the crawl
   const o = args(process.argv.slice(2));
   const { pw, version } = playwright();
   const server = await serve(o.root);
@@ -247,9 +258,12 @@ async function main() {
       // The check's own test: each page in fixtures/ says in <meta name="expect"> whether the check must be red or green.
       let wrong = 0;
       for (const f of readdirSync(join(HERE, 'fixtures')).filter((x) => x.endsWith('.html')).sort()) {
-        const expect = /<meta name="expect" content="(red|green)">/.exec(readFileSync(join(HERE, 'fixtures', f), 'utf8'))?.[1];
+        // red-after-click: red, and only in states reached by pressing a button that kept the route (one that changes the
+        // route is recorded like a link).
+        const expect = /<meta name="expect" content="(red|green|red-after-click)">/.exec(readFileSync(join(HERE, 'fixtures', f), 'utf8'))?.[1];
         const r = await run(browser, origin, o.root, `avenCEO/checks/fixtures/${f}`, join(o.out, 'fixtures', f));
-        const got = r.failed ? 'red' : 'green';
+        const bad = r.results.filter((x) => x.fails.length);
+        const got = !bad.length ? 'green' : bad.every((x) => x.clicks.length) ? 'red-after-click' : 'red';
         if (got !== expect) wrong++;
         console.log(`${got === expect ? 'ok' : 'WRONG'} ${f}: ${got}, expected ${expect ?? 'nothing (no meta)'}`);
       }
@@ -258,8 +272,10 @@ async function main() {
       return;
     }
     const r = await run(browser, origin, o.root, o.entry, o.out);
+    r.seconds = Math.round((Date.now() - t0) / 1000);
+    if (r.seconds >= LIMIT) console.log(`FAIL the check took ${r.seconds} s, at or over its limit of ${LIMIT} s (c4)`);
     console.log(`${r.failed ? 'red' : 'green'}: ${r.reached} states checked (${r.views} view types), ${r.failed} failed, in ${r.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
-    process.exitCode = r.failed ? 1 : 0;
+    process.exitCode = r.failed || r.seconds >= LIMIT ? 1 : 0;
   } finally {
     await browser.close();
     server.close();

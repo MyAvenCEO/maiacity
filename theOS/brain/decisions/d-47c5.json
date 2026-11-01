@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-47c5",
+ "title": "The box builds on its own changes; the check runs per goal",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01T13:20Z",
+ "session": "s-ac54",
+ "about": [
+  "sandbox",
+  "checks",
+  "release"
+ ],
+ "quote": "Yes, do it like that.",
+ "means": "avenSANDBOX's image workflow runs on a push only when the box itself changes: theOS/sandbox/box, tag.sh, the Playwright pin in theOS/package.json or the workflow file; it then builds, smokes and runs theOS's check inside the new box once. theOS's check otherwise runs once per goal, on the goal's pull request to main when it is ready for review, never on a draft, as the repository's rule for CI says.",
+ "intents": [
+  "aip-6fb1"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-f20b"
+ ],
+ "reflection": {
+  "checked": "every decision before d-47c5 that held",
+  "result": "supersedes nothing; changes aip-6fb1's workflow after its Gate B, at Samuel's word"
+ }
+}

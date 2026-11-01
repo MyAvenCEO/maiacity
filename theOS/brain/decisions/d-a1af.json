@@ -1,0 +1,36 @@
+{
+ "type": "decision",
+ "id": "d-a1af",
+ "title": "Finish the checks, avenSANDBOX and brain",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01T12:45Z",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "sessions"
+ ],
+ "quote": "Not park: finish aip-31df, aip-6fb1 and brain.",
+ "means": "aip-31df (theOS's check), aip-6fb1 (avenSANDBOX in theOS) and aip-836d (brain) are finished in this session, each through its remaining checkpoints, Gate B with Samuel and Learn, in their own threads in parallel. aip-59ad (the release) stays parked: it builds after aip-31df and aip-6fb1 are in and the goal pull request has brought theOS/ to main.",
+ "intents": [
+  "aip-31df",
+  "aip-6fb1",
+  "aip-836d",
+  "aip-59ad"
+ ],
+ "supersedes": [
+  {
+   "doc": "d-8912",
+   "part": "parking aip-31df, aip-6fb1 and aip-836d",
+   "what": "Those three are finished in this session; only aip-59ad stays parked."
+  }
+ ],
+ "relates": [
+  "d-b43d",
+  "d-2519"
+ ],
+ "reflection": {
+  "checked": "every decision before d-a1af that held",
+  "result": "supersedes d-8912 in part (which intents park)"
+ }
+}

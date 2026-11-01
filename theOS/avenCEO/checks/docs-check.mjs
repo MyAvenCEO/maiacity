@@ -1,4 +1,4 @@
-// The docs check (AIP-1, claim c1): content a person can't reach. Its rule:
+// The docs check (aip-31df, claim c1): content a person can't reach. Its rule:
 //   1. every scroll container whose content is taller than it can scroll: a box whose overflow-y clips (hidden or
 //      clip; in CSS, hidden makes a scroll container that only a script can scroll) fails when its content is taller
 //      than it; auto and scroll let a person scroll, visible hands the content to the box around it;

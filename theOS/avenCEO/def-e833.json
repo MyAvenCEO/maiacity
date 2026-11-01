@@ -130,7 +130,8 @@
   "Nothing is written to brain outside an intent's lifecycle: every write is an event of the intent it serves, with how it was done and what it wrote. A direct ask is traced the same way, in the intent it changes, as done ahead of that intent's gates.",
   "Every agent session writes in brain as avenMAIA, and every human word as Samuel Andert; an event's how says which session and role.",
   "Your words are kept polished: clear, close to what you meant, true to what you said and well written. Only the polished words are stored.",
-  "One thread per intent: a thread writes only its own AIP's record and the files its work needs; decisions, the session and shared lists are written by avenMAIA, which merges each thread's branch."
+  "One thread per intent: a thread writes only its own AIP's record and the files its work needs; decisions, the session and shared lists are written by avenMAIA, which merges each thread's branch.",
+  "main is theOS's source of truth (d-6628): every thread starts from main and comes back through a pull request, a draft while it works, ready once its goal is in, theOS's check run once on it, merged with a merge commit."
  ],
  "roles": [
   {

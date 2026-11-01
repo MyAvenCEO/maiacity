@@ -165,7 +165,7 @@
    "fails": "A state behind a button, or a renamed data file, is never seen.",
    "check": "On the current commit it reaches every route the docs list (stories.json, intents.json, the index docs), and, in a test that starts at theOS/avenCEO/checks/fixtures/, a state planted behind a button; at the parents of 106ba0e5f and 3ddc07339 it reaches the OLD-AIP pages and their Learn tabs, with no edit per commit.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "pass at today's coverage, accepted at Gate B (Samuel trusts the results): every doc page and OLD-AIP page, 97 to 98 of 123 slides, 9 of 23 Learn tabs, the test page's state behind a button; the rest in the gaps (coverage.mjs, 1 Nov)"
   },
   {
    "id": "c4",
@@ -173,7 +173,7 @@
    "fails": "The check is slow and is skipped.",
    "check": "Timed in the session's box on a one-doc change with an empty cache (the box is reclaimed, so the cache lives only as long as the session); each screenshot taken after document.fonts.ready.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "pass: 101 s on a one-doc change with an empty cache, 1318 states and screenshots (1 Nov); the check now fails itself at 300 s"
   }
  ],
  "outcome": {
@@ -1179,6 +1179,159 @@
    "writes": [],
    "reads": [],
    "task": "t5"
+  },
+  {
+   "at": "2026-11-01T12:27Z",
+   "by": "a-6ffb",
+   "what": "tried",
+   "text": "The undo of a republish, tried once by avenMAIA: version 86 of the theOS artifact put back version 84's docs/style.css, the same bytes (sha256 998acfd4…), and version 87 restored the fix. The page tool refuses to copy a file from an older version of the same page, so the undo republishes a saved copy of the earlier file.",
+   "how": "by avenMAIA, which publishes the artifact; recorded by aip-31df's thread from avenMAIA's message",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:27Z",
+   "by": "a-6ffb",
+   "what": "merged",
+   "text": "claude/avendb-architect (ce208cd) merged: AIP-3's migration, every doc by flat hash id in brain/. theOS/CLAUDE.md and the check's comments name aip-31df, aip-f4e2, d-19fb and d-5afb by id.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:27Z",
+   "by": "a-6ffb",
+   "what": "parked",
+   "text": "Parked at a clean cut (d-8912): checkpoint 1 through both gates; on the migrated tree the check is green, 1266 states checked (228 view types) in 56 s, and --fixtures right on 3 of 3. Next step: checkpoint 2: the c2 fixture (a state behind a button in theOS/avenCEO/checks/fixtures/), a screenshot of every state at both sizes, c4 timed on a one-doc change with an empty cache, and c2's replays at the parents of 106ba0e5f and 3ddc07339 (the OLD-AIP pages and their Learn tabs).",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:35Z",
+   "by": "a-6ffb",
+   "what": "resumed",
+   "text": "Resumed to finish in this session (d-93eb, superseding the parking part of d-8912): checkpoint 2, Gate B with Samuel, then Learn. claude/avendb-architect (73ca027) merged.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [
+    "d-93eb"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:52Z",
+   "by": "a-6ffb",
+   "what": "built",
+   "text": "Checkpoint 2, lean as d-5afb asks: the crawl already followed buttons (moved into checkpoint 1); a screenshot of every state at both sizes, taken after document.fonts.ready, in out/shots/ with its path in report.json; the c2 test page fixtures/behind-button.html, a state only a button shows, with a box cut off in it (expected red); a box's kind now includes its data attribute names, so a tab button is not taken for a plain one.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [
+    "d-5afb"
+   ],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T12:52Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "Checkpoint 2's Mechanical gate. c2: --fixtures right on 4 of 4, behind-button red only on the states after its button. On the current commit, of the routes the docs list: 331 of 333 docs by id (the aip and sessions index docs, ix-cd61 and ix-0d91, are not linked by id), and 186 to 187 of 214 slides and OLD-AIP pages (the 27 to 28 missed are slides reached only by a chapter's dots, pressed once per view type, d-5afb). At the parents of 106ba0e5f and 3ddc07339, no edit per commit: all 91 OLD-AIP pages at both sizes, and the Learn tab on 9 of the 23 intents that have one (one per view type). c4: 101 s on a one-doc change (a lesson's text edited in a fresh worktree, a fresh output folder and browser profile), green, 1318 states, 1318 screenshots.",
+   "how": "node theOS/avenCEO/checks/check.mjs, with --fixtures and --root <worktree>/theOS; route coverage counted from report.json against docs/stories.json, docs/intents.json and brain/ids.json by a script in the session's scratchpad; Playwright 1.63.0",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T12:59Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 1 on 520a776: 2 Blocker, 2 Major, 2 Nit, not clean. Fixed: the time limit (the check is red at 300 s), data attribute names only in a button's kind, the comment, red-after-click for the button test page, the coverage count committed as coverage.mjs. Contested: the screenshots (checkpoint 2 lists them; they cost about 35 s). Escalated: c2 is not met as written, its numbers recorded; narrowing it is Samuel's at Gate B.",
+   "how": "a fresh subagent (Agent tool) seeing only the record, d-5afb, the diff and checkpoint 1's review; the prompt is the review doc's",
+   "writes": [
+    "rv-19f5"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:02Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 2 on 50b664e: clean (no Blocker, no Major); 4 Nit, all fixed. Check green after them: 1324 states checked (258 view types) in 94 s, the whole command timed; --fixtures 4 of 4.",
+   "how": "a fresh subagent (Agent tool) seeing only the record, d-5afb, the diff and the earlier rounds",
+   "writes": [
+    "rv-19f5"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:02Z",
+   "by": "a-6ffb",
+   "what": "gate",
+   "text": "Checkpoint 2 passed its Mechanical gate (the test pages, the replays, c4 at 94 to 101 s) and its Review gate (round 2 clean). c2 stays open: not every route the docs list is reached per view type; Samuel decides at Gate B.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:02Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Checkpoint 2 built and through both gates.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-4c7a",
+   "what": "gate-B",
+   "text": "I don't want to test it manually: I trust the results. So it's good.",
+   "how": "in chat to aip-31df's thread, his words polished; the decision is avenMAIA's to write",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Gate B passed on Samuel's word, without a manual try.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t8"
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "c2 read as accepted at today's coverage, from Samuel's 'I trust the results' at Gate B (the Gate B question asked it, and he didn't name pages that must be covered): per view type the crawl reaches every doc page and OLD-AIP page, 97 to 98 of 123 slides and 9 of 23 Learn tabs; the rest stays in the gaps. avenMAIA to confirm in the decision.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "learned",
+   "text": "Four lessons proposed from this intent's build: replay the escape before scoping the check; time a check before widening it; check a fast path against the state it should reach; look at a new check's first red before tuning it.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [
+    "l-0cfb",
+    "l-2fb8",
+    "l-19fe",
+    "l-026c"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "measuring",
+   "text": "The outcome can't be measured in this session: it counts the first three sessions after checkpoint 2 that change view code. Baseline: during this build the check found one real escape already called done (the docs bottom bar at 390 px, fixed in 8115ed0). The measurement stays open (task t9) until three such sessions have run the check.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t9"
   }
  ],
  "reviews": [
@@ -1194,7 +1347,8 @@
   "rv-40be",
   "rv-d847",
   "rv-22e5",
-  "rv-7122"
+  "rv-7122",
+  "rv-19f5"
  ],
  "source": {
   "type": "idea",
