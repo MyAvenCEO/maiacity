@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/reflection",
+ "word": "Reflection",
+ "means": "brain's step on every new decision or term: check it against every one that still holds, and write on the new one what it supersedes or merges.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

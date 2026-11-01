@@ -14,7 +14,7 @@
  "means": "Everything is built from scratch in theOS/; legacy code is learned from, never touched.",
  "intents": [
   "aip/AIP-1",
-  "aven/aven"
+  "avenCEO/avenCEO"
  ],
  "supersedes": [],
  "relates": [],

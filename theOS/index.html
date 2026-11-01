@@ -28,7 +28,7 @@
   <section class="waiting" id="waiting" hidden><h2>Waiting for you</h2></section>
   <div class="apps">
     <a class="tile" href="docs/index.html"><span class="k">Docs</span><h2>The architecture</h2><p>The 13 chapters of theOS, slide by slide, with each slide's Architecture panel. The 91 legacy intents (OLD-AIPs) live here until they are consolidated.</p><span class="nums" id="n-docs"></span></a>
-    <a class="tile" href="aven/index.html"><span class="k">Intents</span><h2>aven</h2><p>Our agent harness, run by avenMAIA: every AIP with its stages and trace, your decisions that hold, the sessions, and aven's own steps, gates and doc types.</p><span class="nums" id="n-ceo"></span></a>
+    <a class="tile" href="avenCEO/index.html"><span class="k">Intents</span><h2>avenCEO</h2><p>Our agent harness, run by avenMAIA: every AIP with its stages and trace, your decisions that hold, the sessions, and avenCEO's own steps, gates and doc types.</p><span class="nums" id="n-ceo"></span></a>
     <a class="tile" href="sources/index.html"><span class="k">Sources</span><h2>What we learned from</h2><p>One doc per source: protocols drawn as flows, articles, repositories and specifications, with what we took; who read it is in the intent that read it.</p><span class="nums" id="n-src"></span></a>
   </div>
 </main>
@@ -47,7 +47,7 @@
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   if (open.length) {
     const w = document.getElementById('waiting'); w.hidden = false;
-    w.insertAdjacentHTML('beforeend', open.map(([I, q]) => `<div class="wait"><span class="path"><a class="wl" href="aven/index.html#${esc(I.id.startsWith('aip/') ? I.id : 'aip/' + I.id)}">${esc(I.id)}</a></span><b>${esc(q.q)}</b><ul>${q.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ul></div>`).join(''));
+    w.insertAdjacentHTML('beforeend', open.map(([I, q]) => `<div class="wait"><span class="path"><a class="wl" href="avenCEO/index.html#${esc(I.id.startsWith('aip/') ? I.id : 'aip/' + I.id)}">${esc(I.id)}</a></span><b>${esc(q.q)}</b><ul>${q.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ul></div>`).join(''));
   }
 })();
 </script>

@@ -1,5 +1,5 @@
-// Sources: one doc per source theOS and aven learned from. A protocol is drawn as its flow. "Used by" follows every
-// path from aven's definition, the AIPs and their reviews to this source; who read it, when and how, is the trace of
+// Sources: one doc per source theOS and avenCEO learned from. A protocol is drawn as its flow. "Used by" follows every
+// path from avenCEO's definition, the AIPs and their reviews to this source; who read it, when and how, is the trace of
 // the intents that read it. Reads only.
 const HERE = 'sources';
 const $ = (s) => document.querySelector(s);
@@ -31,7 +31,7 @@ function page(p, d) {
     ${d.steps ? sec('Its steps', `<ol>${d.steps.map((s) => `<li><b>${e(s.name)}</b> ${e(s.writes)}</li>`).join('')}</ol>`) : ''}
     ${d.gates?.length ? sec('Its gates', `<ul>${d.gates.map((g) => `<li><b>${e(g.id)}</b> after ${e(d.steps[g.after - 1].name)}: ${e(g.what)}</li>`).join('')}</ul>`) : ''}
     ${d.ideas?.length ? sec('Key ideas', `<ul>${d.ideas.map((v) => `<li>${e(v)}</li>`).join('')}</ul>`) : ''}
-    ${d.took?.length ? sec('What we took', `<table class="t"><thead><tr><th>Idea</th><th>Where it lives in Aven</th></tr></thead><tbody>${d.took.map((t) => `<tr><td>${e(t.idea)}</td><td>${e(t.where)}</td></tr>`).join('')}</tbody></table>`) : ''}
+    ${d.took?.length ? sec('What we took', `<table class="t"><thead><tr><th>Idea</th><th>Where it lives in avenCEO</th></tr></thead><tbody>${d.took.map((t) => `<tr><td>${e(t.idea)}</td><td>${e(t.where)}</td></tr>`).join('')}</tbody></table>`) : ''}
     ${d.sources?.length ? sec('Its own sources', `<p>${d.sources.map((q) => W.link(q, HERE, G.docs)).join(' · ')}</p>`) : ''}
     ${sec('Trace', W.traceTable(p, HERE, G.docs, G.trace) || '<p class="note">No intent has read or written it yet. The OLD-AIPs read their sources outside brain; those reads come in when they are consolidated.</p>', 'Which intent read or wrote it, in which step, who, when and how.')}
     ${sec('Used by', used.length ? `<p>${used.map((q) => W.link(q, HERE, G.docs)).join(' · ')}</p>` : '<p class="note">No doc links here yet. The 91 OLD-AIPs in the Docs app cite their sources by name.</p>')}
@@ -40,7 +40,7 @@ function page(p, d) {
 
 function show() {
   const route = decodeURIComponent(location.hash.slice(1)) || 'all';
-  if (route && !route.startsWith('sources/') && W.isPath(route)) { location.href = `../aven/index.html#${route}`; return; }
+  if (route && !route.startsWith('sources/') && W.isPath(route)) { location.href = `../avenCEO/index.html#${route}`; return; }
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route));
   const d = G.docs.get(route);
   $('#main').innerHTML = route === 'all' ? list() : route.startsWith('topic/') ? list(null, route.slice(6)) : GROUPS.some(([k]) => k === route) ? list(route)
@@ -50,8 +50,8 @@ function show() {
 
 async function start() {
   const index = await W.get('sources/index');
-  const def = await W.get('aven/aven');
-  G = { ...(await W.crawl(['sources/index', 'aven/aven', ...def.indexes.filter((p) => !p.startsWith('sources/'))])), items: index.items };
+  const def = await W.get('avenCEO/avenCEO');
+  G = { ...(await W.crawl(['sources/index', 'avenCEO/avenCEO', ...def.indexes.filter((p) => !p.startsWith('sources/'))])), items: index.items };
   G.trace = W.trace(G.docs);
   $('#nav').innerHTML = `<a href="#all" data-r="all">All<span>${refs().length}</span></a><span class="gap"></span>`
     + GROUPS.map(([k, t]) => [k, t, refs().filter(([, d]) => d.subtype === k).length]).filter(([, , n]) => n).map(([k, t, n]) => `<a href="#${k}" data-r="${k}">${t}<span>${n}</span></a>`).join('')

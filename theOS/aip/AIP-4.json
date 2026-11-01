@@ -1,21 +1,10 @@
 {
  "type": "intent",
  "id": "AIP-4",
- "title": "A Claude Code mod as theOS's and aven's interface",
- "kind": "aven",
+ "title": "A Claude Code mod as theOS's and avenCEO's interface",
+ "kind": "avenCEO",
  "note": "In the inbox: only its source so far. Its Understand starts with what a Claude Code mod can be (a pane beside the chat, a status line, a slash command, a hook on tool calls) and what you would do through it instead of the three apps.",
- "source": {
-  "type": "idea",
-  "by": "authors/samuel-andert",
-  "at": "2026-11-01",
-  "text": "can you create also another AIP number 4, which should discover a Claude Code native mod as user interface to directly interact with the OS or with the aven harness from Claude Code sessions",
-  "links": [
-   "aven/aven"
-  ],
-  "ref": "decisions/D-27"
- },
  "questions": [],
- "reviews": [],
  "events": [
   {
    "at": "2026-11-01T09:13Z",
@@ -27,6 +16,25 @@
     "decisions/D-27"
    ],
    "reads": []
+  }
+ ],
+ "reviews": [],
+ "source": {
+  "type": "idea",
+  "by": "authors/samuel-andert",
+  "at": "2026-11-01",
+  "text": "can you create also another AIP number 4, which should discover a Claude Code native mod as user interface to directly interact with the OS or with the aven harness from Claude Code sessions",
+  "links": [
+   "avenCEO/avenCEO"
+  ],
+  "ref": "decisions/D-27"
+ },
+ "tasks": [
+  {
+   "id": "t1",
+   "what": "Understand: what a Claude Code mod can be, and what you would do through it",
+   "step": 1,
+   "who": "authors/avenmaia"
   }
  ]
 }

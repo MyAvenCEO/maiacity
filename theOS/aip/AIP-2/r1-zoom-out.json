@@ -1,0 +1,68 @@
+{
+ "type": "review",
+ "id": "aip/AIP-2/r1-zoom-out",
+ "intent": "aip/AIP-2",
+ "round": 1,
+ "lens": "zoom-out",
+ "commit": "525e4bf90",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-2.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there that the plan rebuilds needlessly? Search theOS/ to find out.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "checkpoint 3, c4",
+   "text": "It builds a release pipeline before anyone knows what is released: the question on what theOS releases is open, and the record defers the deploy but not the release. theOS packages nothing; it already publishes a versioned output (AIP-1's done rule republishes the artifact). One dated release per changed package is avenDB's shape, carried over. Simpler: defer checkpoint 3 with the deploy until the question is answered.",
+   "answer": "fix",
+   "note": "As proposed: checkpoint 3 is deferred with the deploy until you answer what theOS releases."
+  },
+  {
+   "sev": "Major",
+   "scope": "c4",
+   "text": "Its checks only test what must not happen, and they pass now with nothing built. production's ruleset requires the checks \"Only from main\" and \"avenSANDBOX\", which only the parked avensandbox.yml reported: after the park every PR into production fails, including from main. Add the positive case, and list the ruleset change as Samuel's step.",
+   "answer": "fix",
+   "note": "Deferred with checkpoint 3; the ruleset and the positive case go with it."
+  },
+  {
+   "sev": "Major",
+   "scope": "c2, checkpoint 2",
+   "text": "Heavier than the problem: a Dockerfile, an image workflow, a registry and a hash tag for a box that needs only bun, Chromium and Playwright. avenDB needed an image for Rust crates and four peers under dockerd (10 to 12 minutes per build, a 3.23 GB pull). Simpler: theOS/sandbox's setup script installs from theOS's lockfile before the snapshot, and CI runs the same script; defer the image with Lean, Rust and the vectors.",
+   "answer": "fix",
+   "note": "As proposed: theOS/sandbox/setup.sh installs from theOS's lockfile before the snapshot, and CI will run the same script; the image is deferred with Lean, Rust and the vectors."
+  },
+  {
+   "sev": "Major",
+   "scope": "checkpoint 2",
+   "text": "Not smallest-first: c2 needs theOS's check command (AIP-1), which does not exist, and checkpoint 2 joins c2 with c3, which is independent, smallest and useful alone (new sessions stop warming avenDB). Split them: c3 first, then c2 after AIP-1's checkpoint 1, with the dependency written down.",
+   "answer": "fix",
+   "note": "As proposed: c3 first (the setup script, so new sessions stop warming avenDB), then c2 after AIP-1's checkpoint 1."
+  },
+  {
+   "sev": "Nit",
+   "scope": "whys, outcome",
+   "text": "The root cause and outcome repeat the decision; the felt cost is each new session warming avenDB's Docker box, which theOS does not use. An outcome like \"a new session reaches a green theOS check with no avenDB warm-up\" measures that.",
+   "answer": "fix",
+   "note": "The outcome is now what a person feels: a new session reaches a green theOS check with no avenDB warm-up."
+  },
+  {
+   "sev": "Nit",
+   "scope": "risk",
+   "text": "\"High\" is not one of avenCEO's two levels; the park is undone with a git mv, so it can be undone.",
+   "answer": "fix",
+   "note": "Can be undone."
+  },
+  {
+   "sev": "Nit",
+   "scope": "risk",
+   "text": "The environment's setup script is shared: replacing it changes every session in it, including work that still relies on avenDB's warm box.",
+   "answer": "fix",
+   "note": "Named in the risk: the environment's script is shared; nothing in theOS relies on avenDB's warm box."
+  },
+  {
+   "sev": "Nit",
+   "scope": "deferred, who",
+   "text": "The deferred list cites question 2 but means the third; who lists aven.maia.city's visitors, whom nothing in the plan affects.",
+   "answer": "fix",
+   "note": "Fixed; aven.maia.city's visitors leave who."
+  }
+ ]
+}

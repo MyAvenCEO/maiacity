@@ -2,7 +2,7 @@
  "type": "decision",
  "id": "D-26",
  "n": 26,
- "subtype": "correction",
+ "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",
  "session": "sessions/2026-10-31-avenmaia",

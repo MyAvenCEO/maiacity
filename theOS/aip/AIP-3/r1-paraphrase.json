@@ -1,0 +1,86 @@
+{
+ "type": "review",
+ "id": "aip/AIP-3/r1-paraphrase",
+ "intent": "aip/AIP-3",
+ "round": 1,
+ "lens": "paraphrase",
+ "commit": "525e4bf90",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-3.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "AIP-3 (brain) puts theOS's memory under rules. Every doc is checked against a JSON Schema for its type (c1). Append-only data (events, measurements, asks) moves to JSON Lines, and a file must keep its base-commit version as a prefix (c2). Decisions and terms must carry a reflection, and their supersedes must point at docs that exist (c3). Every doc traces to an intent event by an author doc (c4). Links are pinned as path@SHA, and the apps flag targets changed since (c5).",
+  "existing": "Each thing is a typed JSON doc linked by bare path. Samuel's words become decisions D-n. avenMAIA writes each reflection by hand, and app.js computes what holds. Writes should be events in an intent's events array, from which wiki.js computes the step and the trace. Nothing enforces this. I cannot say where \"theOS's check\" lives or when it runs (finding 1)."
+ },
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "c1 to c5",
+   "text": "\"theOS's check\" is undefined: it is AIP-1's unbuilt check command, and AIP-1 leaves where checks run to AIP-2. Checks run by hand with no CI, so a failing change (c2) is blocked by nothing. Name the dependency, the trigger and the base commit.",
+   "answer": "fix",
+   "note": "Revision 2: theOS's check is AIP-1's checkpoint 1 (the check command), a written dependency; brain's checks join it. It runs by the done rule before every push, against the last published version; the Stop hook that enforces it stays deferred."
+  },
+  {
+   "sev": "Major",
+   "scope": "risk",
+   "text": "avenCEO has no \"Medium\" level; step 1 asks only \"can it be undone?\", and the answer decides checkpoint 1.",
+   "answer": "fix",
+   "note": "Can be undone: every change is files in git."
+  },
+  {
+   "sev": "Major",
+   "scope": "c1",
+   "text": "Only files with a type are checked, so a missing or misspelt type escapes, the stated failure. docs/ files have no type; index and definition have no type doc; JSON Lines lines have no type.",
+   "answer": "fix",
+   "note": "c1 covers every JSON doc in the folders the apps read (W.folders, avenCEO/): a missing or misspelt type fails; index and definition get type docs; docs/ (the OLD-AIPs' data) is out of scope."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3",
+   "text": "The check tests only that a reflection exists, so a wrong \"supersedes nothing\" passes. Nothing enforces that old decisions and terms are never edited, the named root cause.",
+   "answer": "fix",
+   "note": "c3: reflection.checked lists the ids it was checked against, compared with what held; and a decision or term that existed at the base may change only in its links."
+  },
+  {
+   "sev": "Major",
+   "scope": "c4",
+   "text": "An edit to an existing doc with no event passes. The record's own renamed and understood events write nothing although they changed docs. Which intent holds the back-fill events is unstated.",
+   "answer": "fix",
+   "note": "c4: every doc changed between the base and the change must be in the writes of an event added in the same change; no back-fill."
+  },
+  {
+   "sev": "Major",
+   "scope": "c5",
+   "text": "The check tests only the flag, so a bare path still passes. A link to a doc written in the same commit cannot carry that commit's SHA. Which fields are references, and which apps, is undefined.",
+   "answer": "escalate",
+   "note": "The two heavy parts are your decision (D-12, D-25): asked as question 2, with the simpler version recommended (a link's version computed from git, not stored)."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "\"Caused by an outdated decision or word\" is a judgement, yet the kind is measured and the event has no cause field. No baseline; AIP-1's terms check targets the same failure, confounding the result. Agents read files, not app.js, so nothing tells them what holds.",
+   "answer": "fix",
+   "note": "Each correction event names its cause (decision, word or other); the outcome counts the decision and word causes apart from AIP-1's; c7 gives agents what holds."
+  },
+  {
+   "sev": "Major",
+   "scope": "questions, mockup",
+   "text": "The Gate A question covers c1 to c5 and the checkpoints, but Gate A also approves the assumptions, the outcome and the mockup. The mockup links existing views only; c5's flag has none.",
+   "answer": "fix",
+   "note": "Gate A's question now covers the claims, assumptions, outcome and mockup, and offers send back; the mockup shows the flag."
+  },
+  {
+   "sev": "Nit",
+   "scope": "baseline",
+   "text": "It says 26 decisions, 35 terms, 3 intents; theOS holds 27, 33, 4.",
+   "answer": "fix",
+   "note": "The baseline counts are read off when Gate A is asked."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c2",
+   "text": "Deleting or renaming a JSON Lines file is untested; where each file lives is unstated.",
+   "answer": "fix",
+   "note": "Covered by the prefix check: a deleted or renamed list fails it."
+  }
+ ]
+}

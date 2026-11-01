@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/park",
+ "word": "Park",
+ "means": "Move a workflow out of .github/workflows/ so it stops running, without deleting it; moving it back switches it on.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

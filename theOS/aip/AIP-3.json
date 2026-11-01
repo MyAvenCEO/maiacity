@@ -2,7 +2,7 @@
  "type": "intent",
  "id": "AIP-3",
  "title": "brain: theOS's memory, one schema, references pinned by commit",
- "kind": "aven",
+ "kind": "avenCEO",
  "note": "brain: the schema, the reflection and the trace of everything theOS keeps. It took AIP-1's memory parts (D-25).",
  "questions": [
   {
@@ -14,12 +14,211 @@
    "answered": "decisions/D-25"
   },
   {
-   "q": "Gate A for AIP-3, after its spec review: are c1 to c5 and the four checkpoints what must be true?",
+   "q": "brain, two simplifications the review proposes against your direction (D-12, D-25): keep each list that only grows as a JSON array with a prefix check instead of JSON Lines, and compute a link's version from git (the commit that added the citing line) instead of storing path@SHA?",
+   "options": [
+    "Both (recommended: no history was rewritten yet, and the static apps cannot read git objects)",
+    "Keep JSON Lines and stored pins, as decided",
+    "Only the arrays",
+    "Only the computed version"
+   ]
+  },
+  {
+   "q": "Gate A for AIP-3, after its spec review: are its claims, assumptions, outcome and mockup what must be true?",
    "options": [
     "Yes",
-    "Change: tell me what"
+    "Change: tell me what",
+    "Send it back"
    ]
   }
+ ],
+ "problem": {
+  "who": [
+   "Samuel Andert, who must trust that the agents follow what he decided, as it stands now.",
+   "avenMAIA and its agents, which read brain before they act and write to it as they work.",
+   "Anyone who later asks why something is the way it is."
+  ],
+  "experience": "Decisions, words and history were kept in chat and in files edited in place: a newer decision did not say what it replaced, outdated words came back, and nobody could tell which step wrote what.",
+  "evidence": [
+   {
+    "group": "From this session",
+    "items": [
+     {
+      "text": "Decisions were listed oldest first, and a newer one did not say which older one it replaced (the dated decision docs, before D-15)."
+     },
+     {
+      "text": "avenCEO had to be renamed by hand across 13 types, 25 terms and three apps, twice (D-17, D-21)."
+     },
+     {
+      "text": "A read flag on 58 sources claimed a global truth that was per intent (D-22)."
+     },
+     {
+      "text": "Authorship was a free string: \"Samuel\", \"checkers\" (D-21)."
+     },
+     {
+      "text": "A link is a bare path, and the file behind it changes (D-12)."
+     }
+    ]
+   }
+  ],
+  "baseline": "Now: one JSON doc per thing in theOS/ (the counts are read off when Gate A is asked); the reflection and the trace computed by the apps; no schema, no check that history only grows, links by bare path.",
+  "whys": [
+   "You can't be sure the agents follow what holds now. Why? Old and new decisions sat side by side, edited in place, without saying which replaces which.",
+   "Why? Memory had no rules: no schema per type, no history that only grows, no reflection, links that move.",
+   "Root cause: brain has no schema, and nothing enforces the reflection, the trace or the growth of history."
+  ],
+  "truths": [
+   "Git keeps every version of every file; a commit SHA names exactly one.",
+   "What is computed from a log that only grows cannot drift from it.",
+   "A JSON Schema is checked by a program, without judgement.",
+   "Whether a new decision replaces an old one needs judgement: an agent proposes it, the decision records it."
+  ],
+  "assumptions": [
+   "One JSON doc per thing stays fast enough for the apps at a few hundred docs.",
+   "Rewriting git history stays forbidden, so a pinned commit never disappears."
+  ],
+  "risk": "Can be undone: every change is files in git."
+ },
+ "reuse": [
+  {
+   "what": "theOS/ui/wiki.js: the crawl, W.trace and W.stepAt",
+   "use": "Used: the trace and the step are computed already; this AIP makes them enforced."
+  },
+  {
+   "what": "theOS/avenCEO/app.js: holds and supersededBy",
+   "use": "Used: the views of what holds; this AIP adds the check behind them."
+  },
+  {
+   "what": "aven/ops/devx/decisions.mjs",
+   "use": "Learned from, not touched: a log that only grows is checked by comparing it with its earlier version."
+  },
+  {
+   "what": "Scion (sources/anthropic-redesigning-source-control-at-anthropic-scion)",
+   "use": "Learned from: records only grow, everything else is derived; content is addressed by its hash."
+  }
+ ],
+ "options": [
+  {
+   "name": "The direction you approved (D-25)",
+   "note": "A JSON doc per thing, JSON Lines for what only grows, a JSON Schema per type, internal references pinned as path@full commit SHA; binaries by content hash when there are any.",
+   "chosen": true
+  },
+  {
+   "name": "A database",
+   "note": "Rejected: git already versions, diffs and reviews files; a database would need its own history and review.",
+   "chosen": false
+  }
+ ],
+ "claims": [
+  {
+   "id": "c1",
+   "promise": "Every JSON doc in the folders the apps read has a type with a type doc, and matches the schema inside that type doc.",
+   "fails": "A misspelt field, a missing or misspelt type, or a missing author passes unseen.",
+   "check": "Each schema rejects a planted bad doc of its type, and a doc with a misspelt type fails; every current doc passes. docs/ (the OLD-AIPs' data) is out of scope.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c3",
+   "promise": "No decision or term lands without a reflection that lists the ids it was checked against, equal to what held; a decision or term that existed may change only in its links; every path in every doc points at a doc that exists.",
+   "fails": "A decision lands without saying what it replaces, an old decision is edited, or a link points at nothing.",
+   "check": "The check fails a planted decision whose checked list misses a holding decision, an edited old decision, and a dangling path.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c4",
+   "promise": "Every type is traced the same way: its type doc names the events that write its docs (what, step, kind of author); every doc changed in a change is written by an event added in that change, by an author doc, that fits its type's rule; and every doc shows the same trace.",
+   "fails": "A doc changes that no step wrote, an author is a free string, or a type is traced differently from the rest.",
+   "check": "The check fails a planted edit with no event, an event whose by is not an author doc, and a decision written by an agent's event; every doc page shows the Trace section.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c6",
+   "promise": "A term that renames a word carries the old word and where the rename applies, and the terms check fails when the old word comes back there, and stays quiet where its other meaning is right.",
+   "fails": "A rename sweep misses a place, or a word with two meanings raises a false alarm.",
+   "check": "A test plants each renamed word once where the rename applies and once where its other meaning is right; renames of avenCEO, aven and OLD-AIP are written as such term docs.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c7",
+   "promise": "Agents read what holds before they act: a command lists the decisions and terms that hold, and theOS/CLAUDE.md names it first.",
+   "fails": "Agents act on a superseded decision or word because they read raw files.",
+   "check": "The command's list equals the apps' Hold now and Current views on the same commit.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c2",
+   "promise": "What only grows (an intent's events, a metric's measurements, a session's asks) only grows: a change that edits or drops an earlier entry fails.",
+   "fails": "History is rewritten and nothing notices.",
+   "check": "The check requires the base version to be a prefix of the new one; a planted edit of an old entry fails.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c5",
+   "promise": "A link's version is known: the apps flag a link whose target changed after it was cited.",
+   "fails": "A link silently shows content that changed after it was cited.",
+   "check": "A planted citation of a doc that changed since is flagged; how the version is kept depends on your answer to question 2.",
+   "kind": "mechanical",
+   "result": "open"
+  }
+ ],
+ "outcome": {
+  "promise": "Over the next three sessions: no correction whose cause is an outdated decision or word.",
+  "how": "Each correction event names its cause (decision, word or other); counted per session, apart from AIP-1's layout and sweep causes.",
+  "kind": "measured",
+  "result": "open"
+ },
+ "checkpoints": [
+  {
+   "n": 1,
+   "adds": "After AIP-1's checkpoint 1: the schema inside each type doc, type docs for index and definition, the dangling-link check; the command that lists what holds, named first in theOS/CLAUDE.md.",
+   "claims": [
+    "c1",
+    "c7"
+   ]
+  },
+  {
+   "n": 2,
+   "adds": "The reflection and the trace enforced: checked lists, old decisions and terms unchanged, every changed doc written by an event in its change that fits its type's trace rule.",
+   "claims": [
+    "c3",
+    "c4"
+   ]
+  },
+  {
+   "n": 3,
+   "adds": "Renames as term docs with their old word and scope; the terms check (from AIP-1).",
+   "claims": [
+    "c6"
+   ]
+  },
+  {
+   "n": 4,
+   "adds": "History only grows; a link's version, as you answer question 2.",
+   "claims": [
+    "c2",
+    "c5"
+   ]
+  }
+ ],
+ "deferred": [
+  {
+   "what": "Binaries named by content hash",
+   "until": "brain keeps its first binary."
+  },
+  {
+   "what": "The reflection run by a fresh checker, automatically",
+   "until": "Three sessions without a correction whose cause is a missed supersede."
+  }
+ ],
+ "mockup": [
+  "Decisions that hold: theOS/avenCEO/index.html#decisions",
+  "Terms: theOS/avenCEO/index.html#terms",
+  "A link whose target changed since it was cited: a chip \"changed since\" beside the link, opening the diff"
  ],
  "events": [
   {
@@ -87,12 +286,12 @@
    "text": "Terms carry supersedes and reflection; six terms added (Doc merges Record; Aven, brain, Reflection, Decision, OLD-AIP); D-18 supersedes part of D-15.",
    "how": "by hand, at your direct ask, ahead of this AIP's gates",
    "writes": [
-    "aven/terms/doc",
-    "aven/terms/aven",
-    "aven/terms/brain",
-    "aven/terms/reflection",
-    "aven/terms/decision-d-n",
-    "aven/terms/old-aip"
+    "avenCEO/terms/doc",
+    "avenCEO/terms/aven",
+    "avenCEO/terms/brain",
+    "avenCEO/terms/reflection",
+    "avenCEO/terms/decision-d-n",
+    "avenCEO/terms/old-aip"
    ]
   },
   {
@@ -131,7 +330,7 @@
     "authors/samuel-andert",
     "authors/avenmaia",
     "authors/index",
-    "aven/types/author"
+    "avenCEO/types/author"
    ],
    "reads": []
   },
@@ -153,7 +352,7 @@
    "text": "The read flag left all 58 source docs; AIP-1's trace holds what was read, how, and what was only retold. 40 sources were read for the OLD-AIPs, outside brain; their reads come in with the consolidation.",
    "how": "by hand, at your direct ask, ahead of this AIP's gates",
    "writes": [
-    "aven/types/reference"
+    "avenCEO/types/reference"
    ],
    "reads": []
   },
@@ -164,7 +363,7 @@
    "text": "Every source tagged with its topics (about) and its kind: article, paper, spec, design docs, code or repository. The Harness² paper's doc is sources/harness-paper; its title no longer says whether it was read.",
    "how": "by hand, at your direct ask, ahead of this AIP's gates",
    "writes": [
-    "aven/types/reference",
+    "avenCEO/types/reference",
     "sources/harness-paper"
    ],
    "reads": []
@@ -197,188 +396,162 @@
    "how": "by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Round 1: r1-paraphrase (1 Blocker, 7 Major, 2 Nit); r1-zoom-out (6 Major, 2 Nit). Not clean.",
+   "how": "fresh subagents with the prompts avenCEO/checkers/paraphrase and avenCEO/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-3/r1-paraphrase",
+    "aip/AIP-3/r1-zoom-out"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Every finding of round 1 answered: 15 fixed, 3 escalated as question 2.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t1"
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 2: the dependency on AIP-1's check named; the reflection checked by ids; every change traced in its own change; the terms check moved in from AIP-1 (c6); a command lists what holds (c7); history and link versions last, as you answer question 2.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Revision 2 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t2"
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "One trace for every type, built and kept by brain.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-29"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Every type doc names its trace: the events that write its docs, the step and the kind of author; c4 enforces it for every type.",
+   "how": "by hand, at your direct ask",
+   "writes": [
+    "avenCEO/types/intent",
+    "avenCEO/types/review",
+    "avenCEO/types/decision",
+    "avenCEO/types/session",
+    "avenCEO/types/reference",
+    "avenCEO/types/step",
+    "avenCEO/types/gate",
+    "avenCEO/types/type",
+    "avenCEO/types/checker",
+    "avenCEO/types/check",
+    "avenCEO/types/metric",
+    "avenCEO/types/lesson",
+    "avenCEO/types/term",
+    "avenCEO/types/author"
+   ],
+   "reads": []
   }
  ],
- "reviews": [],
+ "reviews": [
+  "aip/AIP-3/r1-paraphrase",
+  "aip/AIP-3/r1-zoom-out"
+ ],
  "source": {
   "type": "idea",
   "by": "authors/samuel-andert",
   "at": "2026-11-01",
   "text": "lets talk about our schema format of SSOT for all related data that we generate on AIPs and learnings and resources etc ... what is a json file or list of json entries, what is markdown or what is both? ... also any kind of our internal git resource should be linked universally via its committed commit hashes, never via just a file path, since history changes too",
   "links": [
-   "aven/aven"
+   "avenCEO/avenCEO"
   ],
   "ref": "decisions/D-12"
  },
- "problem": {
-  "who": [
-   "Samuel Andert, who must trust that the agents follow what he decided, as it stands now.",
-   "avenMAIA and its agents, which read brain before they act and write to it as they work.",
-   "Anyone who later asks why something is the way it is."
-  ],
-  "experience": "Decisions, words and history were kept in chat and in files edited in place: a newer decision did not say what it replaced, outdated words came back, and nobody could tell which step wrote what.",
-  "evidence": [
-   {
-    "group": "From this session",
-    "items": [
-     {
-      "text": "Decisions were listed oldest first, and a newer one did not say which older one it replaced (the dated decision docs, before D-15)."
-     },
-     {
-      "text": "avenCEO had to be renamed by hand across 13 types, 25 terms and three apps, twice (D-17, D-21)."
-     },
-     {
-      "text": "A read flag on 58 sources claimed a global truth that was per intent (D-22)."
-     },
-     {
-      "text": "Authorship was a free string: \"Samuel\", \"checkers\" (D-21)."
-     },
-     {
-      "text": "A link is a bare path, and the file behind it changes (D-12)."
-     }
-    ]
-   }
-  ],
-  "baseline": "Now: 26 decisions, 35 terms and 3 intents, one JSON doc each in theOS/; the reflection and the trace computed by the apps; no schema, no check that history only grows, links by bare path.",
-  "whys": [
-   "You can't be sure the agents follow what holds now. Why? Old and new decisions sat side by side, edited in place, without saying which replaces which.",
-   "Why? Memory had no rules: no schema per type, no history that only grows, no reflection, links that move.",
-   "Root cause: brain has no schema, and nothing enforces the reflection, the trace or the growth of history."
-  ],
-  "truths": [
-   "Git keeps every version of every file; a commit SHA names exactly one.",
-   "What is computed from a log that only grows cannot drift from it.",
-   "A JSON Schema is checked by a program, without judgement.",
-   "Whether a new decision replaces an old one needs judgement: an agent proposes it, the decision records it."
-  ],
-  "assumptions": [
-   "One JSON doc per thing stays fast enough for the apps at a few hundred docs.",
-   "Rewriting git history stays forbidden, so a pinned commit never disappears."
-  ],
-  "risk": "Medium: it changes how every doc is written, not what ships."
- },
- "reuse": [
+ "tasks": [
   {
-   "what": "theOS/ui/wiki.js: the crawl, W.trace and W.stepAt",
-   "use": "Used: the trace and the step are computed already; this AIP makes them enforced."
+   "id": "t1",
+   "what": "Answer spec review round 1",
+   "step": 2,
+   "who": "authors/avenmaia"
   },
   {
-   "what": "theOS/aven/app.js: holds and supersededBy",
-   "use": "Used: the views of what holds; this AIP adds the check behind them."
+   "id": "t2",
+   "what": "Revision 2",
+   "step": 2,
+   "who": "authors/avenmaia"
   },
   {
-   "what": "aven/ops/devx/decisions.mjs",
-   "use": "Learned from, not touched: a log that only grows is checked by comparing it with its earlier version."
+   "id": "t3",
+   "what": "Answer: the two simplifications (question 2)",
+   "step": 2,
+   "who": "authors/samuel-andert"
   },
   {
-   "what": "Scion (sources/anthropic-redesigning-source-control-at-anthropic-scion)",
-   "use": "Learned from: records only grow, everything else is derived; content is addressed by its hash."
+   "id": "t4",
+   "what": "Spec review round 2: paraphrase and zoom-out",
+   "step": 2,
+   "who": "two fresh checkers"
+  },
+  {
+   "id": "t5",
+   "what": "Gate A: approve what must be true",
+   "step": 2,
+   "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t6",
+   "what": "Checkpoint 1: schemas, dangling links, what holds",
+   "step": 3,
+   "for": "checkpoint 1",
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t7",
+   "what": "Checkpoint 2: reflection and trace enforced",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t8",
+   "what": "Checkpoint 3: renames and the terms check",
+   "step": 3,
+   "for": "checkpoint 3",
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t9",
+   "what": "Checkpoint 4: history only grows; a link's version",
+   "step": 3,
+   "for": "checkpoint 4",
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t10",
+   "what": "Gate B: try it",
+   "step": 3,
+   "who": "authors/samuel-andert"
   }
- ],
- "options": [
-  {
-   "name": "The direction you approved (D-25)",
-   "note": "A JSON doc per thing, JSON Lines for what only grows, a JSON Schema per type, internal references pinned as path@full commit SHA; binaries by content hash when there are any.",
-   "chosen": true
-  },
-  {
-   "name": "A database",
-   "note": "Rejected: git already versions, diffs and reviews files; a database would need its own history and review.",
-   "chosen": false
-  }
- ],
- "claims": [
-  {
-   "id": "c1",
-   "promise": "Every doc in theOS/ matches its type's JSON Schema, in theOS's check.",
-   "fails": "A misspelt field or a missing author passes unseen.",
-   "check": "Each schema rejects a planted bad doc of its type; every current doc passes.",
-   "kind": "mechanical",
-   "result": "open"
-  },
-  {
-   "id": "c2",
-   "promise": "What only grows (an intent's events, a metric's measurements, a session's asks) lives in JSON Lines, and a change that edits or drops an earlier line fails.",
-   "fails": "History is rewritten and nothing notices.",
-   "check": "The check requires the base commit's file to be a prefix of the new one; a planted edit of an old line fails.",
-   "kind": "mechanical",
-   "result": "open"
-  },
-  {
-   "id": "c3",
-   "promise": "No decision or term is committed without its reflection, and every supersedes points at a doc that exists; what holds is only ever computed.",
-   "fails": "A decision lands without saying what it replaces, or points at nothing.",
-   "check": "The check fails a planted decision without reflection, and one whose supersedes names a missing doc.",
-   "kind": "mechanical",
-   "result": "open"
-  },
-  {
-   "id": "c4",
-   "promise": "Every doc is written by an event of an intent, by an author doc.",
-   "fails": "A doc appears that no step wrote, or an author is a free string.",
-   "check": "The check fails a planted doc that no event writes, and an event whose by is not an author doc; docs from before brain are covered by one back-fill event each.",
-   "kind": "mechanical",
-   "result": "open"
-  },
-  {
-   "id": "c5",
-   "promise": "An internal reference is pinned as path@full commit SHA when it is written, and the apps show the pinned version and flag a target changed since.",
-   "fails": "A link silently shows content that changed after it was cited.",
-   "check": "A planted pin to an older commit of a doc that changed since is flagged in the apps.",
-   "kind": "mechanical",
-   "result": "open"
-  }
- ],
- "outcome": {
-  "promise": "Over the next three sessions: no correction caused by an outdated decision or word coming back.",
-  "how": "Each correction is an event by Samuel Andert (what: correction); counted per session.",
-  "kind": "measured",
-  "result": "open"
- },
- "checkpoints": [
-  {
-   "n": 1,
-   "adds": "A JSON Schema per type in theOS/aven/types/, checked by theOS's check over every doc.",
-   "claims": [
-    "c1"
-   ]
-  },
-  {
-   "n": 2,
-   "adds": "Events, measurements and asks moved to JSON Lines; the growth check.",
-   "claims": [
-    "c2"
-   ]
-  },
-  {
-   "n": 3,
-   "adds": "The reflection and the trace enforced by the check.",
-   "claims": [
-    "c3",
-    "c4"
-   ]
-  },
-  {
-   "n": 4,
-   "adds": "References pinned by commit, and the apps' flag.",
-   "claims": [
-    "c5"
-   ]
-  }
- ],
- "deferred": [
-  {
-   "what": "Binaries named by content hash",
-   "until": "brain keeps its first binary."
-  },
-  {
-   "what": "The reflection run by a fresh checker, automatically",
-   "until": "It has run by hand three times without a miss."
-  }
- ],
- "mockup": [
-  "Decisions that hold: theOS/aven/index.html#decisions",
-  "Terms: theOS/aven/index.html#terms",
-  "A doc's trace: theOS/aven/index.html#decisions/D-19"
  ]
 }

@@ -1,0 +1,100 @@
+{
+ "type": "review",
+ "id": "aip/AIP-1/r4-paraphrase",
+ "intent": "aip/AIP-1",
+ "round": 4,
+ "lens": "paraphrase",
+ "commit": "2d6f53842",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-1.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "Build aven's first slice as checks rather than automation, all inside theOS/. Checkpoint 1 adds theOS/CLAUDE.md with a done rule, theOS's own package.json, a check command, and a terms check that flags a renamed word when it comes back. Checkpoint 2 adds a headless crawl of every reachable state of the three apps at three window sizes, with a check that content can be reached and nothing scrolls sideways. Checkpoint 3 adds a pixel diff against a base commit and a fresh checker that sees only the views that changed. The router, the Stop hook and the metrics script wait. Success means three sessions with zero layout escapes, zero renamed-term escapes, and fewer than 1.5 corrections per 10 commits.",
+  "existing": "theOS is a set of JSON docs that link to each other by path. Three static apps (Docs, Intents, Sources) show them, behind theOS/index.html, and an AIP's stage is computed from its events. aven runs by hand: the main session (avenMAIA) orchestrates and writes, fresh agents review specs, Samuel approves a gate with a chat message that is quoted into a decision doc, and brain's reflection is done by hand. Nothing checks the work mechanically, so Samuel catches layout and naming slips by looking. I cannot paraphrase \"the glossary brain computes\", because nothing computes one (finding 2)."
+ },
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "c1, c2",
+   "text": "At the parents of 106ba0e5f, 3ddc07339 and faf266961, theOS/ holds only docs/: no theOS/index.html, no Intents or Sources app, and faf266961's parent has no intent pages or Learn tabs. So \"from theOS/index.html, across the three apps, with no edit per commit\" cannot hold. c2's check only looks for intent pages and Learn tabs, so it cannot catch its own failure: a state hidden behind another button. \"Duplicate state\" is undefined.",
+   "answer": "fix",
+   "note": "Revision 7: the crawl starts at theOS/index.html, or theOS/docs/index.html on commits that have no dashboard; on old commits it covers the one app there. c2's check compares the states reached with an independent list (stories.json, intents.json, the index docs) and a planted state behind a button. A duplicate state is the same route with the same rendered text."
+  },
+  {
+   "sev": "Major",
+   "scope": "c4, reuse",
+   "text": "No term doc records a rename (none for rule to policy; avenCEO to aven only in prose). The term type has no scope and no decision field, so nothing records where a rename applies; round 3's scope fix lived in glossary.json, which revision 6 dropped. Which kinds of supersede count as a rename is undefined: Doc merges Record, so if merges count this record fails \"passes now\"; with no rename docs the planted test passes trivially. Nothing computes the glossary and checkpoint 1 builds none. Assumption 3 still lists theOS/docs/glossary.json.",
+   "answer": "fix",
+   "note": "Revision 7: the terms check leaves AIP-1. A rename needs the old word and its scope on the term, which is brain's schema: it is AIP-3's c6. Until then the done rule says: sweep the old word the decision names. Assumption 3 no longer lists glossary.json."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3",
+   "text": "No negative control, so a checker that flags every changed view passes. Its prompt is not frozen before the replay, unlike c1's rule. \"Base commit\" is undefined: if it is the branch's base on main (6f59481e6), which predates the three apps, every view always counts as changed. \"Stretched chip\" is not in the evidence (it is 106ba0e5f).",
+   "answer": "fix",
+   "note": "Revision 7: the base is the commit of the last published version. The replay has a negative control: the checker must flag the broken views of the commit that broke them and pass the same views at the fix. Its prompt is committed before the replay. c3 names the evidence as it is: two parts of the intent page shared one class name (106ba0e5f)."
+  },
+  {
+   "sev": "Major",
+   "scope": "aven's gates",
+   "text": "aven's Mechanical gate compares screenshots against the mockup; AIP-1 compares against the base commit. aven's checkpoint Review gate needs a critic and a code reviewer; only the paraphrase and zoom-out prompts exist and the plan adds only a screenshot checker, so no checkpoint can pass the gate as aven defines it.",
+   "answer": "fix",
+   "note": "avenCEO's gates now say what AIP-1 builds: the Mechanical gate diffs screenshots against the last published version (the mockup, for a view that is new); the Review gate for a checkpoint is a critic that sees what changed: the views whose pixels changed, grouped, and the diff."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "The baseline session is still open. D-26 was written as a correction although nothing had been called done, so by the term it is an answer. The session doc counts 68 commits; the record says 67. It does not say whether the three measured sessions start before or after checkpoint 3 completes the done rule.",
+   "answer": "fix",
+   "note": "The baseline is the session's first 67 commits, before AIP-1's first spec (10 corrections); the three measured sessions start after checkpoint 3. D-26 was an answer, not a correction: an erratum event says so and fixes its subtype."
+  },
+  {
+   "sev": "Nit",
+   "scope": "deleted",
+   "text": "It says \"there is one app\"; there are three.",
+   "answer": "fix",
+   "note": "\"Picking checks by path\" now says: theOS is small, every check always runs."
+  },
+  {
+   "sev": "Nit",
+   "scope": "terms",
+   "text": "\"view\" and \"done rule\" still say \"the docs app\" and \"the docs page\".",
+   "answer": "fix",
+   "note": "View and Done rule are redefined by new term docs that supersede them, for the three apps and the theOS artifact."
+  },
+  {
+   "sev": "Nit",
+   "scope": "reuse",
+   "text": "avenSANDBOX and \"the session's box\" are never defined; whose Playwright is used is unclear: theOS's package.json or the box's.",
+   "answer": "fix",
+   "note": "Term docs added: avenSANDBOX and Box. Playwright comes in checkpoint 2, in theOS's package.json, pinned to the box's browser (/opt/pw-browsers)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "assumptions",
+   "text": "Assumption 1 repeats D-5's \"without changing it\", which D-24 partly supersedes.",
+   "answer": "fix",
+   "note": "Assumption 1 now says: theOS owns avenSANDBOX and the release pipeline (D-24), through AIP-2."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c2",
+   "text": "The \"Learn tabs\" are OLD-AIP tabs, not aven's Learn step.",
+   "answer": "fix",
+   "note": "c2 names them: the OLD-AIP pages and their Learn tabs."
+  },
+  {
+   "sev": "Nit",
+   "scope": "mockup",
+   "text": "It lists the existing apps, not the change.",
+   "answer": "fix",
+   "note": "The mockup is the check's report: each app, its states, pass or fail, and a folder of screenshots."
+  },
+  {
+   "sev": "Nit",
+   "scope": "commit",
+   "text": "It reviewed an uncommitted working tree on top of e3f7b6071 (AIP-1.json modified, D-26 untracked): no commit names this revision.",
+   "answer": "fix",
+   "note": "The review is recorded at 2d6f53842, the first commit holding the tree it read."
+  }
+ ]
+}

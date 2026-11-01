@@ -1,0 +1,31 @@
+{
+ "type": "step",
+ "id": "avenCEO/steps/3-build",
+ "n": 3,
+ "name": "Build",
+ "writes": "checkpoints through gates · release",
+ "question": "Does every checkpoint pass its checks, smallest first?",
+ "do": [
+  "Check the starting point first: it builds and every existing check is green.",
+  "Per checkpoint: write its checks and see them fail; a worker makes them pass; the Mechanical gate runs every check a machine can run; the Review gate sends a fresh checker after what the checks miss.",
+  "A stop hook keeps the work going while a gate is open (later; today the orchestrator holds the gate). A counterexample to a claim, or three rounds without passing, go back to Specify.",
+  "When every checkpoint has passed: Gate B. You try it as a person would; your feedback becomes new checkpoints through the same gates.",
+  "Then it is released, with an undo that was tested (later automatic; today you or the orchestrator publish by hand)."
+ ],
+ "output": "every checkpoint through both gates · your try · release · tested undo",
+ "gate": "avenCEO/gates/B",
+ "gate_text": "Gate B: you tried it. Release follows by itself.",
+ "who": "The orchestrator, worker and checker agents in fresh contexts, machines; you at Gate B.",
+ "back": [
+  {
+   "to": "avenCEO/steps/2-specify",
+   "when": "counterexample, or 3 failed rounds"
+  }
+ ],
+ "from": [
+  "Musk 4: speed up",
+  "Claude Code team: verifier, reviewer, stopping rules, undo",
+  "Shopify Helix: checkpoints, enforced gates, critic and fixer",
+  "Lean and Aeneas"
+ ]
+}

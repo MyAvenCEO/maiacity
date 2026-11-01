@@ -12,7 +12,7 @@
  "quote": "wait the html json rule was better, keep that instead of markdown. its way more flexible in ui",
  "means": "Docs stay native HTML and JSON: one JSON doc per thing, no markdown.",
  "intents": [
-  "aven/aven"
+  "avenCEO/avenCEO"
  ],
  "supersedes": [
   {

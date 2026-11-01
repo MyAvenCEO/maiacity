@@ -1,0 +1,33 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/checker",
+ "name": "checker",
+ "file": "avenCEO/checkers/<lens>.json",
+ "what": "A fresh agent's lens, with its exact prompt as a template.",
+ "subtypes": [
+  "paraphrase",
+  "zoom-out"
+ ],
+ "fields": [
+  {
+   "name": "lens",
+   "means": "what it looks for"
+  },
+  {
+   "name": "prompt",
+   "means": "the template; {record} is the record's path"
+  }
+ ],
+ "written_by": "Samuel, through avenCEO intents",
+ "links_to": [
+  "avenCEO/types/review"
+ ],
+ "trace": {
+  "events": [
+   "changed"
+  ],
+  "step": "AIP-1's steps",
+  "author": "agent",
+  "note": "A checker's prompt changes only by an event that names it."
+ }
+}

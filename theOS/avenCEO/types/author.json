@@ -1,0 +1,35 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/author",
+ "name": "author",
+ "file": "authors/<name>.json",
+ "what": "Who wrote something in brain: Samuel Andert, the human, or avenMAIA, avenCEO's instance, for every agent session. Every by points at one.",
+ "subtypes": [
+  "human",
+  "agent"
+ ],
+ "fields": [
+  {
+   "name": "name",
+   "means": "as shown"
+  },
+  {
+   "name": "kind",
+   "means": "human or agent"
+  },
+  {
+   "name": "what",
+   "means": "who it is"
+  }
+ ],
+ "written_by": "by hand, once per author",
+ "links_to": [],
+ "trace": {
+  "events": [
+   "changed"
+  ],
+  "step": "any step",
+  "author": "agent",
+  "note": "Written once per author."
+ }
+}

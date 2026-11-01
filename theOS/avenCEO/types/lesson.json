@@ -1,0 +1,35 @@
+{
+ "type": "type",
+ "id": "avenCEO/types/lesson",
+ "name": "lesson",
+ "file": "lessons/<slug>.json",
+ "what": "What we learned: the cue it fires on, the operation, the evidence, the confidence.",
+ "subtypes": [
+  "candidate",
+  "kept",
+  "reverted"
+ ],
+ "fields": [
+  {
+   "name": "cue, lesson",
+   "means": "when, and what to do"
+  },
+  {
+   "name": "evidence, confidence",
+   "means": "why we believe it"
+  }
+ ],
+ "written_by": "Samuel approves; the orchestrator writes",
+ "links_to": [
+  "avenCEO/types/session",
+  "avenCEO/types/intent"
+ ],
+ "trace": {
+  "events": [
+   "learned"
+  ],
+  "step": "4 · Learn",
+  "author": "agent",
+  "note": "A lesson is written in Learn, with its evidence."
+ }
+}

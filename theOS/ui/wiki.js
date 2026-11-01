@@ -3,7 +3,7 @@
 const W = {
   root: '../',
   cache: new Map(),
-  folders: ['aip', 'decisions', 'sessions', 'sources', 'metrics', 'lessons', 'authors', 'aven'],
+  folders: ['aip', 'decisions', 'sessions', 'sources', 'metrics', 'lessons', 'authors', 'avenCEO'],
   get(path) {
     if (!this.cache.has(path)) this.cache.set(path, fetch(`${this.root}${path}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
     return this.cache.get(path);
@@ -17,7 +17,7 @@ const W = {
     else if (o && typeof o === 'object') Object.values(o).forEach((x) => this.paths(x, out));
     return out;
   },
-  appOf: (path) => (path.startsWith('sources/') ? 'sources' : 'aven'),
+  appOf: (path) => (path.startsWith('sources/') ? 'sources' : 'avenCEO'),
   href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/index.html#${path}`; },
   label: (d, path) => (d && (d.title || d.name || d.word || d.id)) || path.split('/').pop(),
   // all docs reachable from the starting paths, and who points at whom
@@ -59,7 +59,7 @@ const W = {
     return !has('understood') ? 1 : !has('gate-A') ? 2 : !has('gate-B') ? 3 : !has('measured') ? 4 : 5;
   },
   stepLink(n, here, docs) {
-    const s = `aven/steps/${n}-${this.STEPS[n - 1].toLowerCase()}`;
+    const s = `avenCEO/steps/${n}-${this.STEPS[n - 1].toLowerCase()}`;
     return docs?.has(s) ? `<a class="wl" href="${this.href(s, here)}">${n} · ${this.STEPS[n - 1]}</a>` : this.STEPS[n - 1];
   },
   // path → the events that wrote or read it, from every intent among the docs

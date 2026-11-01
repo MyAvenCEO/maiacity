@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/done-rule-2",
+ "word": "Done rule",
+ "means": "When a change to theOS counts as done: the check command green, a fresh checker's look at the changed views, a renaming decision swept for the old word, pushed, and the theOS artifact republished with its version in the commit message.",
+ "supersedes": [
+  {
+   "term": "avenCEO/terms/done-rule",
+   "how": "redefined: the three apps, the theOS artifact, the sweep of renamed words"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes done-rule (redefined)"
+ }
+}

@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/avensandbox",
+ "word": "avenSANDBOX",
+ "means": "The box agents work and test in: today the cloud environment of that name and the image it warms (avenDB's, parked). theOS owns it from now on (D-24, AIP-2).",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

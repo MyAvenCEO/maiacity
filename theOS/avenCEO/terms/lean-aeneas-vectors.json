@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/lean-aeneas-vectors",
+ "word": "Lean, Aeneas, vectors",
+ "means": "Lean proves claims about a model; Aeneas translates Rust into Lean; vectors are examples Lean writes for the Rust tests.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

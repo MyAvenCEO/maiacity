@@ -23,15 +23,15 @@
  "took": [
   {
    "idea": "Records are append-only logs; stages and views are derived",
-   "where": "aven: stage computed from events"
+   "where": "avenCEO: stage computed from events"
   },
   {
    "idea": "One doc per thing, linked by path; nothing materialised twice",
-   "where": "aven's memory in theOS/"
+   "where": "avenCEO's memory in theOS/"
   },
   {
    "idea": "You review intent at Gate A; you say no to over-engineering",
-   "where": "aven's stopping rule at three rounds"
+   "where": "avenCEO's stopping rule at three rounds"
   },
   {
    "idea": "Hermetic tests",

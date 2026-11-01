@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "avenCEO/terms/check",
+ "word": "Check",
+ "means": "What shows a claim holds: mechanical (a test, a proof, a screenshot diff), a review, a person, or a measurement.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

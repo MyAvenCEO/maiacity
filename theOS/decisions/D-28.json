@@ -1,0 +1,32 @@
+{
+ "type": "decision",
+ "id": "D-28",
+ "n": 28,
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "naming",
+  "avenCEO"
+ ],
+ "quote": "ok, lets again rename the harness itself to avenCEO, as the agent harness framework, and its instance using it stays avenMAIA",
+ "means": "The agent harness framework is avenCEO again; avenMAIA stays its instance.",
+ "intents": [
+  "aip/AIP-1"
+ ],
+ "supersedes": [
+  {
+   "decision": "decisions/D-21",
+   "part": "part",
+   "what": "D-21 named the framework aven; it is avenCEO. Its instance avenMAIA, and authorship, stand."
+  }
+ ],
+ "relates": [
+  "decisions/D-17"
+ ],
+ "reflection": {
+  "checked": "every decision before D-28 that held",
+  "result": "supersedes D-21 (part)"
+ }
+}
