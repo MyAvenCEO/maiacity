@@ -30,7 +30,8 @@
     "It stays as it is: theOS's release replaces only the pages; the relay, /aven.json and the peer are untouched (recommended)",
     "It is taken down with avenOS",
     "Something else: tell me"
-   ]
+   ],
+   "answer": "Keep the Aven Peer, its relay and the vault's passkey as they are for now, in parallel with theOS's apps; we come back to this later."
   },
   {
    "q": "Should avenOS stay reachable anywhere once theOS's apps replace it at aven.maia.city?",
@@ -38,7 +39,8 @@
     "No: its releases stay on GitHub and the undo can bring it back (recommended)",
     "Yes, under a path of aven.maia.city: tell me which",
     "Yes, on another host name: tell me which"
-   ]
+   ],
+   "answer": "No."
   },
   {
    "q": "D-30 says theOS releases its apps once its release is green. What counts as green?",
@@ -46,7 +48,8 @@
     "theOS's check command (AIP-1's crawl and docs check) passes inside avenSANDBOX's image on the commit released (recommended)",
     "That, plus your try at Gate B of this intent",
     "Something else: tell me"
-   ]
+   ],
+   "answer": "Yes: theOS's check command passes inside avenSANDBOX's image on the commit released."
   },
   {
    "q": "production's ruleset (aven/DB2/SANDBOX.md, your part 5) requires the checks 'Only from main' and 'avenSANDBOX', which came from avenDB's parked workflow. Is that ruleset set today, and may theOS's release workflow report checks under its own names, which you then put into the ruleset in place of the old ones?",
@@ -54,7 +57,8 @@
     "Yes: it is set as written; theOS reports its own checks and I change the ruleset at Gate B (recommended)",
     "It is set; keep the old names, and theOS's workflow reports checks under them",
     "It is not set yet: tell me"
-   ]
+   ],
+   "answer": "Yes, with a step-by-step guide for what I need to do."
   },
   {
    "q": "Who starts theOS's deploy, and from where?",
@@ -62,7 +66,9 @@
     "By hand, as before, in the environment production, and only from production (you limit the environment's branches to production) (recommended)",
     "Automatically after every green release from production",
     "By hand as before, from any branch"
-   ]
+   ],
+   "answer": "production starts the deploy automatically, as today.",
+   "note": "The record shows avenDEPLOY started by hand each time (workflow_dispatch by Samuel; run 20 began 38 s after the release). Read as: every green release from production deploys by itself, which is a change from avendeploy.yml."
   }
  ],
  "reviews": [],
@@ -78,6 +84,18 @@
    "what": "Understand: production's ruleset, the deploy, what aven.maia.city serves",
    "step": 1,
    "who": "authors/avenmaia"
+  },
+  {
+   "id": "t3",
+   "what": "Your part: read production's ruleset and the environment production now; at Gate B swap the old check names for theOS's own and limit the environment to production",
+   "step": 1,
+   "who": "authors/samuel-andert",
+   "steps": [
+    "Now: Settings, Rules, Rulesets: is there a ruleset on production? Note its enforcement, bypass list and required checks.",
+    "Now: Settings, Environments, production: note its deployment branches and required reviewers.",
+    "Gate B, after theOS's release workflow has run once on a pull request to production: in the ruleset, remove 'avenSANDBOX' from the required checks, add theOS's check by its name from GitHub Actions, keep 'Only from main', save.",
+    "Gate B: in the environment production, Deployment branches and tags: Selected branches and tags, add production, save."
+   ]
   }
  ],
  "events": [
@@ -150,6 +168,28 @@
    "writes": [],
    "reads": [],
    "task": "t2"
+  },
+  {
+   "at": "2026-11-01T10:35Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Keep the Aven Peer, its relay and the vault's passkey as they are, in parallel, for now; avenOS stays nowhere; green is theOS's check inside the box; yes to the ruleset swap, with a guide; production deploys automatically.",
+   "how": "in chat to AIP-5's thread, polished; the decisions are avenMAIA's to write",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:35Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Answers written on the five questions; assumptions updated (peer kept in parallel, avenOS nowhere, green defined, the deploy automatic); task t3 for Samuel with the ruleset steps.",
+   "how": "by hand, AIP-5's thread",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": []
   }
  ],
  "problem": {
@@ -253,13 +293,14 @@
    "An Aven Peer's key, once lost, can't be recovered, and production's bucket is never wiped (aven/DB2/PRODUCTION.md)."
   ],
   "assumptions": [
-   "theOS's release changes only what aven.maia.city serves at its pages: the Aven Peer, its relay paths, /aven.json, its key, its bucket, DNS and the firewall stay as they are (to be confirmed: question 1).",
+   "theOS's release changes only what aven.maia.city serves at its pages: the Aven Peer, its relay paths, /aven.json, its key, its bucket, DNS, the firewall and the vault's passkey stay as they are, in parallel, until Samuel comes back to them (his answer, 1 Nov).",
    "The release is the static files of theOS/ as they are in git, packed into one archive with its checksum; no build step.",
    "A theOS release follows avenDB's tag scheme under its own name: @theos/<package>@<date in Berlin>, then v2, v3; a push that changes nothing releases nothing.",
    "Changes reach production from main only, through a pull request; theOS's apps reach main first through the goal pull request (AIP-2).",
-   "The deploy runs by hand in the environment production, as avendeploy.yml did, and uses its existing secrets; it reuses the Caddy block and caddy.sh's link switch, learned from, not called from aven/.",
-   "'Green' means theOS's check command (AIP-1) passes inside avenSANDBOX's image on the commit released (AIP-2's c3), to be confirmed (question 3).",
-   "Settings changes (production's ruleset, the environment) are Samuel's, as before."
+   "The deploy runs by itself after every green release from production, in the environment production, with its existing secrets (Samuel's answer, 1 Nov); it reuses the Caddy block and caddy.sh's link switch, learned from, not called from aven/.",
+   "'Green' means theOS's check command (AIP-1) passes inside avenSANDBOX's image on the commit released (AIP-2's c3) (Samuel's answer, 1 Nov).",
+   "Settings changes (production's ruleset, the environment) are Samuel's, as before.",
+   "avenOS is not kept reachable anywhere: its releases stay on GitHub, and the undo can bring it back (Samuel's answer, 1 Nov)."
   ],
   "risk": "Can be undone, as long as the release touches only the served pages: the previous build stays on the server (site/aven/releases keeps three) and avenOS 26.10.31v6's archive stays in its GitHub release, so an undo switches site/aven/current back, or redeploys that version; Caddy's previous config is kept as Caddyfile.before-<run>. The undo must be tried before it counts. Anything that touches the Aven Peer's key, the bucket, the passkeys' RP ID or the browsers' storage can't be undone, and stays out of this intent."
  },
