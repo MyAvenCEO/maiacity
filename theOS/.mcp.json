@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "brain": {
+      "command": "node",
+      "args": ["brain/brain.mjs", "mcp"]
+    }
+  }
+}

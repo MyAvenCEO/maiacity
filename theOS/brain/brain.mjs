@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import vm from 'node:vm';
-export { add, edit, append, index, install, check, reflect, merge3, validate, versions, DoorError } from './door.mjs';
+export { add, edit, append, index, install, check, reflect, merge3, validate, versions, docsOf, DoorError } from './door.mjs';
 
 const THEOS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SAMUEL = 'authors/samuel-andert';
@@ -150,6 +150,7 @@ export const VERBS = [
   ['index', 'the index docs and brain/ids.json written again from the folders'],
   ['install', "this clone's pre-push hook (brain check) and the merge driver for lists that only grow"],
   ['versions', 'every link whose target changed after it was cited, into brain/versions.json for the apps (c5)'],
+  ['mcp', 'the same verbs as an MCP server on stdio, for other sessions and tools (theOS/.mcp.json)'],
   ['check [--range a..b]', 'every commit in the range against its parent: events cover every changed doc, schemas, history only grows'],
 ];
 
@@ -192,6 +193,7 @@ async function main(argv) {
   const file = (f) => { if (!f) throw new BrainError('missing_arg', `brain ${verb}: a JSON file is missing`); return JSON.parse(readFileSync(resolve(f), 'utf8')); };
   const who = { intent: opt('intent'), by: opt('by'), task: opt('task') };
   try {
+    if (verb === 'mcp') { (await import('./mcp.mjs')).serve(root, await import('./brain.mjs')); return; } // brain's MCP server on stdio (c11)
     if (verb === 'merge') { // the git merge driver: brain merge %O %A %B, writes the result into %A
       const [o, a, b] = [arg, arg2, arg3].map((f) => JSON.parse(readFileSync(f, 'utf8')));
       writeFileSync(arg2, `${JSON.stringify(door.merge3(o, a, b), null, 1)}\n`);
@@ -229,4 +231,5 @@ async function main(argv) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main(process.argv.slice(2));
+// not awaited at the top: the MCP server imports this module, which must finish loading first
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).catch((e) => { process.stderr.write(`${e.stack}\n`); process.exitCode = 1; });

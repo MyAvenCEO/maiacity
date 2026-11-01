@@ -1789,6 +1789,16 @@
    "writes": [],
    "reads": [],
    "task": "t8"
+  },
+  {
+   "at": "2026-11-01T14:33Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Checkpoint 4 built: brain's MCP server (brain/mcp.mjs, run as node brain/brain.mjs mcp, named in theOS/.mcp.json) serves prime, holds, get, reflect, add, edit, append, index, check and versions as MCP tools over stdio, from the same functions brain.mjs exports; a refusal is a tool error with brain's code and fix. Its test calls prime, holds and get through it and gets what the command line gives (c11). 22 of 22 tests.",
+   "how": "by the AIP-3 thread; node --test theOS/brain/test/*.test.mjs",
+   "writes": [],
+   "reads": [],
+   "task": "t9"
   }
  ],
  "reviews": [
