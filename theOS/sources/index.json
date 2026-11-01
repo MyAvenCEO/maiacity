@@ -78,6 +78,26 @@
   "sources/mem0-paper",
   "sources/memgpt-paper",
   "sources/sleep-time-compute-paper",
-  "sources/zep-paper"
+  "sources/zep-paper",
+  "sources/claude-code-mods",
+  "sources/claude-code-mods-interface",
+  "sources/claude-code-plugin-authoring-skill",
+  "sources/claude-code-plugins",
+  "sources/claude-code-hooks",
+  "sources/claude-code-statusline",
+  "sources/claude-code-cloud-sessions",
+  "sources/claude-code-projects",
+  "sources/claude-code-cross-session-messaging",
+  "sources/claude-code-agent-view",
+  "sources/claude-code-channels",
+  "sources/claude-code-remote-control",
+  "sources/claude-code-agent-teams",
+  "sources/claude-code-mcp",
+  "sources/claude-agent-sdk",
+  "sources/claude-code-output-styles",
+  "sources/claude-code-desktop",
+  "sources/claude-code-skills",
+  "sources/claude-code-scheduled-tasks",
+  "sources/claude-code-remote-session-tools"
  ]
 }
