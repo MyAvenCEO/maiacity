@@ -1,0 +1,181 @@
+{
+ "title": "Carriers",
+ "slides": [
+  {
+   "title": "Who may even get the bytes?",
+   "text": "Read decides who can open data. Three more operations decide who may carry it: {want}, {keep} and {sync}. A carrier has to check who may carry, so it sees the policies, roles and endings of the data it carries. What's inside stays sealed. Whoever asks shows their own proof.",
+   "list": [
+    "want: may ask for this data and receive it, sealed.",
+    "keep: may store it for good.",
+    "sync: may pass it on to others whose policies say want."
+   ],
+   "deep": "want, keep and sync are operations in policies, like any other. Policies, roles and endings are signed but not encrypted for carriers; content and keys are sealed (OLD-AIP-65). Not to be confused with a relay (Network chapter), which only passes encrypted packets between two devices and holds nothing."
+  },
+  {
+   "title": "want",
+   "text": "Before a carrier sends anything, even sealed chunks, the asker proves that a policy gives it want. The carrier hands out a fresh challenge, and the asker signs its request over it, so the request can't be replayed anywhere else. The carrier checks the chain and that no ending has cut it. A stranger, or the plumber after his policy ended, gets nothing, not even ciphertext. Read includes want.",
+   "code": {
+    "type": "data:b3:Rb5…@b3:f23…#want",
+    "on": "data:b3:7Hq…#house-list",
+    "challenge": "b3:c91e…",
+    "proof": [
+     "data:b3:7Hq…#house-list",
+     "policy:b3:h7r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:b5l…#bob-laptop"
+    ],
+    "sig": {
+     "by": "agent:b3:b4l…#bob-laptop",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
+   },
+   "deep": "The proof chain: the data's birth record → the policy giving want (or read) to a role → the asker's identity in that role → the asker's agent policy. The carrier evaluates it against the signed policies, roles and endings of that data, which it holds in clear, and binds the answer to this connection's challenge (OLD-AIP-65)."
+  },
+  {
+   "title": "keep",
+   "text": "Your backup is one of your agents, with a narrow policy from you: it may act for you only to want and keep the list. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so no envelope is ever made for it: to it they're just sealed bytes.",
+   "code": {
+    "type": "data:b3:R9f…@b3:00f…#policy",
+    "to": "agent:b3:k8b…#backup",
+    "on": "human:b3:q4x7…#you",
+    "operations": {
+     "act": {
+      "data": {
+       "data:b3:7Hq…#house-list": {
+        "want": {},
+        "keep": {}
+       }
+      }
+     }
+    },
+    "proof": [
+     "human:b3:q4x7…#you"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "keep means the carrier stores sealed chunks durably and serves them to askers holding want. Keys follow both layers of policy (OLD-AIP-57, OLD-AIP-58): the backup's policy covers no read, so no key is ever sealed to its lock."
+  },
+  {
+   "title": "sync",
+   "text": "The street's always-on peer gets sync. Your policy gives want and sync to a role that holds the street coop, and the street's own policy lets its server act for it only for carrying. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
+   "code": {
+    "type": "data:b3:R9f…@b3:00f…#policy",
+    "to": "role:b3:e9s…#street-carrier",
+    "on": "data:b3:7Hq…#house-list",
+    "operations": {
+     "want": {},
+     "sync": {}
+    },
+    "expires": "2026-12-01T00:00:00Z",
+    "proof": [
+     "data:b3:7Hq…#house-list",
+     "human:b3:q4x7…#you"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "sync means the peer may forward sealed chunks to others whose policies give them want, which bridges devices that are never online at the same time. The role “street-carrier” is yours and holds the street coop (coop:b3:s5t8…#street); the street's server acts for the street under the street's own narrow policy (OLD-AIP-58)."
+  },
+  {
+   "title": "What a carrier sees.",
+   "text": "Sealed chunks, the hashes that link them, their sizes and which agent signed them. And, because it must check every want, the signed policies, roles and endings of the data it carries. It can store, count and forward. It can't read a title, a tick or a frame of the movie, and no key is ever sealed to it.",
+   "code": {
+    "sees": [
+     "sealed chunks: hashes, sizes, links",
+     "which agent signed each chunk",
+     "policies, roles and endings of this data, by pseudonymous IDs",
+     "want requests and their proofs"
+    ],
+    "never": [
+     "content",
+     "data keys and role keys",
+     "what any path holds",
+     "which file a Value is"
+    ]
+   },
+   "deep": "This is the metadata a carrier learns, stated plainly, as Keyhive does for its relays: who may carry and read this data, by pseudonymous IDs, how big it is and when it changes. Content and keys stay sealed (OLD-AIP-65)."
+  },
+  {
+   "title": "Endings reach carriers too.",
+   "text": "When you end the plumber's policy, carriers see the ending as well, because endings aren't hidden from them. From then on they send his agents nothing: no new chunks and no old ones. A carrier that hasn't heard yet can still send only sealed bytes, and since the data key turned, those show him nothing new.",
+   "code": {
+    "ending": {
+     "type": "data:b3:R5b…@b3:d4b…#ending",
+     "kind": "revoke",
+     "ends": "policy:b3:p3q…#plumber",
+     "sig": {
+      "by": "agent:b3:f2p…#your-phone",
+      "key": "ed25519:Fp2…",
+      "value": "…"
+     }
+    },
+    "carrier": {
+     "agent:b3:r7p…#plumber-phone": "want refused"
+    }
+   },
+   "deep": "Endings are written by the owner (OLD-AIP-60) and visible to carriers (OLD-AIP-65), so a carrier checks each want against the endings it holds."
+  },
+  {
+   "title": "All the policies on one list.",
+   "text": "One piece of data, one owner, four roles and one agent, each with exactly what it needs. Every line is a policy the owner wrote.",
+   "deep": "One owner, four roles and one agent: readers and writers (household), children who add and tick (kids), a reader (grandma), a forwarding carrier (street-carrier), and your backup agent, a durable carrier. The four roles are data policies; the backup's line is your own policy to your agent (OLD-AIP-58).",
+   "table": {
+    "head": [
+     "Who",
+     "Operations (whole list unless a path is given)"
+    ],
+    "rows": [
+     [
+      "household (role)",
+      "create, read, update"
+     ],
+     [
+      "kids (role)",
+      "read at /items; create at /items, 20 times; update at /items/*/done, own entries"
+     ],
+     [
+      "grandma (role)",
+      "read"
+     ],
+     [
+      "street-carrier (role)",
+      "want, sync"
+     ],
+     [
+      "backup (your agent)",
+      "want, keep"
+     ]
+    ]
+   }
+  },
+  {
+   "title": "Alice and Bob, never online together.",
+   "text": "Alice ticks milk on the train and goes offline. The street's peer picks it up, the backup keeps it, and Bob's laptop gets it in the evening. Neither carrier read a word.",
+   "flow": [
+    "alice-phone",
+    "street (sync)",
+    "backup (keep)",
+    "bob-laptop"
+   ],
+   "deep": "Store-and-forward over carriers: every hop checks want, holds only sealed chunks, and is replaceable. This is the local-first “cloud peer”."
+  },
+  {
+   "title": "Carriers, in short.",
+   "list": [
+    "want, keep and sync decide who may carry data; read decides who may open it.",
+    "Carriers see who may carry and the endings, never content or keys.",
+    "Requests are bound to the connection, so they can't be replayed.",
+    "Devices that are never online together still sync, through carriers."
+   ],
+   "deep": "Store-and-forward peers are replaceable and never trusted with content. A relay forwards packets; a carrier keeps and checks."
+  }
+ ]
+}

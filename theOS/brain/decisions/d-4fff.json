@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-4fff",
+ "n": 34,
+ "title": "revision 8 is right",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "review"
+ ],
+ "quote": "aip-31df's revision is all good. Just explain the pixel diff checker in more detail.",
+ "means": "aip-31df's revision 8 is what you want; the pixel diff is explained in chat and in the record.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-3d81"
+ ],
+ "reflection": {
+  "checked": "every decision before d-4fff that held",
+  "result": "supersedes nothing"
+ }
+}

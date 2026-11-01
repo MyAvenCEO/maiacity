@@ -1,0 +1,140 @@
+{
+ "title": "Network",
+ "slides": [
+  {
+   "title": "Your devices talk directly.",
+   "text": "No cloud in the middle. Alice's phone and Bob's laptop connect to each other, wherever they are. The layer that does this is {iroh}.",
+   "deep": "iroh: QUIC connections between devices, direct when possible, through a relay otherwise. Every connection is end-to-end encrypted and authenticated with the endpoint keys."
+  },
+  {
+   "title": "You dial identities, not devices.",
+   "text": "Every agent has an {address} on the network: its signer's public key. But you never need to know it. Each identity publishes a signed record of its agents, and each agent's history holds its current address. You dial Alice, and the connection goes to whichever of her agents is online.",
+   "code": {
+    "type": "data:b3:R8d…@b3:392…#directory",
+    "id": "human:b3:a8f3…#alice",
+    "agents": [
+     "agent:b3:a1p…#alice-phone",
+     "agent:b3:a2l…#alice-laptop"
+    ],
+    "sig": {
+     "by": "agent:b3:a1p…#alice-phone",
+     "key": "ed25519:k51q…",
+     "value": "…"
+    }
+   },
+   "deep": "An iroh endpoint ID is an Ed25519 public key; here it is the agent's signer key. The directory is only a discovery hint, derived from the identity's policies to its agents; a connection still checks the agent's policy. A new key changes the agent's address, never the identity's."
+  },
+  {
+   "title": "The code also says where to go.",
+   "text": "The one-time code you scan holds two things: the secret, and how to reach you. From your identity ID the laptop looks up your agents' addresses and dials whichever is online, then hands over its signed birth. If none of them is, it hands the birth to a carrier of your identity's history, and your agents pick it up when they come back.",
+   "code": {
+    "secret": "ed25519 secret, one use",
+    "identity": "human:b3:q4x7…#you",
+    "relay": "https://relay.example.org"
+   },
+   "deep": "The code is the invite key's secret plus your identity ID and a relay hint; nothing in it names your devices. The birth travels like any record; possession of the secret is proven by invite_sig, not by the connection (OLD-AIP-69).",
+   "spec": {
+    "summary": "Delivery half of pairing: finding the identity's agents, or a carrier, without any device knowing the newcomer in advance.",
+    "records": [
+     {
+      "name": "pairing code (QR or typed)",
+      "about": "Never sent over theOS; shown on one device, read by the other.",
+      "fields": [
+       [
+        "secret",
+        "ed25519 secret key",
+        "the invite's one-time key"
+       ],
+       [
+        "identity",
+        "human or coop ID",
+        "whose directory record to look up"
+       ],
+       [
+        "relay",
+        "URL, optional",
+        "where to reach the identity's agents if the directory is not cached"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "pairing.lookup",
+      "text": "The new device resolves identity through the directory record and dials any listed agent; the connection itself proves nothing about the newcomer."
+     },
+     {
+      "id": "pairing.delivery",
+      "text": "The signed birth is delivered like any record: directly to an online agent, or to a carrier that keeps the identity's history; validity depends only on the records (invite.join)."
+     },
+     {
+      "id": "pairing.no_device_names",
+      "text": "The code names no device and no address of a device, so a photographed code reveals only the identity ID and a relay."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-32",
+     "OLD-AIP-69"
+    ]
+   }
+  },
+  {
+   "title": "Finding each other.",
+   "text": "On the same Wi-Fi, devices simply see each other. Further away, a device publishes where it can be reached, under its own key, and anyone with the key can look it up.",
+   "flow": [
+    "know the key",
+    "look up where it is",
+    "connect"
+   ],
+   "deep": "Local discovery via mDNS on the same network; global discovery through signed records published under the key (pkarr / DNS). A record lists the addresses where an endpoint can be reached."
+  },
+  {
+   "title": "Getting through.",
+   "text": "Most home routers block incoming connections. iroh punches a hole from both sides at once, and usually gets a direct line. If that fails, a {relay} passes the packets along. The relay sees only sealed traffic.",
+   "flow": [
+    "try direct",
+    "punch a hole",
+    "else: relay"
+   ],
+   "deep": "UDP hole punching from both sides at once. If that fails, a relay forwards encrypted QUIC packets it cannot read. Connections upgrade to direct when possible. A relay is not a carrier: it holds nothing and checks nothing."
+  },
+  {
+   "title": "Both sides know who they talk to.",
+   "text": "Every connection is encrypted with the two devices' keys. Then the agent shows that its key is registered in its own history, and whose agent it is. The other side knows: this is Alice's phone, acting for Alice.",
+   "code": {
+    "type": "data:b3:Ref…@b3:643…#proof",
+    "key": "ed25519:k51q…",
+    "agent": "agent:b3:a1p…#alice-phone",
+    "for": "human:b3:a8f3…#alice",
+    "chain": [
+     "policy:b3:a3c…#alice-phone"
+    ],
+    "sig": {
+     "by": "agent:b3:a1p…#alice-phone",
+     "key": "ed25519:k51q…",
+     "value": "…"
+    }
+   },
+   "deep": "The QUIC handshake proves the key. The agent's history proves the key is its current signer, and its owner's policies prove it may act."
+  },
+  {
+   "title": "One line, three languages.",
+   "text": "Over one connection, devices speak a small {protocol} for each kind of work.",
+   "list": [
+    "Docs: find the missing sealed chunks (Sync chapter), then swap them.",
+    "Values: stream ranges by hash, checked as they arrive.",
+    "News: tell interested peers “there's something new”."
+   ],
+   "deep": "Each protocol is an ALPN on the same endpoint: chunk sync for Docs, blob ranges for Values, gossip for announcements."
+  },
+  {
+   "title": "Network, in short.",
+   "list": [
+    "Devices connect directly; relays only see sealed traffic.",
+    "You dial identities; their agents answer.",
+    "Both sides prove who they are."
+   ],
+   "deep": "iroh: QUIC with Ed25519 endpoint keys, hole punching, relays and signed discovery records."
+  }
+ ]
+}

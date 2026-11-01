@@ -1,0 +1,285 @@
+{
+ "title": "Keys",
+ "slides": [
+  {
+   "title": "Can this really work?",
+   "text": "Policies are promises. This story shows the cryptography that keeps them: which keys exist, what each step does to them, and the few things no cryptography can do.",
+   "deep": "Two mechanisms carry everything: encryption for read (keys you hold or don't) and signature verification for every other operation (checked by each peer on every change). The limits are listed honestly at the end."
+  },
+  {
+   "title": "Three kinds of keys.",
+   "text": "Each agent has its own {lock}: a public key anyone can seal something to, which only that agent can open. A key sealed to a lock is an {envelope}. A {role key} is a lock shared by the agents that read for the identities in a role. A {data key} encrypts the data itself. No key is shared by all your agents: each gets only the envelopes its own policy covers.",
+   "list": [
+    "Agent lock: each agent's own, published in its own history.",
+    "Role key: a lock for the agents that read for the identities in a role.",
+    "Data key: the key the data itself is encrypted with."
+   ],
+   "deep": "Ed25519 for signing (signers and guardian keys). X25519, later hybrid X-Wing with ML-KEM, for locks. Data keys are 256-bit symmetric keys used with an AEAD (XChaCha20-Poly1305). Wrapping follows HPKE (RFC 9180). A guardian key only signs: it is never a lock. There is no identity-wide decryption key (OLD-AIP-57, OLD-AIP-91).",
+   "spec": {
+    "summary": "Every key in theOS, what it does, and what it never does.",
+    "records": [
+     {
+      "name": "key kinds",
+      "fields": [
+       [
+        "guardian key",
+        "ed25519",
+        "signs guardian acts; derived from the passkey, never stored, never a lock (OLD-AIP-91)"
+       ],
+       [
+        "agent signer",
+        "ed25519",
+        "signs the agent's records; one per agent, rotated by pre-rotation"
+       ],
+       [
+        "agent lock",
+        "x25519 (later X-Wing)",
+        "the agent's own; envelopes are sealed to it (OLD-AIP-57)"
+       ],
+       [
+        "role key",
+        "x25519",
+        "a lock shared by the reading agents of a role's identities"
+       ],
+       [
+        "data key",
+        "256-bit symmetric",
+        "encrypts a piece of data; turns when readers leave"
+       ],
+       [
+        "Value key",
+        "256-bit symmetric",
+        "encrypts one Value's segments; never turns (OLD-AIP-72)"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "keys.guardian_signs_only",
+      "text": "A guardian key signs guardian acts and nothing is ever sealed to it."
+     },
+     {
+      "id": "keys.no_identity_lock",
+      "text": "No key is shared by all of an identity's agents; envelopes go to agent locks and role keys only (OLD-AIP-57)."
+     },
+     {
+      "id": "keys.aead",
+      "text": "All symmetric encryption is XChaCha20-Poly1305 (24-byte nonces), so no nonce state has to be shared between devices."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-57",
+     "OLD-AIP-72",
+     "OLD-AIP-91"
+    ]
+   }
+  },
+  {
+   "title": "Reading is a chain of envelopes.",
+   "text": "The content is encrypted with the data key. The data key sits in an envelope for every role that may read, and for each of the owner's agents that may read it. The role key sits in an envelope for the agents of each identity in the role that may read for it. Your phone's lock opens the first envelope, and the chain opens the rest.",
+   "flow": [
+    "your phone's lock",
+    "role key",
+    "data key",
+    "the list"
+   ],
+   "deep": "Envelopes follow both layers of policy: the data's policies decide which identities may read; each identity's policies decide which of its agents read for it (OLD-AIP-57, OLD-AIP-58). Each envelope is one key, encrypted with HPKE to another key's public half. The envelopes travel with the data (its keyring, below), so no server ever holds keys."
+  },
+  {
+   "title": "Envelopes only for keys you can trust.",
+   "text": "Each agent publishes its lock, an encryption key, in its own history, signed by its signer. Envelopes may only be made for locks found there, and only by someone a policy allows. Otherwise an attacker could slip in a lock of their own, and writers would quietly encrypt to them.",
+   "code": {
+    "type": "data:b3:R1d…@b3:b08…#identity",
+    "id": "agent:b3:p9c…#mia-phone",
+    "owner": "human:b3:m2a9…#mia",
+    "signer": "ed25519:Mk7…",
+    "lock": "x25519:4kd…",
+    "sig": {
+     "by": "agent:b3:p9c…#mia-phone",
+     "key": "ed25519:Mk7…",
+     "value": "…"
+    }
+   },
+   "deep": "Each agent's lock is published in its own history, signed by its registered signer. Envelopes go only to locks found there, so nobody can inject a key of their own (Keyhive's open gap G2)."
+  },
+  {
+   "title": "Adding Mia to a role: an envelope per agent.",
+   "text": "The owner adds Mia to the role record and puts the role key in an envelope for each of Mia's agents that may read for her: her phone and her laptop, not her backup. Mia can read everything the role can read, starting from today's state; older history stays closed unless the owner opens it.",
+   "code": {
+    "type": "data:b3:Rab…@b3:140…#envelope",
+    "key": "rolekey:household/2",
+    "for": "agent:b3:p9c…#mia-phone",
+    "lock": "x25519:4kd…",
+    "sealed": "hpke:…",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "One HPKE envelope of the current role key to each lock that Mia's own policies give read for this data (OLD-AIP-57), signed by the owner's agent. A newcomer starts from a snapshot; back-links to older keys are given only if the owner opens history (Time chapter)."
+  },
+  {
+   "title": "Giving a policy: read needs a key, everything else needs only a signature.",
+   "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed policy change in the item's history, and every device enforces it.",
+   "code": {
+    "policy": {
+     "type": "data:b3:R9f…@b3:00f…#policy",
+     "to": "role:b3:r4p…#plumber",
+     "on": "data:b3:3Tk…#fix-tap",
+     "operations": {
+      "read": {},
+      "update": {}
+     }
+    },
+    "envelope": {
+     "type": "data:b3:Rab…@b3:140…#envelope",
+     "key": "datakey:fix-tap/1",
+     "for": "role:b3:r4p…#plumber",
+     "sealed": "hpke:…"
+    }
+   },
+   "deep": "Read needs the data key wrapped for the role key. Every other operation needs only a signed policy. That policy sits in the data's policy set, a grow-only set of signed certificates merged by union."
+  },
+  {
+   "title": "Removing someone means new keys.",
+   "text": "The plumber still knows the old role key. So the role gets a new one, in envelopes for the agents of the remaining identities only. Every piece of data the role reads gets a new data key the next time it changes. This is {rotation}: the plumber loses the future, and his honest devices forget the past.",
+   "flow": [
+    "remove plumber",
+    "new role key",
+    "new data key on next change"
+   ],
+   "deep": "The role key rotates and is wrapped for the remaining identities' agents. Each piece of data the role reads gets a new data key on its next write (lazy rotation), because the old one is known to the removed member."
+  },
+  {
+   "title": "Taking a policy away.",
+   "text": "Taking update away is just a signed policy change. Taking read away means ending the policy and giving a new one without read. The data key turns, and the new one goes to the owner's reading agents and every reading role except that one.",
+   "code": {
+    "ending": {
+     "type": "data:b3:R5b…@b3:d4b…#ending",
+     "kind": "revoke",
+     "ends": "policy:b3:d6r…#kids"
+    },
+    "keyring": {
+     "type": "data:b3:R8c…@b3:dc3…#keyring",
+     "on": "data:b3:7Hq…#house-list",
+     "generation": 3,
+     "key": "datakey:house-list/3",
+     "envelopes": {
+      "agent:b3:f2p…#your-phone": "hpke:…",
+      "role:b3:k1m…#household": "hpke:…",
+      "role:b3:g6m…#grandma": "hpke:…"
+     }
+    }
+   },
+   "deep": "Taking read from a role turns that data key immediately; the new key is sealed to the owner's reading agents and the remaining reading roles. Any current reader that has seen the ending may turn it (OLD-AIP-57). Taking any other operation is only a signed policy change; no key turns."
+  },
+  {
+   "title": "Where does the data key live?",
+   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its policies. Its generation counts how often the data key has turned. The keyring holds the data key in envelopes: one for each of the owner's reading agents, one for each role that may read. {Carriers}, peers that store or forward data they can't read, like a backup, store it like everything else, sealed and unreadable.",
+   "code": {
+    "type": "data:b3:R8c…@b3:dc3…#keyring",
+    "on": "data:b3:7Hq…#house-list",
+    "generation": 3,
+    "key": "datakey:house-list/3",
+    "envelopes": {
+     "agent:b3:f2p…#your-phone": "hpke:…",
+     "agent:b3:l4p…#your-laptop": "hpke:…",
+     "role:b3:k1m…#household": "hpke:…",
+     "role:b3:g6m…#grandma": "hpke:…"
+    },
+    "back": "datakey:house-list/2",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "The keyring: current generation (how often the data key has turned), one envelope per reader (the owner's reading agents and reading roles), and back-links where each data key opens the previous one, within the hot window only. Older keys move to the owner's archive."
+  },
+  {
+   "title": "A Value's key rides with its Doc.",
+   "text": "A Value has a keyring too, with just one envelope: the Value's key, sealed under its metadata Doc's data key. So whoever can open the Doc can open the Value, and the Value needs no policies of its own. Because a Value never changes, its key never turns: someone who already opened it keeps what they saw.",
+   "code": {
+    "type": "data:b3:R8c…@b3:dc3…#keyring",
+    "on": "value:b3:9f2c…#movie",
+    "generation": 1,
+    "envelopes": [
+     {
+      "for": "datakey:movie-meta/3",
+      "sealed": "…"
+     }
+    ]
+   },
+   "deep": "An envelope is addressed either to a lock (an agent's lock or a role key) or to another data key (a Value bound to its Doc). Same record, two kinds of address. The Value key seals each 16 KiB segment with a nonce derived from its index (OLD-AIP-72)."
+  },
+  {
+   "title": "Which key turns when.",
+   "text": "Only read changes keys. Any current reader that has seen the change may turn a key. Recent data keys each open the one before; how older keys are kept comes in the Time chapter.",
+   "table": {
+    "head": [
+     "Step",
+     "Agent locks",
+     "Role key",
+     "Data key"
+    ],
+    "rows": [
+     [
+      "Add someone to a role",
+      "envelopes to their agents",
+      "–",
+      "–"
+     ],
+     [
+      "Remove someone from a role",
+      "–",
+      "new",
+      "new on next write"
+     ],
+     [
+      "Give a role read",
+      "–",
+      "–",
+      "–"
+     ],
+     [
+      "Take read from a role",
+      "–",
+      "–",
+      "new now"
+     ],
+     [
+      "Change anything but read",
+      "–",
+      "–",
+      "–"
+     ],
+     [
+      "Remove or lose an agent",
+      "nothing new",
+      "new, for its roles",
+      "new on next write"
+     ],
+     [
+      "Two key turns at once",
+      "–",
+      "only to readers both allow",
+      "only to readers both allow"
+     ]
+    ]
+   },
+   "deep": "Only read touches keys. If two key turns happen at once, the next key is sealed only to the readers both allowed, and no device encrypts under a generation older than an ending it knows (OLD-AIP-57). Large roles may manage their role key with BeeKEM later (OLD-AIP-20)."
+  },
+  {
+   "title": "The whole machine.",
+   "list": [
+    "Data is named by the hash of its birth record.",
+    "Read is a chain of envelopes: agent lock, role key, data key.",
+    "Everything else is a chain of signatures, checked by every peer.",
+    "How keys age, and how they are archived or erased, comes in the Time chapter."
+   ],
+   "deep": "Birth record → owner → policies for roles. Read: agent lock → role key → data key, only where both layers of policy give read. Everything else: signature chains checked by every peer. Endings win, turn keys and wipe copies."
+  }
+ ]
+}

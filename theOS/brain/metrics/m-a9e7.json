@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "m-a9e7",
+ "name": "Drift",
+ "what": "differences between the spec, Lean and the code",
+ "want": "zero",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

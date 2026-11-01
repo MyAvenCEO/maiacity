@@ -1,0 +1,214 @@
+{
+ "title": "Endings",
+ "slides": [
+  {
+   "title": "Every policy expires.",
+   "text": "No policy lasts forever by accident. Each one has an expiry, 30 days unless you choose otherwise. A forgotten policy closes by itself.",
+   "code": {
+    "type": "data:b3:R9f…@b3:00f…#policy",
+    "to": "role:b3:r4p…#plumber",
+    "on": "data:b3:3Tk…#fix-tap",
+    "operations": {
+     "read": {},
+     "update": {}
+    },
+    "expires": "2026-11-07T00:00:00Z",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "The default expiry is 30 days. Every change carries the time its author signed it and counts only if that time is before the expiry; devices reject times far ahead of their own clock. The owner's lapse makes it final (OLD-AIP-60)."
+  },
+  {
+   "title": "Unchanged policies renew themselves.",
+   "text": "You don't want your family locked out every month. So the owner quietly renews every policy that hasn't changed, a week before it ends. A coop can give one always-on agent just this job: renew, nothing else. Policies you changed or removed simply run out.",
+   "flow": [
+    "policy still the same?",
+    "renew for 30 days",
+    "else: let it run out"
+   ],
+   "deep": "A renewal is a new certificate with the same content and a later expiry. It names the policy it renews, so ending one ends the whole chain. renew is its own operation, so a renewal agent can't write any other policy (OLD-AIP-60)."
+  },
+  {
+   "title": "The job is done.",
+   "text": "You take the plumber out of his role. He sees nothing new, and his devices, if they're honest, forget what he saw. The role stays, ready for the next plumber.",
+   "deep": "Removing someone from a role is a new role record; it then works like an ending: the role key turns, data keys turn on the next write, and honest devices that learn of it wipe the keys and plaintext the policy gave them."
+  },
+  {
+   "title": "Ending a policy early.",
+   "text": "You don't have to wait for the expiry. The owner writes a {revoke}: a signed event in the history that says “this policy is over”. It travels like any other change.",
+   "code": {
+    "type": "data:b3:R5b…@b3:d4b…#ending",
+    "kind": "revoke",
+    "ends": "policy:b3:p3q…#plumber",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "A revoke is a signed certificate in the policy set (a grow-only set). It cannot be undone; access returns only through a new policy.",
+   "spec": {
+    "summary": "An ending is a permanent, owner-signed event; it never grants anything.",
+    "records": [
+     {
+      "name": "ending record",
+      "fields": [
+       [
+        "kind",
+        "revoke or lapse",
+        "revoke at any time; lapse once the date has passed"
+       ],
+       [
+        "ends",
+        "policy ID",
+        "the policy it ends; renewals of it end too (OLD-AIP-60)"
+       ],
+       [
+        "after",
+        "heads",
+        "what the owner had seen; the ended holder's changes outside it are dropped"
+       ],
+       [
+        "sig",
+        "signature",
+        "by an agent acting for the owner with own"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "ending.issuer",
+      "text": "An ending is valid only if signed along a chain of own on the owner of the ended policy's target, back to its guardian (OLD-AIP-91)."
+     },
+     {
+      "id": "ending.permanent",
+      "text": "An ending can't be undone; access returns only through a new policy."
+     },
+     {
+      "id": "ending.scope",
+      "text": "It drops only the ended holder's own changes that it didn't list as seen (OLD-AIP-60, OLD-AIP-62)."
+     },
+     {
+      "id": "ending.no_grant",
+      "text": "An ending never grants anything; it can only remove."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-59",
+     "OLD-AIP-60",
+     "OLD-AIP-62",
+     "OLD-AIP-91"
+    ]
+   }
+  },
+  {
+   "title": "When time runs out, the owner says so.",
+   "text": "Devices are often offline, and a device can lie about its time, so two things work together. Every change carries the time its author signed it, and counts only if it was made before the policy's expiry. And once the date has passed, the owner's agent that renews policies writes a {lapse} instead: the same kind of event as a revoke. Nobody else can end your policies.",
+   "code": {
+    "type": "data:b3:R5b…@b3:d4b…#ending",
+    "kind": "lapse",
+    "ends": "policy:b3:p3q…#plumber",
+    "expired": "2026-11-07T00:00:00Z",
+    "after": {
+     "data": [
+      "6b2f58:11"
+     ]
+    },
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "Only the owner's agents write endings (OLD-AIP-60). Other peers may stop handing out keys and chunks on their own once the date has passed by their clock: a local choice, never written into the history. A holder who signs a false early time is caught by the lapse: its changes the lapse didn't list as seen are dropped."
+  },
+  {
+   "title": "Revoke or lapse: one ending, same effect.",
+   "text": "Revoke or lapse, an {ending} does the same things on every device. The ended holder's changes that it never saw are dropped, because the ending wins; nobody else's are. If the policy gave read, the data key turns. And every honest device wipes the keys and copies the policy gave it. Validity follows from the history alone, so every copy agrees.",
+   "code": {
+    "ending": {
+     "type": "data:b3:R5b…@b3:d4b…#ending",
+     "kind": "lapse",
+     "ends": "policy:b3:p3q…#plumber"
+    },
+    "change": {
+     "type": "data:b3:R75…@b3:50b…#change",
+     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+     "ops": [
+      "6b2f58:12"
+     ],
+     "deps": [
+      "0d93e7:80"
+     ]
+    },
+    "then": [
+     "drop 6b2f58:12",
+     "turn datakey:fix-tap → /3",
+     "wipe keys and copies"
+    ]
+   },
+   "deep": "One ending type, written only by the owner. The ended holder's changes it didn't list as seen leave what you see, but stay in the sealed history: what you see is the newest complete version of valid changes. Honest changes that built on a dropped one go back to their authors as a conflict view and are applied again (OLD-AIP-62). The data key turns if the policy gave read; the delete trigger runs on honest devices."
+  },
+  {
+   "title": "Bob loses update.",
+   "text": "You take update away from “household”: you revoke its policy and give it a new one with only create and read. A revoke is a signed event, not a CRDT op, and it syncs like everything else. Bob's CRDT op had not seen it, so the ending wins: it is dropped on every device. His earlier CRDT ops stay. Because the ended policy gave read, the data key turns.",
+   "code": {
+    "ending": {
+     "type": "data:b3:R5b…@b3:d4b…#ending",
+     "kind": "revoke",
+     "ends": "policy:b3:h7r…#household"
+    },
+    "dropped": {
+     "id": "a17e02:21",
+     "deps": [
+      "a17e02:20"
+     ]
+    },
+    "kept": [
+     "a17e02:18",
+     "a17e02:19",
+     "a17e02:20"
+    ]
+   },
+   "deep": "A revoke is a certificate in the policy set, not a CRDT op. A CRDT op whose dependencies don't include the revoke counts as concurrent with it, and the ending wins."
+  },
+  {
+   "title": "Ended means forgotten.",
+   "text": "The moment a device meets any peer that holds an ending, a revoke or a lapse, both written by the owner, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
+   "code": {
+    "on": "ending:b3:e5d…#plumber",
+    "data": "data:b3:3Tk…#fix-tap",
+    "wipe": [
+     "datakey:fix-tap/1",
+     "datakey:fix-tap/2",
+     "plaintext"
+    ],
+    "keep": [
+     "chunk:b3:f1t…",
+     "…"
+    ]
+   },
+   "flow": [
+    "meet a peer",
+    "learn the ending",
+    "wipe keys and copies"
+   ],
+   "deep": "An ending (revoke or lapse) is a signed event in the history. On learning it, an honest device deletes the affected data keys and decrypted copies. A carrier keeps only sealed bytes, which it could never open."
+  },
+  {
+   "title": "Endings, in short.",
+   "list": [
+    "Every policy expires and renews itself while unchanged.",
+    "Only the owner ends policies: a revoke early, a lapse on the date.",
+    "Every change carries its author's time and counts only before the expiry.",
+    "An ending wins over the ended holder's changes that never saw it.",
+    "Honest devices forget what an ended policy gave them."
+   ],
+   "deep": "Endings are owner-signed events in the causal history, so no shared clock has to be trusted."
+  }
+ ]
+}

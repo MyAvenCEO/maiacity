@@ -1,0 +1,135 @@
+{
+ "type": "review",
+ "id": "rv-6b74",
+ "intent": "aip-31df",
+ "round": 1,
+ "lens": "paraphrase",
+ "commit": "b42f1201d",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead only this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/ceo/CEO-1.json\n\nIt is the record of one piece of planned work: building \"avenCEO\", an agent harness. The record names avenCEO's definition at theOS/docs/avenceo.json; read that too (you can skip its \"protocols\" array, which only summarises outside sources).\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenceo.json.\n\nReport in plain text, at most 700 words. No praise, no filler: lead with what is wrong or missing.",
+ "paraphrase": {
+  "proposes": "The record proposes building avenCEO, a harness that takes agent work through four steps with two approvals by Samuel: Gate A, where he approves the claims, and Gate B, where he tries the result. Each \"intent\" gets one JSON file in git with an append-only event list. A deterministic \"router\" works out the next action from that file, a Stop hook stops agents from quitting while a gate is open, fresh \"goldfish\" checkers review the work, and the metrics are computed from the records. The plan has seven checkpoints. The goal is to cut Samuel's corrections outside the gates from at least ten per session toward none.",
+  "existing": "The process lives in chats and prompts. Agents check their own work, Samuel catches the problems, and decisions are spread across chats, the avenDB log, the theOS intents and CLAUDE.md. Some tools already exist: the devx scripts, avenDB's split between DECISIONS.md (history) and ARCHITECTURE.md (latest truth), .claude hooks and agents, a docs app with an Intents board, and rules.json written by Lean. I can't paraphrase how the intents are stored today or how a release happens. The record never says."
+ },
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "assumptions vs checkpoints 1-2, questions 1-2",
+   "text": "The assumption says avenCEO changes neither theOS nor avenDB, but the plan moves the 91 intents, rewires the board, moves the devx tools and generates DECISIONS.md.",
+   "answer": "fix",
+   "note": "Revision 2 moves nothing; the assumption names exactly what it adds."
+  },
+  {
+   "sev": "Blocker",
+   "scope": "c2, risk, Gate B",
+   "text": "\"Release\" and \"version\" are undefined; with release manual, the router is not on the release path and can't refuse anything.",
+   "answer": "fix",
+   "note": "Revision 2 releases nothing; release gating is deferred."
+  },
+  {
+   "sev": "Blocker",
+   "scope": "c3, stage",
+   "text": "The stage table's meaning is unclear in the JSON, the record shape lists a stage field, and the old stages have no mapping.",
+   "answer": "fix",
+   "note": "avenCEO's stage table now carries its rule and column names; the record shape says computed, never stored; the 91 current intents keep their own stages until they are consolidated."
+  },
+  {
+   "sev": "Blocker",
+   "scope": "record vs avenCEO's record shape",
+   "text": "Ids, fields and the missing mockup don't match avenCEO's definition.",
+   "answer": "fix",
+   "note": "The record shape now matches this record; ids are AIP-n, in avenCEO's new sequence; the mockup is named."
+  },
+  {
+   "sev": "Major",
+   "scope": "kind avenCEO",
+   "text": "avenCEO's own rules say one change at a time and automate last; the plan automates the router, hook and metrics first.",
+   "answer": "fix",
+   "note": "Revision 2 automates nothing but checks; the rest waits for three hand runs."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "Baseline per session, metric per intent, no window or target; corrections in chat can't be computed from records.",
+   "answer": "fix",
+   "note": "Corrections are recorded as events by Samuel and tallied by hand; the window is the next three intents; the target is below ten, and zero layout and sweep escapes."
+  },
+  {
+   "sev": "Major",
+   "scope": "c1",
+   "text": "A property test in one process can't catch reading the clock or the network; the action set is undefined.",
+   "answer": "fix",
+   "note": "Deleted with the router (deferred)."
+  },
+  {
+   "sev": "Major",
+   "scope": "c6",
+   "text": "Samuel owns the gates; a shared Stop hook reaches every thread and can trap them all.",
+   "answer": "fix",
+   "note": "Deferred; when built: scoped to branches with an open record, honouring stop_hook_active, never blocking on Gate A or B."
+  },
+  {
+   "sev": "Major",
+   "scope": "c8",
+   "text": "A dispatch log records what a checker got but prevents nothing.",
+   "answer": "fix",
+   "note": "Dropped; each review entry keeps the checker's exact prompt (c4)."
+  },
+  {
+   "sev": "Major",
+   "scope": "c9",
+   "text": "One merge test can't back \"never\", and generated files would still conflict.",
+   "answer": "fix",
+   "note": "Deleted: no conflict has happened, and the single-writer rule already prevents it."
+  },
+  {
+   "sev": "Major",
+   "scope": "c4",
+   "text": "decisions.mjs checks a Markdown table; JSON events need their own check, and main has no CI.",
+   "answer": "fix",
+   "note": "Deferred until records multiply; git keeps their history meanwhile."
+  },
+  {
+   "sev": "Major",
+   "scope": "c7",
+   "text": "A schema can't judge whether a check is adequate.",
+   "answer": "fix",
+   "note": "Deleted; adequacy is the checkers' and Gate A's job."
+  },
+  {
+   "sev": "Major",
+   "scope": "whys, options",
+   "text": "The evidence is mostly rendering and naming slips; the cheaper option of adding checks to the current process was not weighed.",
+   "answer": "fix",
+   "note": "That is now the chosen option."
+  },
+  {
+   "sev": "Major",
+   "scope": "c5",
+   "text": "The restart test only names the next action, it doesn't carry it out.",
+   "answer": "fix",
+   "note": "Deferred with the router."
+  },
+  {
+   "sev": "Major",
+   "scope": "terms",
+   "text": "Many project terms are undefined (intent, router, goldfish, avenMAIA, Architecture panels, the A-n log and more).",
+   "answer": "fix",
+   "note": "avenCEO's definition has a glossary; the evidence no longer uses code names."
+  },
+  {
+   "sev": "Nit",
+   "scope": "checkpoint 5",
+   "text": "Six checker lenses against two checkers per round.",
+   "answer": "fix",
+   "note": "One pair in revision 2: paraphrase and zoom out."
+  },
+  {
+   "sev": "Nit",
+   "scope": "outcome kind, questions",
+   "text": "\"measured\" and \"measurement\" both used; unclear whether the questions block Gate A.",
+   "answer": "fix",
+   "note": "One word, measured; the questions are part of Gate A."
+  }
+ ]
+}

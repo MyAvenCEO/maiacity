@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-01f6",
+ "title": "Holepunch blind-pairing",
+ "about": [
+  "identity",
+  "p2p sync"
+ ],
+ "url": "https://github.com/holepunchto/blind-pairing"
+}

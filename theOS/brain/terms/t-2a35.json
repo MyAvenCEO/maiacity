@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-2a35",
+ "word": "Checkpoint",
+ "means": "The smallest slice of the work that works end to end; it passes the Mechanical and Review gates before the next starts.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

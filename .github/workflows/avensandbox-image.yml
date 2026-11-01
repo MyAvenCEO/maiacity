@@ -1,26 +1,35 @@
-# avenSANDBOX's image (aven/DB2/SANDBOX.md, "The box"): the tools and the third-party crates, compiled, never our code.
-# Built for amd64 (cloud sessions, CI) and arm64 (OrbStack on Apple Silicon), each on a runner of its own kind, and
-# joined into one image when any file its build reads changes. Tagged with a hash of those files
-# (aven/DB2/sandbox/box/tag.mjs, which aven/DB2/sandbox/up.mjs shares), so every checkout runs exactly its own box; the
-# paths below are the same files. main's build is also "latest". Public, so it pulls without a token.
+# avenSANDBOX's image, owned by theOS (theOS/aip/aip-6fb1.json): every tool theOS's checks are built and run with
+# (theOS/sandbox/box/Dockerfile). Built for amd64 (cloud sessions, runners) and arm64 (OrbStack on Apple Silicon), each
+# on a runner of its own kind, and joined into one image. Tagged theos-<hash of theOS/sandbox/box, this file,
+# theOS/sandbox/tag.sh and theOS/package.json's Playwright pin>, so the same inputs never build twice and every
+# checkout runs exactly its own box. Each platform's build is smoked by digest (every tool works inside it) before the
+# join gives it its tag; main's box is also "latest"; last, theOS's check runs inside it (theOS/sandbox/check.sh).
+# Actions are pinned by commit. Public, so it pulls without a token.
 name: avenSANDBOX image
 
 on:
   push:
+    # Only a change to the box itself: the inputs of its tag (theOS/sandbox/tag.sh). It builds and smokes the new box,
+    # then runs theOS's check inside it once.
     paths:
-      - aven/DB2/sandbox/box/Dockerfile
-      - aven/DB2/sandbox/box/deps.sh
-      - aven/DB2/sandbox/box/tag.mjs
-      - aven/DB2/.dockerignore
-      - aven/DB2/Cargo.toml
-      - aven/DB2/Cargo.lock
-      - aven/DB2/**/Cargo.toml
-      - aven/runtimes/registry/Cargo.toml
+      - theOS/sandbox/box/**
+      - theOS/sandbox/tag.sh
+      - theOS/package.json
+      - .github/workflows/avensandbox-image.yml
+  # theOS's check runs once per goal (Samuel, 1 Nov, d-47c5; the repository's rule, CLAUDE.md): on the goal's pull request to
+  # main once it is ready for review, never on a draft (the plan job's guard), finding the box built.
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - theOS/**
       - .github/workflows/avensandbox-image.yml
   workflow_dispatch:
 
 permissions: {}
 
+# Per ref: two branches pushing the same new inputs at once may both build them (the same image, twice); one after
+# another, the second finds it built and builds nothing.
 concurrency:
   group: avensandbox-image-${{ github.ref }}
   cancel-in-progress: true
@@ -28,6 +37,8 @@ concurrency:
 jobs:
   plan:
     name: Plan
+    # A draft pull request runs nothing; every other job needs this one, so they skip with it.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -36,19 +47,17 @@ jobs:
     outputs:
       name: ${{ steps.box.outputs.name }}
       image: ${{ steps.box.outputs.image }}
-      tools: ${{ steps.box.outputs.tools }}
       complete: ${{ steps.built.outputs.complete }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: The box's tag
         id: box
         run: |
-          name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "image=$name:$(node aven/DB2/sandbox/box/tag.mjs)" >> "$GITHUB_OUTPUT"
-          echo "tools=$(node aven/DB2/sandbox/box/tag.mjs --tools)" >> "$GITHUB_OUTPUT"
-          node aven/DB2/sandbox/box/tag.mjs --files
-      - uses: docker/login-action@v4.7.0
+          image=$(bash theOS/sandbox/tag.sh)
+          echo "name=${image%:*}" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "avenSANDBOX's tag: ${image##*:} (theOS/sandbox/tag.sh: theOS/sandbox/box, this workflow and tag.sh)"
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -80,38 +89,55 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: docker/setup-buildx-action@v4.4.1
-      - uses: docker/login-action@v4.7.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push by digest
         id: push
-        uses: docker/build-push-action@v7.4.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          # aven/DB2, cut down by its .dockerignore to the manifests, the patched fork and deps.sh
-          context: aven/DB2
-          # aven/runtimes' file registry's manifest, which the Peers take by path, at /runtimes/registry
-          build-contexts: registry=aven/runtimes/registry
-          file: aven/DB2/sandbox/box/Dockerfile
+          # theOS/sandbox/box alone: the image holds tools, never our code
+          context: theOS/sandbox/box
+          file: theOS/sandbox/box/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          # avensandbox.tools, the Dockerfile's hash: which tools a box holds
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=avenSANDBOX: the tools avenDB is built and tested with
-            avensandbox.tools=${{ needs.plan.outputs.tools }}
+            org.opencontainers.image.description=avenSANDBOX: the tools theOS is built and checked with
           outputs: type=image,name=${{ needs.plan.outputs.name }},push-by-digest=true,name-canonical=true,push=true
-          # The layers' cache lives in the registry beside the image: the compiled crates are a layer of several GB,
-          # more than GitHub's 10 GB Actions cache holds for both platforms
+          # The layers' cache lives in the registry beside the image, per platform
           cache-from: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }},mode=max
+      # The box is smoked on its own platform by digest, before any tag names it: a box that fails here is never
+      # joined, so its tag never exists and the next run builds it again. Playwright's package is in the image
+      # (NODE_PATH), so Chromium's launch needs no network.
+      - name: Every tool works inside it (${{ matrix.arch }})
+        env:
+          IMAGE: ${{ needs.plan.outputs.name }}@${{ steps.push.outputs.digest }}
+          WANT: ${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}
+        run: |
+          export PIN; PIN=$(jq -r .devDependencies.playwright theOS/package.json)
+          # pipefail, and no "test && echo": under -e a failing test before && does not stop the script.
+          docker run --rm -e WANT -e PIN "$IMAGE" bash -euo pipefail -c '
+            [ "$(uname -m)" = "$WANT" ] || { echo "wrong platform: $(uname -m), want $WANT"; exit 1; }; echo "platform $WANT"
+            rustc --version; cargo --version; cargo clippy --version; rustfmt --version
+            rustup target list --installed | grep -x wasm32-unknown-unknown
+            wasm-bindgen --version; bun --version; node --version; lean --version; lake --version
+            versitygw --help > /dev/null; echo "versitygw ok"
+            clang --version | head -n 1; llvm-ar --version | head -n 1
+            cargo "+$AVEN_NIGHTLY" --version; cargo fuzz --version
+            v=$(node -p "require(\"playwright/package.json\").version")
+            [ "$v" = "$PIN" ] || { echo "Playwright $v in the box, theOS/package.json pins $PIN"; exit 1; }
+            node -e "require(\"playwright\").chromium.launch().then(async (b) => { console.log(\"chromium\", b.version()); await b.close(); })"
+          '
       - name: Keep the digest
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: mkdir -p digests && touch "digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.arch }}
           path: digests/*
@@ -126,12 +152,12 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digest-*
           path: digests
           merge-multiple: true
-      - uses: docker/login-action@v4.7.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -148,15 +174,17 @@ jobs:
   latest:
     name: main's box is latest
     needs: [plan, publish]
+    # Built and smoked before (complete), or just built, smoked and joined; a failed build skips publish, and that skip
+    # must not read as "already built".
     if: >-
-      always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success'
-      && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+      !cancelled() && github.ref == 'refs/heads/main' && needs.plan.result == 'success'
+      && (needs.plan.outputs.complete == 'true' || needs.publish.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       packages: write
     steps:
-      - uses: docker/login-action@v4.7.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -166,3 +194,26 @@ jobs:
           NAME: ${{ needs.plan.outputs.name }}
           IMAGE: ${{ needs.plan.outputs.image }}
         run: docker buildx imagetools create --tag "$NAME:latest" "$IMAGE"
+
+  # The last step (AIP-2 c3): theOS's check command (AIP-1), inside this box through theOS/sandbox/run.sh, the same way a
+  # cloud session and a Mac run it.
+  check:
+    name: theOS's check inside the box
+    needs: [plan, publish]
+    if: >-
+      !cancelled() && needs.plan.result == 'success'
+      && (needs.plan.outputs.complete == 'true' || needs.publish.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: theOS/sandbox/check.sh (the check and its own test, inside the box)
+        run: theOS/sandbox/check.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: theos-check-${{ github.sha }}
+          path: theOS/avenCEO/checks/out/
+          if-no-files-found: warn

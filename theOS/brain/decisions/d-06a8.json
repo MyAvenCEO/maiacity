@@ -1,0 +1,32 @@
+{
+ "type": "decision",
+ "id": "d-06a8",
+ "n": 62,
+ "title": "Deploys start by themselves in production",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "release"
+ ],
+ "quote": "production starts the deploy automatically, as today: the moment a change lands in production.",
+ "means": "theOS's deploy starts by itself the moment a change lands in production and its release is green; it runs only from production. avenMAIA read your \"from production\" as by hand; this corrects it.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-7994",
+   "part": "part",
+   "what": "d-7994's \"started by hand\": the deploy starts by itself when a change lands in production."
+  }
+ ],
+ "relates": [
+  "d-4ca4"
+ ],
+ "reflection": {
+  "checked": "every decision before d-06a8 that held",
+  "result": "supersedes d-7994 (part)"
+ }
+}

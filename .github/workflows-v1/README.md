@@ -12,8 +12,8 @@ Samuel switched v1's GitHub workflows off on 29 Oct 2026, without deleting them.
 The site, the API and the peer keep running as they were last deployed. Nothing redeploys them, nothing checks that
 they are up, and rollback is gone, until a workflow is moved back.
 
-What runs instead: [`avensandbox.yml`](../workflows/avensandbox.yml) on the `production` branch, and
-[`avensandbox-image.yml`](../workflows/avensandbox-image.yml) for the box's image (`aven/DB2/SANDBOX.md`).
+What ran instead, avenDB's pipeline, is parked too since 1 Nov 2026 ([`../workflows-avendb/`](../workflows-avendb/README.md)):
+theOS owns the release pipeline from now on.
 
 To switch one back on, move it back and push to `main`:
 

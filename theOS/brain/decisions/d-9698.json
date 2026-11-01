@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "d-9698",
+ "n": 9,
+ "title": "HTML and JSON, not markdown",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "formats"
+ ],
+ "quote": "The HTML and JSON rule was better; keep it instead of markdown. It is far more flexible for the UI.",
+ "means": "Docs stay native HTML and JSON: one JSON doc per thing, no markdown.",
+ "intents": [
+  "def-e833"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-b4ce",
+   "part": "part",
+   "what": "d-b4ce's \"markdown doc\": docs stay native JSON, rendered by HTML."
+  }
+ ],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before d-9698 that held",
+  "result": "supersedes d-b4ce (part)"
+ }
+}

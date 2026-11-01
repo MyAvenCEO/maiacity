@@ -1,0 +1,27 @@
+{
+ "type": "reference",
+ "subtype": "observed",
+ "id": "src-fa4d",
+ "title": "Claude Code cloud session tools (claude-code-remote MCP server), as seen in this session",
+ "about": [
+  "claude code"
+ ],
+ "url": "the tool definitions this cloud session was given on 2026-11-01",
+ "by": "Anthropic",
+ "summary": "Seen first hand, not in the docs read: this cloud session has an MCP server, claude-code-remote, whose tools create_session (a new cloud session with a prompt, repository and branch), send_message (a message into another session), list_sessions, get_session (title, status and a status_bucket: working, blocked, review_ready, completed or failed), list_events (the transcript: user and assistant messages, tool calls, results), archive_session, interrupt_session, set_session_tags, create_trigger and send_later. avenMAIA starts AIP threads with them today. Whether the same server is reachable from a local session on Samuel's Mac was not checked.",
+ "ideas": [
+  "Every piece d-b43d needs for a thread exists as a tool: create one per intent, message it, read its transcript and its state.",
+  "status_bucket 'blocked' is the signal for 'waiting on Samuel'.",
+  "Tags can mark a session with its intent (aip:aip-a195)."
+ ],
+ "took": [
+  {
+   "idea": "Thread status from get_session's status_bucket",
+   "where": "rs-0844: pattern thread-status"
+  },
+  {
+   "idea": "Tag each thread with its AIP",
+   "where": "rs-0844: pattern thread-per-intent"
+  }
+ ]
+}

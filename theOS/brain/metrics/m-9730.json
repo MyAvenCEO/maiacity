@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "m-9730",
+ "name": "Silent checks",
+ "what": "checks that never failed over many intents",
+ "want": "deleted or made cheaper",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

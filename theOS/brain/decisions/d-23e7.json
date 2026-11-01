@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-23e7",
+ "n": 39,
+ "title": "Gate A for pieces 1 and 2",
+ "subtype": "gate-A",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "checks"
+ ],
+ "quote": "aip-31df: do as you suggest.",
+ "means": "Gate A for aip-31df's checkpoints 1 and 2: theOS/CLAUDE.md with the done rule, the package file, the crawl and the docs check, then buttons and screenshots under 5 minutes. The pixel diff and the look checker go back to Specify with round 6's findings, as their own intent, aip-f4e2.",
+ "intents": [
+  "aip-31df",
+  "aip-f4e2"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-4fff"
+ ],
+ "reflection": {
+  "checked": "every decision before d-23e7 that held",
+  "result": "supersedes nothing"
+ }
+}

@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-049b",
+ "title": "Hypercore",
+ "about": [
+  "p2p sync",
+  "time and order"
+ ],
+ "url": "https://github.com/holepunchto/hypercore"
+}

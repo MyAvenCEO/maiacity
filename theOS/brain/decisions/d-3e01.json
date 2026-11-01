@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-3e01",
+ "n": 42,
+ "title": "Research first: aip-836d and aip-a195 back to Understand",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "research",
+  "intents"
+ ],
+ "quote": "Go back to Understand for aip-836d and research in depth, on the web, the best practice, reference architectures and patterns of existing memory harnesses we can adopt, such as gbrain, supermemory, Hindsight and MemPalace. Keep it simple: pull out the best working insights, not a first-principles protocol. Do the same for aip-a195's Understand, in a thread of its own.",
+ "means": "aip-836d goes back to Understand: a research thread studies existing agent memory systems and Claude Code's extension points (for aip-a195), and writes the sources and the patterns worth adopting. aip-836d's spec is revised from what it finds.",
+ "intents": [
+  "aip-836d",
+  "aip-a195"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-5bce"
+ ],
+ "reflection": {
+  "checked": "every decision before d-3e01 that held",
+  "result": "supersedes nothing"
+ }
+}

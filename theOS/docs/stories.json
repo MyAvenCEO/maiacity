@@ -1,0 +1,75 @@
+{
+ "stories": [
+  {
+   "id": "identity",
+   "title": "Identity",
+   "file": "chapters/identity.json"
+  },
+  {
+   "id": "data",
+   "title": "Data",
+   "file": "chapters/data.json"
+  },
+  {
+   "id": "merge",
+   "title": "Merging",
+   "file": "chapters/merge.json"
+  },
+  {
+   "id": "schema",
+   "title": "Schemas",
+   "file": "chapters/schema.json"
+  },
+  {
+   "id": "ops",
+   "title": "Operations",
+   "file": "chapters/ops.json"
+  },
+  {
+   "id": "policies",
+   "title": "Policies",
+   "file": "chapters/policies.json"
+  },
+  {
+   "id": "check",
+   "title": "Checking",
+   "file": "chapters/check.json"
+  },
+  {
+   "id": "keys",
+   "title": "Keys",
+   "file": "chapters/keys.json"
+  },
+  {
+   "id": "end",
+   "title": "Endings",
+   "file": "chapters/end.json"
+  },
+  {
+   "id": "time",
+   "title": "Time",
+   "file": "chapters/time.json"
+  },
+  {
+   "id": "net",
+   "title": "Network",
+   "file": "chapters/net.json"
+  },
+  {
+   "id": "sync",
+   "title": "Sync",
+   "file": "chapters/sync.json"
+  },
+  {
+   "id": "carry",
+   "title": "Carriers",
+   "file": "chapters/carry.json"
+  },
+  {
+   "id": "intents",
+   "title": "OLD-AIPs",
+   "file": "intents.json",
+   "kind": "intents"
+  }
+ ]
+}

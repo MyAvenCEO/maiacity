@@ -1,0 +1,93 @@
+{
+ "type": "review",
+ "id": "rv-544f",
+ "intent": "aip-6fb1",
+ "round": 3,
+ "lens": "paraphrase",
+ "commit": "e74702594",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-2.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "theOS takes over avenSANDBOX: one Docker image holding every tool (Playwright with Chromium, Rust with wasm, the nightly with cargo-fuzz, bun, Lean, versitygw, clang). Its Dockerfile and tag.mjs move to theOS/sandbox/box/, without the step that compiles avenDB's crates. The image workflow comes back, builds amd64 and arm64 under the same registry name, tagged by a hash of its inputs, then runs theOS's check inside the image. A new cloud-setup.sh pulls the image and runs the check once, under 600 s, and never fails a session; Samuel pastes the environment's new script at Gate B. The release and the deploy are aip-59ad's.",
+  "existing": "avenDB's four workflows built, released and deployed; its image was built from aven/DB2's Cargo files. The environment's setup script finds aven/DB2/sandbox/box/cloud-setup.sh, which ran avenDB's bun run up once before the disk snapshot; new sessions start from that snapshot with the image on disk but no dockerd running. The four workflows are parked on the work branch only. I cannot say how a check gets inside the image in a session or on a Mac."
+ },
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "c3, c4, outcome",
+   "text": "How a check runs inside the image in a session or on a Mac is never said: the snapshot keeps files, not processes; avenDB's up.mjs started dockerd, picked the checkout's tag and fell back when it was not published. Nothing in theOS replaces it.",
+   "answer": "fix",
+   "note": "theOS/sandbox/run.sh is the runner: starts dockerd if it is down, picks the image by the hash of theOS/sandbox/box (falling back to the newest published when that one is not built yet), and runs a command inside it with theOS/ mounted. The workflow, a session and a Mac all use it."
+  },
+  {
+   "sev": "Major",
+   "scope": "c1 check",
+   "text": "It passes whether or not the workflows are parked: avensandbox.yml ran only on production or by hand, avendeploy.yml only by hand. Read main's .github/workflows/ instead.",
+   "answer": "fix",
+   "note": "c1 reads main's .github/workflows/ after the merge: none of the three is there."
+  },
+  {
+   "sev": "Major",
+   "scope": "c1, c4, order",
+   "text": "When and by whom this reaches main, and which branch the snapshot clones, is unsaid; c1 needs the merge, c4 needs cloud-setup.sh on the cloned branch; avenCEO releases only after Gate B.",
+   "answer": "fix",
+   "note": "Said: the work reaches main through the goal pull request you ask for after Gate B; the environment's snapshot clones main, so the new cloud-setup.sh is found after that merge."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3",
+   "text": "The Mac run needs Samuel (OrbStack is his): a human step inside Build. \"Same report\" is undefined across architectures.",
+   "answer": "fix",
+   "note": "The Mac run is part of Gate B, yours. \"Same report\" means the same pass or fail per check on the same commit, not timings or pixels."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "\"Every theOS check\" cannot run on a GitHub runner: the pixel diff needs the private artifact, the look checker is an agent.",
+   "answer": "fix",
+   "note": "The outcome names theOS's check command (the crawl and the docs check); the pixel diff and the look checker are aip-f4e2's."
+  },
+  {
+   "sev": "Major",
+   "scope": "who, experience",
+   "text": "\"Warms every new session\" contradicts the term Warm; \"avenMAIA lives in the box\" contradicts Box: the box is the image, avenMAIA runs in the session.",
+   "answer": "fix",
+   "note": "Reworded: the environment warms once before its snapshot; avenMAIA runs in the session, and its checks run in the box."
+  },
+  {
+   "sev": "Major",
+   "scope": "c2, c4",
+   "text": "How sessions reach ghcr.io (network domains, the package public), and how aip-31df's pinned Playwright matches the image's 1.64.1 browser, is unsaid.",
+   "answer": "fix",
+   "note": "Assumptions name it: the environment already allows ghcr.io and pkg-containers.githubusercontent.com, and the image stays public. The image is the only source of the browser; theOS's lockfile pins the image's Playwright (1.64.1)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c2 check",
+   "text": "--version cannot show a missing wasm32 target or Playwright's Chromium; the workflow file sets the platforms but is not a tag input.",
+   "answer": "fix",
+   "note": "The smoke step checks rustup's wasm32 target, versitygw --help and a Chromium launch through Playwright; the workflow file joins the tag's inputs."
+  },
+  {
+   "sev": "Nit",
+   "scope": "risk",
+   "text": "Which move \"git mv back\" undoes, and where the try is recorded, is unsaid; theOS/sandbox/ does not exist.",
+   "answer": "fix",
+   "note": "The undo moves theOS/sandbox/box/Dockerfile back; it is tried in checkpoint 2 and recorded as an event. The previous environment script is kept in theOS/sandbox/ by checkpoint 3."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c4",
+   "text": "Whether the 600 s limit sits in cloud-setup.sh or the environment's script, and where the planted hang goes, is unclear.",
+   "answer": "fix",
+   "note": "The limit sits in the environment's script, around everything it runs; the planted hang goes into a copy of cloud-setup.sh."
+  },
+  {
+   "sev": "Nit",
+   "scope": "mockup, wording",
+   "text": "The mockup is not avenCEO's form; avenDB's crates vs third-party crates; aip-31df's deferred list still names aip-6fb1 for release gating.",
+   "answer": "fix",
+   "note": "The mockup stays as plain screens (there is no slide here); wording: avenDB's third-party crates; aip-31df's deferred list fixed."
+  }
+ ]
+}

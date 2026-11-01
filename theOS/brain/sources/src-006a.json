@@ -1,0 +1,141 @@
+{
+ "type": "reference",
+ "subtype": "protocol",
+ "id": "src-006a",
+ "title": "Shopify Helix",
+ "about": [
+  "agent harness",
+  "workflow"
+ ],
+ "url": "",
+ "by": "Shopify's Helix, used to rebuild their mobile app (about 300 screens) with agents, as retold in an AI Labs video. The original post was not read here.",
+ "summary": "A big job is split into small checkpoints, smallest first. A person approves the plan; then each checkpoint must pass enforced gates (behaviour, screen, adversarial review) before the next one starts, and a person reviews the end result. Feedback becomes new checkpoints that pass the same gates. An attempt is allowed to be wrong; it is not allowed to ship until it isn't.",
+ "steps": [
+  {
+   "n": 1,
+   "name": "Plan",
+   "writes": "checkpoints and a test plan"
+  },
+  {
+   "n": 2,
+   "name": "Behavior",
+   "writes": "tests first, then the code"
+  },
+  {
+   "n": 3,
+   "name": "Screen",
+   "writes": "looks and behaves like the design"
+  },
+  {
+   "n": 4,
+   "name": "Adversarial",
+   "writes": "critic and fixer until approved"
+  },
+  {
+   "n": 5,
+   "name": "Your review",
+   "writes": "a person uses it"
+  },
+  {
+   "n": 6,
+   "name": "Ship",
+   "writes": "release"
+  }
+ ],
+ "bands": [
+  {
+   "name": "Plan",
+   "steps": [
+    1
+   ]
+  },
+  {
+   "name": "Each checkpoint",
+   "steps": [
+    2,
+    3,
+    4
+   ]
+  },
+  {
+   "name": "End",
+   "steps": [
+    5,
+    6
+   ]
+  }
+ ],
+ "gates": [
+  {
+   "id": "A",
+   "after": 1,
+   "what": "You approve the checkpoint plan, shown in a readable viewer."
+  },
+  {
+   "id": "C",
+   "after": 5,
+   "what": "You accept the result."
+  }
+ ],
+ "loops": [
+  {
+   "from": 4,
+   "to": 2,
+   "when": "the next checkpoint"
+  },
+  {
+   "from": 5,
+   "to": 2,
+   "when": "feedback becomes checkpoints"
+  }
+ ],
+ "ideas": [
+  "Checkpoints: small slices of a big feature, simplest first, each building on the one before, so a wrong early decision is caught while it is cheap.",
+  "The plan is JSON for the agents and a readable viewer, in plain language, for the person.",
+  "The tests are planned with the checkpoints, and written before the code, failing first.",
+  "A rule is advice, a gate is enforced: a stop hook keeps the agent working while a gate is open.",
+  "Behavior gate: everything that can be checked without a browser is checked by tests.",
+  "Screen gate: looks and behaviour compared with the design, in the same state, by reviewers who see only the design, never the project's instructions.",
+  "Adversarial gate: a critic assumes the code is wrong and checks it against a written standard; a fixer answers until the critic approves.",
+  "A person stops the work only twice: to approve the plan and to try the result.",
+  "Feedback becomes new checkpoints through the same gates, and a learnings file every agent reads first.",
+  "Every agent works in a fresh context; before starting, one checks that the app runs."
+ ],
+ "took": [
+  {
+   "idea": "Checkpoints, smallest first",
+   "where": "Shape (plan), Build"
+  },
+  {
+   "idea": "A readable view of the agents' JSON",
+   "where": "This page, the board"
+  },
+  {
+   "idea": "Gates are enforced, not advised",
+   "where": "Rules in every step, Automate last"
+  },
+  {
+   "idea": "Tests first, failing first",
+   "where": "Build: Behavior gate"
+  },
+  {
+   "idea": "Screen reviewers who see only the mockup",
+   "where": "Build: Screen gate"
+  },
+  {
+   "idea": "Critic and fixer",
+   "where": "Build: Adversarial gate"
+  },
+  {
+   "idea": "You stop the work only at the gates",
+   "where": "Gates A, B, C"
+  },
+  {
+   "idea": "Feedback becomes checkpoints and lessons",
+   "where": "Ship, Learn"
+  }
+ ],
+ "sources": [
+  "src-7fcb"
+ ]
+}

@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-3956",
+ "n": 67,
+ "title": "link versions stay (c5)",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "brain",
+  "links"
+ ],
+ "quote": "Don't defer.",
+ "means": "c5 stays in aip-836d: a link's version is computed from the commit that added the citing line, and brain get, brain check and the apps flag a link whose target changed since.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-0e44",
+  "d-072e"
+ ],
+ "reflection": {
+  "checked": "every decision before d-3956 that held",
+  "result": "supersedes nothing; keeps d-0e44's pin by commit, computed instead of written"
+ }
+}

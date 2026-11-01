@@ -1,0 +1,1859 @@
+{
+ "type": "intent",
+ "id": "aip-836d",
+ "title": "brain: theOS's memory, one folder, one schema, one door",
+ "kind": "avenCEO",
+ "note": "brain is theOS's memory and its single source of truth: one JSON doc per thing, kept in one folder, theOS/brain/, with a schema per type, the reflection (what a new doc supersedes) and the trace (which AIP and author wrote it). Every read and write goes through one door, the brain command and its skill (d-5bce, d-87d6), over plain functions aip-a195 also serves by MCP (d-432d). Learned from rs-a3fa.",
+ "questions": [
+  {
+   "q": "Is brain's direction right: a JSON doc per thing, JSON Lines for whatever only grows, a JSON Schema per type, binaries named by content hash, and every internal reference pinned as path@full commit SHA?",
+   "options": [
+    "Yes, take it into aip-836d's Understand",
+    "Change it: tell me what"
+   ],
+   "answered": "d-1fee"
+  },
+  {
+   "q": "brain, two simplifications the review proposes against your direction (d-0e44, d-1fee): keep each list that only grows as a JSON array with a prefix check instead of JSON Lines, and compute a link's version from git (the commit that added the citing line) instead of storing path@SHA?",
+   "options": [
+    "Both (recommended: no history was rewritten yet, and the static apps cannot read git objects)",
+    "Keep JSON Lines and stored pins, as decided",
+    "Only the arrays",
+    "Only the computed version"
+   ],
+   "answered": "d-260c"
+  },
+  {
+   "q": "aip-836d's link versions (c5): defer them until a correction is traced to a link whose target moved? Most links point at docs that never change or change all the time, so the flag would carry little signal, and showing it needs a publish step no AIP builds yet.",
+   "options": [
+    "Defer c5 until such a correction (recommended)",
+    "Keep c5 in checkpoint 4"
+   ],
+   "answer": "Don't defer (Samuel, 10:47): c5 is in checkpoint 3.",
+   "answered": "d-3956"
+  },
+  {
+   "q": "Gate A for aip-836d, after its spec review: are its claims, assumptions, outcome and mockup what must be true?",
+   "options": [
+    "Yes",
+    "Change: tell me what",
+    "Send it back"
+   ],
+   "answer": "'ok' (d-b301): approval only if round 6 came back clean; it did not, so Gate A is asked again as question 15. Replaced by question 15.",
+   "replaced_by": "question 15"
+  },
+  {
+   "q": "Decision ids: with many threads at once, keep D-n numbers, or switch to hash ids with D-n as a label?",
+   "options": [
+    "Keep D-n: only avenMAIA writes decisions, so they never collide (recommended)",
+    "Hash ids, D-n as a label"
+   ],
+   "answered": "d-ac7d"
+  },
+  {
+   "q": "Should brain's command be the only door from the start (the check fails any commit that changed a doc without it), or advisory for one checkpoint first?",
+   "options": [
+    "The only door from the start (recommended)",
+    "Advisory for one checkpoint first"
+   ],
+   "answered": "d-87d6"
+  },
+  {
+   "q": "Should brain's verbs also be served over MCP, so aip-a195's mod, the apps and other sessions use the same door, or stay a command and a skill for now?",
+   "options": [
+    "A command and a skill now; MCP with aip-a195 (recommended)",
+    "MCP from the start"
+   ],
+   "answered": "d-d9fd"
+  },
+  {
+   "q": "Is withdraw (a doc stops holding with no successor, with its reason kept) a verb you want, or must every doc that stops holding be superseded by a newer one?",
+   "options": [
+    "Withdraw, with its reason, only from an AIP's event (recommended)",
+    "Only supersede"
+   ],
+   "answered": "d-072e",
+   "answer": "Only supersede (d-072e)."
+  },
+  {
+   "q": "Hash ids (d-ac7d): do d-1b6c to d-072e, aip-31df to aip-f4e2 and the other numbered docs keep their names as labels, or are they renamed?",
+   "options": [
+    "Renamed once, every link rewritten in the same commit (recommended: one name per doc, nothing to keep in step)",
+    "Kept as labels beside the hash id"
+   ],
+   "answer": "Renamed: \"you can rename them\" (Samuel, in the aip-836d thread, 2026-11-01)",
+   "answered": "d-3a9c"
+  },
+  {
+   "q": "How strict is brain add about the reflection: refuse a doc whose author skipped a candidate brain reflect listed, or let the reviewer judge?",
+   "options": [
+    "The reviewer judges; brain refuses only a supersede of a doc that did not hold (recommended: whether a doc replaces another needs judgement)",
+    "brain add refuses"
+   ],
+   "answer": "The reviewer judges: \"reviewer to judge\" (Samuel, in the aip-836d thread, 2026-11-01)",
+   "answered": "d-0a3f"
+  },
+  {
+   "q": "Hash ids for the docs that exist now: you said \"you can rename them\" (d-3a9c). A review points out a third way: old docs keep their D-n and AIP-n ids, and only new docs get hash ids. Old ids were made one at a time and never collide, so this needs no migration, no exception to history only growing, and no rename map, and prose like \"(d-5bce)\" keeps working. Which?",
+   "options": [
+    "Keep the old ids; only new docs get hash ids (recommended)",
+    "Rename every doc once (d-3a9c as written)"
+   ],
+   "answered": "d-f83e"
+  },
+  {
+   "q": "Where do theOS sessions start? The brain prime hook and theOS/CLAUDE.md load only if a session's working folder is theOS/ (the repository root's .claude is legacy and not changed).",
+   "options": [
+    "theOS threads start in theOS/ (recommended)",
+    "At the repository root, with the hook added to the root .claude by an exception"
+   ],
+   "answered": "d-6b87"
+  },
+  {
+   "q": "The MCP server for brain (d-d9fd): aip-836d cannot finish while its last checkpoint waits for aip-a195's Gate A. Move the MCP server into aip-a195, with aip-836d only promising that every verb is a plain function brain.mjs exports?",
+   "options": [
+    "Move it into aip-a195 (recommended)",
+    "Keep it as aip-836d's checkpoint 4"
+   ],
+   "answered": "d-432d"
+  },
+  {
+   "q": "aip-836d's spec review ran three rounds (r3, r4, r5) without a clean one; round 5 left 8 Major findings, each with a proposed answer in r5-paraphrase and r5-zoom-out. One of them moves 'the only door' (d-87d6) from checkpoint 1 to checkpoint 2, so the first slice is the read verbs (brain prime, holds, get) and needs nothing from aip-31df. What next?",
+   "options": [
+    "Apply the proposed answers, the door from checkpoint 2, and run one more round (recommended: most are wording and order, one changes the merge rule)",
+    "Apply them and go to Gate A without another round",
+    "Build with them open",
+    "Back to Understand"
+   ],
+   "answer": "Do as you believe is best (Samuel, 10:47): answers applied in revision 9, round 6 run.",
+   "answered": "d-e0db"
+  },
+  {
+   "q": "Gate A for aip-836d: round 6 was not clean (8 Major, 8 Nit), and revision 10 answers every finding: the migration now opens checkpoint 2 so everything is built once on flat hash ids; the skill is a real Claude Code skill; supersede 'in part' is defined; and, from d-9271, brain's MCP server comes back as checkpoint 4. Approve revision 10's claims, outcome and mockup as what must be true, or run one more round first?",
+   "options": [
+    "Approve revision 10 at Gate A (recommended: the round-6 findings were order and definitions, all answered without a new direction)",
+    "One more review round first",
+    "Change: tell me what"
+   ],
+   "answered": "d-1bc9"
+  }
+ ],
+ "problem": {
+  "who": [
+   "Samuel Andert, who must trust that the agents follow what he decided, as it stands now.",
+   "avenMAIA and its agents, which read brain before they act and write to it as they work.",
+   "Anyone who later asks why something is the way it is."
+  ],
+  "experience": "Decisions, words and history were kept in chat and in files edited in place: a newer decision did not say what it replaced, outdated words came back, and nobody could tell which step wrote what.",
+  "evidence": [
+   {
+    "group": "From this session",
+    "items": [
+     {
+      "text": "Decisions were listed oldest first, and a newer one did not say which older one it replaced (the dated decision docs, before d-cbd4)."
+     },
+     {
+      "text": "avenCEO had to be renamed by hand across 13 types, 25 terms and three apps, twice (d-e2d9, d-81c7)."
+     },
+     {
+      "text": "A read flag on 58 sources claimed a global truth that was per intent (d-418a)."
+     },
+     {
+      "text": "Authorship was a free string: \"Samuel\", \"checkers\" (d-81c7)."
+     },
+     {
+      "text": "A link is a bare path, and the file behind it changes (d-0e44)."
+     }
+    ]
+   }
+  ],
+  "baseline": "Now: one JSON doc per thing in theOS/ (the counts are read off when Gate A is asked); the reflection and the trace computed by the apps; no schema, no check that history only grows, links by bare path.",
+  "whys": [
+   "You can't be sure the agents follow what holds now. Why? Old and new decisions sat side by side, edited in place, without saying which replaces which.",
+   "Why? Memory had no rules: no schema per type, no history that only grows, no reflection, links that move.",
+   "Root cause: brain has no schema, and nothing enforces the reflection, the trace or the growth of history."
+  ],
+  "truths": [
+   "Git keeps every version of every file; a commit SHA names exactly one.",
+   "What is computed from a log that only grows cannot drift from it.",
+   "A JSON Schema is checked by a program, without judgement.",
+   "Whether a new decision replaces an old one needs judgement: an agent proposes it, the decision records it.",
+   "A program that is the only way to write can refuse a bad write before it lands; a check after the fact can only fail the commit."
+  ],
+  "assumptions": [
+   "One JSON doc per thing stays fast enough for the apps and the command at a few hundred docs.",
+   "Git history is never rewritten.",
+   "An event can be typed by hand, so the check proves an event exists, not that the command wrote it; the door is kept by the check, not by force.",
+   "Until aip-6fb1's pipeline runs checks on the server, the check runs from a git pre-push hook that brain prime installs, and avenMAIA runs brain check on every merged tree; a thread that removes the hook is caught there."
+  ],
+  "risk": "Can be undone: every change is files in git."
+ },
+ "reuse": [
+  {
+   "what": "theOS/ui/wiki.js: the crawl, the backlinks, W.trace and W.stepAt",
+   "use": "Used: links, backlinks, the trace and the step (the functions trace and stepAt) are computed there already; brain loads the same file."
+  },
+  {
+   "what": "theOS/avenCEO/app.js: holds and supersededBy",
+   "use": "Moved into the one holds() that brain and the apps load."
+  },
+  {
+   "what": "gbrain, Beads, Basic Memory, Graphiti (rs-a3fa)",
+   "use": "Learned from: a frozen verb protocol with a conformance test; one CLI as the only door and hash ids; edits that quote the version read; supersede, never delete."
+  },
+  {
+   "what": "aven/ops/devx/decisions.mjs",
+   "use": "Learned from, not touched: a log that only grows is checked by comparing it with its earlier version."
+  }
+ ],
+ "options": [
+  {
+   "name": "One door over the JSON docs in git: a command with fixed verbs and its skill, MCP for aip-a195; the check behind it",
+   "note": "The direction you approved (d-1fee, d-260c, d-0020) with the door (d-5bce, d-87d6, d-d9fd). The verbs come from gbrain's frozen protocol, Beads' only-door CLI, Basic Memory's guarded edits and Graphiti's never-delete supersession (rs-a3fa).",
+   "chosen": true
+  },
+  {
+   "name": "Free writes to files, with only the check after",
+   "note": "Rejected (d-5bce, d-87d6): an agent learns of a bad write only when the commit fails, and nothing teaches it the verbs.",
+   "chosen": false
+  },
+  {
+   "name": "A memory library: a model extracts facts, vector or graph search finds them (mem0, Zep, Cognee)",
+   "note": "Rejected: brain records decisions explicitly; a model inside the door makes it non-deterministic. mem0 itself moved from model-chosen updates and deletes to add-only (src-3dd8).",
+   "chosen": false
+  },
+  {
+   "name": "A database",
+   "note": "Rejected: git already versions, diffs and reviews files; a database would need its own history and review.",
+   "chosen": false
+  }
+ ],
+ "claims": [
+  {
+   "id": "c1",
+   "promise": "Every JSON doc in theOS (in brain/, aip/ and avenCEO/) has a type with a type doc, and matches the JSON Schema inside it. by is always an author doc; every type a newer doc can supersede has about (topic words); a correction event names its cause (outdated-decision, outdated-word, missed-supersede or other), set from Samuel's words or, at Learn, by a fresh checker, never by the agent whose work was corrected.",
+   "fails": "A misspelt field, a missing or misspelt type, or a free-text author passes unseen.",
+   "check": "Validated with ajv; each schema rejects a planted bad doc of its type; every current doc passes.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c7",
+   "promise": "brain protocol v1 is the one door for reads: every verb is a plain function brain.mjs exports; the command gives every verb's documented answer and error codes; the skill teaches them; brain prime runs at session start from theOS/.claude/settings.json and theOS/CLAUDE.md names it first (d-6b87).",
+   "fails": "brain prime shows a superseded doc as holding, or misses something that waits for Samuel; or a verb answers differently than v1 says.",
+   "check": "A test calls every exported verb on the fixed docs in theOS/brain/test/ (with superseded docs, docs superseded in part and open questions planted) and through the command line, and compares both with the expected answers; the hook, CLAUDE.md's first line and the skill file name brain prime. Agents reading raw files instead is the outcome's to measure.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c12",
+   "promise": "One migration commit opens checkpoint 2, written by brain as one event of aip-836d at Build (d-3a9c, d-f83e): every doc gets a flat hash id, intents and avenCEO's docs included; the docs brain keeps move into brain/ (the Sources app becomes brain's app); every supersedes entry takes the form {doc, part, what}; every reference, paths and old names in text alike (d-0e44, aip-836d; quotes included; OLD-AIP-n is legacy and kept), is rewritten as an id, events included; review docs' prompts stay verbatim. theOS/brain/renames.json keeps each old name and path with its new id, and the commit's SHA: the one exception c2 accepts. Legacy files outside theOS/ are not changed; their old paths are looked up in renames.json.",
+   "fails": "A doc, an app or a text inside theOS/ still uses an old name or path, an old name can no longer be looked up, or another commit claims the exception.",
+   "check": "After the migration brain check finds no old name and no path used as a link anywhere in theOS/ (renames.json and review prompts excepted); brain get resolves every old name; c2 accepts history rewritten only in the commit renames.json names.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c4",
+   "promise": "Every doc changed in a commit is covered by an event added in that commit, by an author doc (an intent's own doc by its new events); metrics and lessons only at Learn (d-f960, d-87d6).",
+   "fails": "A doc changes that no AIP step wrote.",
+   "check": "brain check fails a planted edit with no event, an event by a free string, and a measurement written outside Learn; a planted normal merge of a branch with new docs passes.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c9",
+   "promise": "Every new doc gets a random hash id minted by brain add (d-ac7d), so parallel threads almost never pick the same one; when two do, the merge fails, and one is minted again.",
+   "fails": "Two threads create the same id and one silently overwrites the other.",
+   "check": "A test makes two branches add a decision each to the same intent and merges them: no clash, the index written again, both events kept by the merge driver. A test with two branches adding the same id expects the merge to fail.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c8",
+   "promise": "No list is kept twice: session.decisions, session.intents and the definition's copied lists are deleted and computed by the apps from links; the index docs and ids.json equal their folders because only brain index writes them.",
+   "fails": "A copy drifts, as session.intents did.",
+   "check": "brain check fails an index doc that differs from its folder, and a planted copied list in a session or the definition.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c3",
+   "promise": "One reflection for every type: a new doc's supersedes entries ({doc, part, what}) each point at a doc that held at the parent commit; what holds is computed, never stored. The candidates the doc leaves unsuperseded are recorded in its event by brain add, and the reviewer judges them (d-0a3f).",
+   "fails": "A doc supersedes something that no longer held, or points at nothing.",
+   "check": "brain add and brain check refuse a planted supersede of a doc already superseded at the parent, and one of a missing doc; a planted add records its left candidates in the event.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c10",
+   "promise": "Links are brain's graph: a link is an id, never a path; every id inside a doc resolves to a doc, and each link's type is the field it sits in; brain get returns links and backlinks by type. brain check warns, without failing, when a doc that holds cites one that was superseded (d-072e).",
+   "fails": "A link points at nothing, or a holding doc quietly rests on a superseded one.",
+   "check": "brain check fails a planted id that resolves to nothing and a planted path used as a link, and prints a warning for a planted citation of a superseded doc.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c6",
+   "promise": "A term that renames a word carries the old word and where the rename applies (a list of folders), and the terms check fails when the old word comes back there, and stays quiet where its other meaning is right. (Ids are renamed by c12's renames.json; c6 is for words.)",
+   "fails": "A rename sweep misses a place, or a word with two meanings raises a false alarm.",
+   "check": "A test plants each renamed word once where the rename applies and once where its other meaning is right.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c2",
+   "promise": "What only grows (an intent's events, a metric's measurements, a session's asks) stays a JSON array that only grows.",
+   "fails": "History is rewritten and nothing notices.",
+   "check": "brain check requires the parent's array to be a deep-equal prefix of the new one; a planted edit, deletion or reorder of an old entry fails.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c5",
+   "promise": "A link's version is computed, never stored: the version cited is the commit that added the citing line (git blame, skipping the migration commit and following moved files); brain get and brain check flag a link whose target changed since, and brain index writes the flags into a file the app reads to show a 'changed since' chip.",
+   "fails": "A link silently shows content that changed after it was cited.",
+   "check": "A planted citation made before the migration of a doc changed after it is flagged by brain get, brain check and in the app's file; seeing the chip is part of Gate B's try.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c11",
+   "promise": "brain's MCP server serves every verb of v1 from the same functions brain.mjs exports, so other sessions and tools use the same door (d-d9fd, d-9271).",
+   "fails": "A tool reaches brain some other way, or the server answers differently than the command.",
+   "check": "The verb test of c7 runs once more through the MCP server and requires the same answers and error codes.",
+   "kind": "mechanical",
+   "result": "open"
+  }
+ ],
+ "outcome": {
+  "promise": "Over the three sessions after checkpoint 3: no correction whose cause is an outdated decision, an outdated word or a missed supersede.",
+  "how": "Each correction event names its cause (c1). At Learn the measurement counts them per session from those events; the baseline is the same count over this session's corrections, labelled by a fresh checker at Gate A.",
+  "kind": "measured",
+  "result": "open"
+ },
+ "checkpoints": [
+  {
+   "n": 1,
+   "adds": "Reads first, needing nothing from aip-31df: holds() moved from avenCEO/app.js into ui/wiki.js (three states: holds, holds in part, superseded); brain prime, holds and get as exported functions and the command; the hook in theOS/.claude/settings.json and the first line of theOS/CLAUDE.md. The skill is written by hand here (brain index writes it from checkpoint 2); links and backlinks are flat until checkpoint 3 groups them by type.",
+   "claims": [
+    "c7"
+   ]
+  },
+  {
+   "n": 2,
+   "adds": "The migration first (c12): brain/, flat hash ids, the supersedes form, ids.json, the Sources app as brain's app. Then, on the final shape and on aip-31df's check command and package.json: schemas in the type docs (written as aip-836d's writes, approved at Gate A); about where a doc can be superseded; brain add, edit, append, index (with the skill) and install; brain check failing a doc changed without an event (d-87d6, the only door from here); copied lists deleted.",
+   "claims": [
+    "c12",
+    "c1",
+    "c4",
+    "c9",
+    "c8"
+   ]
+  },
+  {
+   "n": 3,
+   "adds": "The reflection (brain reflect; supersedes checked at the parent; left candidates recorded); the link graph by type and its audit; renamed words and the terms check; lists that only grow; link versions.",
+   "claims": [
+    "c3",
+    "c10",
+    "c6",
+    "c2",
+    "c5"
+   ]
+  },
+  {
+   "n": 4,
+   "adds": "brain's MCP server over the same exported functions, needing nothing from another intent (d-9271).",
+   "claims": [
+    "c11"
+   ]
+  }
+ ],
+ "deferred": [
+  {
+   "what": "Binaries named by content hash",
+   "until": "brain keeps its first binary."
+  },
+  {
+   "what": "The maintenance pass: a fresh agent turns brain check's warnings and missed supersedes into proposed writes through the same verbs, in an AIP's step",
+   "until": "Three sessions without a correction whose cause is a missed supersede, or warnings pile up faster than they are fixed."
+  },
+  {
+   "what": "brain changes --since <commit>: what changed since a point, for a thread coming back",
+   "until": "A thread rereads brain often enough to need it."
+  },
+  {
+   "what": "A 'valid from' date apart from the commit time",
+   "until": "A decision is recorded after it took effect."
+  },
+  {
+   "what": "brain edit --expect <sha>: refuse an edit of a doc changed since it was read",
+   "until": "Two writers share one working tree."
+  }
+ ],
+ "mockup": [
+  "brain prime at session start: the decisions and terms that hold now, then 'Waits for Samuel' with the open questions and his tasks (the text the hook injects)",
+  "brain get on a decision: the doc, 'superseded by' if any, its links and backlinks grouped by type, and 'changed since' beside a link whose target moved",
+  "The brain app (today's Sources app, renamed): sources, decisions, sessions, terms, lessons, metrics and authors in one place, each list split into Hold now and Superseded (there today in avenCEO/app.js, kept by the shared holds())",
+  "brain has no other new screen; at Gate A these are shown as they are"
+ ],
+ "events": [
+  {
+   "at": "2026-11-01",
+   "by": "a-4c7a",
+   "what": "source",
+   "text": "Define the schema of every kind of doc and list, and link internal resources by commit, never by path alone.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-0e44"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Decisions are d-1b6c, d-e028 and on, each reflected against the ones that hold.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-cbd4"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "aip-836d's product is called brain.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-728e"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "a-6ffb",
+   "what": "renamed",
+   "text": "aip-836d is titled brain.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "The 12 dated decision docs renumbered d-1b6c to d-dc23 (d-d810 recorded from chat), d-d1f4 to d-e2d9 added; brain's reflection run on each: d-ff11, d-9698 and d-e2d9 supersede parts of d-9351, d-b4ce and d-1b6c.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "ix-7380"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "brain's reflection governs terms too: superseding and merging them.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-8725"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Terms carry supersedes and reflection; six terms added (Doc merges Record; Aven, brain, Reflection, Decision, OLD-AIP); d-8725 supersedes part of d-cbd4.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "t-f837",
+    "t-bdba",
+    "t-12eb",
+    "t-64d2",
+    "t-8112",
+    "t-77ca"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "brain is kept by the intents' lifecycles, so every write is traced: which step, when, what, how.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-87aa"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:50Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Every event now says how it was done and which docs it wrote; the step is computed from the events before it; each decision and term shows the event that wrote it.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01T08:51Z",
+   "by": "a-6ffb",
+   "what": "asked",
+   "text": "Is brain's direction right?",
+   "how": "in chat",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01T08:55Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Authors are docs; every by points at Samuel Andert or avenMAIA (a one-time change of the field's form; words and meanings untouched).",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "a-4c7a",
+    "a-6ffb",
+    "ix-bec9",
+    "ty-8a3f"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T08:55Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Whether a source was read is per intent, not global.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-418a"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T08:55Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "The read flag left all 58 source docs; aip-31df's trace holds what was read, how, and what was only retold. 40 sources were read for the OLD-AIPs, outside brain; their reads come in with the consolidation.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "ty-3043"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T08:57Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Every source tagged with its topics (about) and its kind: article, paper, spec, design docs, code or repository. The Harness² paper's doc is src-cbfd; its title no longer says whether it was read.",
+   "how": "by hand, at your direct ask, ahead of this AIP's gates",
+   "writes": [
+    "ty-3043",
+    "src-cbfd"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:12Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "brain's direction approved; aip-836d takes it into Understand, with aip-31df's memory parts.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-1fee"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:12Z",
+   "by": "a-6ffb",
+   "what": "understood",
+   "text": "Problem, evidence, whys, truths, assumptions and risk written; decisions, terms, the trace and authors moved here from aip-31df.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:12Z",
+   "by": "a-6ffb",
+   "what": "specified",
+   "text": "Claims c1 to c5, the outcome and four checkpoints drafted; binaries by content hash deferred.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 1: r1-paraphrase (1 Blocker, 7 Major, 2 Nit); r1-zoom-out (6 Major, 2 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-ce82",
+    "rv-d17c"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 1 answered: 15 fixed, 3 escalated as question 2.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t1"
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 2: the dependency on aip-31df's check named; the reflection checked by ids; every change traced in its own change; the terms check moved in from aip-31df (c6); a command lists what holds (c7); history and link versions last, as you answer question 2.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Revision 2 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t2"
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "One trace for every type, built and kept by brain.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-4d06"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Every type doc names its trace: the events that write its docs, the step and the kind of author; c4 enforces it for every type.",
+   "how": "by hand, at your direct ask",
+   "writes": [
+    "ty-dca5",
+    "ty-4778",
+    "ty-d737",
+    "ty-4076",
+    "ty-3043",
+    "ty-1bdc",
+    "ty-ae9a",
+    "ty-37de",
+    "ty-3f41",
+    "ty-063d",
+    "ty-b981",
+    "ty-f8a0",
+    "ty-50a6",
+    "ty-8a3f"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Both simplifications: arrays that only grow, and a link's version computed from git.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-260c"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Answered (d-260c).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t3"
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "One logic for every type, not only decisions; the command list kept.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-0020"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 3: one reflection for every type, each type kept or living; the command lists what holds for every type; arrays checked to only grow; a link's version computed from git.",
+   "how": "by hand",
+   "writes": [
+    "ty-d737",
+    "ty-50a6",
+    "ty-f8a0",
+    "ty-b981",
+    "ty-3043",
+    "ty-4778",
+    "ty-8a3f",
+    "ty-dca5",
+    "ty-1bdc",
+    "ty-ae9a",
+    "ty-37de",
+    "ty-3f41",
+    "ty-063d",
+    "ty-4076"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Revision 3 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T09:39Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Always show your words in a cleaner form, true to what you said; update every place.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-bca7"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:39Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Every decision, the intents' sources and the session's asks carry your words twice: as typed, and as their clean essence. Added once to the kept decisions, their words as typed untouched.",
+   "how": "by hand, at your direct ask (d-bca7)",
+   "writes": [
+    "d-1b6c",
+    "d-e028",
+    "d-1372",
+    "d-9351",
+    "d-ff11",
+    "d-3b1f",
+    "d-b4ce",
+    "d-1ab2",
+    "d-9698",
+    "d-6c0a",
+    "d-d810",
+    "d-0e44",
+    "d-dc23",
+    "d-d1f4",
+    "d-cbd4",
+    "d-728e",
+    "d-e2d9",
+    "d-8725",
+    "d-87aa",
+    "d-d483",
+    "d-81c7",
+    "d-418a",
+    "d-3d81",
+    "d-a347",
+    "d-1fee",
+    "d-ae58",
+    "d-fef3",
+    "d-3d83",
+    "d-4d06",
+    "d-367c",
+    "d-260c",
+    "d-0020",
+    "d-0a23",
+    "d-4fff",
+    "aip-31df",
+    "aip-6fb1",
+    "aip-836d",
+    "aip-a195",
+    "aip-59ad",
+    "s-ac54",
+    "ty-d737",
+    "def-e833"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:40Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Keep only the polished words, as long as the message stays clean.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-e9c7"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:40Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Only the polished words are kept: the words as typed are replaced by their clean essence in every decision, intent source and session ask.",
+   "how": "by hand, at your direct ask (d-e9c7)",
+   "writes": [
+    "d-1b6c",
+    "d-e028",
+    "d-1372",
+    "d-9351",
+    "d-ff11",
+    "d-3b1f",
+    "d-b4ce",
+    "d-1ab2",
+    "d-9698",
+    "d-6c0a",
+    "d-d810",
+    "d-0e44",
+    "d-dc23",
+    "d-d1f4",
+    "d-cbd4",
+    "d-728e",
+    "d-e2d9",
+    "d-8725",
+    "d-87aa",
+    "d-d483",
+    "d-81c7",
+    "d-418a",
+    "d-3d81",
+    "d-a347",
+    "d-1fee",
+    "d-ae58",
+    "d-fef3",
+    "d-3d83",
+    "d-4d06",
+    "d-367c",
+    "d-260c",
+    "d-0020",
+    "d-0a23",
+    "d-4fff",
+    "d-bca7",
+    "aip-31df",
+    "aip-6fb1",
+    "aip-836d",
+    "aip-a195",
+    "aip-59ad",
+    "s-ac54",
+    "ty-d737",
+    "def-e833"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:42Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Compact decision titles; the explanation as a subtitle.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-6e78"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:42Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Every decision has a title of 60 characters at most; its explanation is the subtitle.",
+   "how": "by hand, at your direct ask (d-6e78)",
+   "writes": [
+    "d-1b6c",
+    "d-e028",
+    "d-1372",
+    "d-9351",
+    "d-ff11",
+    "d-3b1f",
+    "d-b4ce",
+    "d-1ab2",
+    "d-9698",
+    "d-6c0a",
+    "d-d810",
+    "d-0e44",
+    "d-dc23",
+    "d-d1f4",
+    "d-cbd4",
+    "d-728e",
+    "d-e2d9",
+    "d-8725",
+    "d-87aa",
+    "d-d483",
+    "d-81c7",
+    "d-418a",
+    "d-3d81",
+    "d-a347",
+    "d-1fee",
+    "d-ae58",
+    "d-fef3",
+    "d-3d83",
+    "d-4d06",
+    "d-367c",
+    "d-260c",
+    "d-0020",
+    "d-0a23",
+    "d-4fff",
+    "d-bca7",
+    "d-e9c7",
+    "d-6e78",
+    "ty-d737"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 2 on revision 3: r2-paraphrase (1 Blocker, 6 Major, 3 Nit); r2-zoom-out (1 Blocker, 4 Major, 3 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-61e3",
+    "rv-aa91"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Metrics and every other doc are written only by an AIP's own flow.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-f960"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 4: a change is a commit; the kept and living split dropped, every edit through an event (d-f960); what held computed at the parent, nothing stored; copied lists checked (c8); one holds() for apps and command; the single supersedes form first; the link versions escalated.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 2 answered (16 fixed, 2 escalated as question 3); revision 4 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t12"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "One clean, standard interface to brain, a command and a skill.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-5bce"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Back to Understand: research existing memory systems first.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-3e01"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "a-6ffb",
+   "what": "sent back",
+   "text": "Sent back to Understand (d-3e01): its spec stands as revision 4 until the research is in.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "a-6ffb",
+   "what": "started",
+   "text": "A research thread (session_01E9zxn6mwBXcKRHezNQyoSB) studies gbrain, supermemory, Hindsight, MemPalace, mem0, Letta, Zep and Graphiti, Cognee, LangMem, Basic Memory, Beads and Claude's own memory; it writes the sources and rs-a3fa on the branch claude/theos-research.",
+   "how": "a fresh thread of avenMAIA, started by the orchestrator",
+   "writes": [],
+   "reads": [],
+   "task": "t15"
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "a-6ffb",
+   "what": "read",
+   "text": "Read for brain's research: docs only.",
+   "how": "the research thread (session_01E9zxn6mwBXcKRHezNQyoSB); details per source in rs-a3fa",
+   "writes": [],
+   "reads": [
+    "src-8936",
+    "src-4181",
+    "src-b455",
+    "src-c569",
+    "src-bbeb",
+    "src-6ece"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "a-6ffb",
+   "what": "read",
+   "text": "Read for brain's research: read in full.",
+   "how": "the research thread (session_01E9zxn6mwBXcKRHezNQyoSB); details per source in rs-a3fa",
+   "writes": [],
+   "reads": [
+    "src-3dd8",
+    "src-3c06",
+    "src-6c83",
+    "src-dfbd",
+    "src-9b7d",
+    "src-1f55",
+    "src-84f6"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "The research written: 13 sources, 16 patterns (10 now, 4 later, 2 no), a recommendation for brain's one command and 4 open questions.",
+   "how": "the research thread, merged by avenMAIA",
+   "writes": [
+    "rs-a3fa",
+    "src-8936",
+    "src-4181",
+    "src-b455",
+    "src-c569",
+    "src-3dd8",
+    "src-3c06",
+    "src-6c83",
+    "src-dfbd",
+    "src-9b7d",
+    "src-bbeb",
+    "src-6ece",
+    "src-1f55",
+    "src-84f6"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Research in (rs-a3fa).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t15"
+  },
+  {
+   "at": "2026-11-01T10:06Z",
+   "by": "a-6ffb",
+   "what": "understood",
+   "text": "Understood again with the research: brain's problem stands; its interface is one command, brain, the only door, with a skill that teaches its verbs (rs-a3fa).",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Your four answers on brain: hash ids; the only door from the start; MCP too; no withdraw, superseding through the reflection, links as a maintained graph.",
+   "how": "in the aip-836d thread, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-ac7d",
+    "d-87d6",
+    "d-d9fd",
+    "d-072e"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "a-6ffb",
+   "what": "read",
+   "text": "Read in full for brain's research: the mem0, Zep, MemGPT, Hindsight and sleep-time compute papers; five docs sites re-read.",
+   "how": "the aip-836d thread (session_01E9zxn6mwBXcKRHezNQyoSB)",
+   "writes": [],
+   "reads": [
+    "src-cf95",
+    "src-8530",
+    "src-c737",
+    "src-29cb",
+    "src-9289"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "The aip-836d thread now owns this record (d-b43d): it writes revision 5 from the research and your answers, and runs its spec review.",
+   "how": "by avenMAIA, handing over",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Hash ids: rename the numbered docs, keep no labels. The reflection: brain add does not refuse a skipped candidate; the reviewer judges.",
+   "how": "in the aip-836d thread, his words: \"you can rename them\", \"reviewer to judge\"; sent to avenMAIA to record as decisions",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 5: the one door, brain protocol v1 (prime, holds, get, reflect, add, edit, append, check), one program behind the command, the skill and MCP; hash ids and one rename (c9); the reflection judged by the reviewer, only a supersede of a doc that did not hold refused (c3); links as a typed, audited graph (c10); no delete, no withdraw; checkpoints reordered so the door comes first (d-87d6); maintenance pass, cursor read and valid-from deferred.",
+   "how": "by the aip-836d thread, from rs-a3fa and d-5bce to d-072e",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [
+    "rs-a3fa",
+    "d-5bce",
+    "d-ac7d",
+    "d-87d6",
+    "d-d9fd",
+    "d-072e"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Revision 5 written with the one door.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t16"
+  },
+  {
+   "at": "2026-11-01T10:23Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 3 on revision 5: r3-paraphrase (9 Major, 2 Nit); r3-zoom-out (4 Major, 3 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-5097",
+    "rv-fc7c"
+   ],
+   "reads": [],
+   "task": "t4"
+  },
+  {
+   "at": "2026-11-01T10:23Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Round 3 run.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t4"
+  },
+  {
+   "at": "2026-11-01T10:23Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 6: brain check inside aip-31df's check command, no CI; brain writes files and the agent commits; the step computed, not passed; hash ids for new docs in checkpoint 1, the rename its own claim (c12) and c2's one exception; index docs written by brain; the left candidates recorded for the reviewer (d-0a3f); edit only for corrections, --expect deferred; MCP after aip-a195's Gate A (c11); the outcome counts corrections only; the definition's updates named for avenMAIA; questions point at d-3a9c and d-0a3f.",
+   "how": "by the aip-836d thread, answering round 3",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [
+    "d-3a9c",
+    "d-0a3f"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:23Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 3 answered (all 18 fixed) and revision 6 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t17"
+  },
+  {
+   "at": "2026-11-01T10:26Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "The definition now matches aip-836d: the reflection for every type, the reviewer judging what it left (d-0a3f), a change of meaning as a new doc and a correction as an edit through brain, D-n until hash ids land, Reflection and Decision superseded by new terms, the decision type in polished words (d-e9c7). This answers round 3's finding on the definition as fixed.",
+   "how": "by avenMAIA, the only writer of the definition, at aip-836d's round 3 finding",
+   "writes": [
+    "def-e833",
+    "t-6148",
+    "t-2311",
+    "ty-d737"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:26Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 4 on revision 6: r4-paraphrase (8 Major, 3 Nit); r4-zoom-out (4 Major, 4 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-c447",
+    "rv-01d1"
+   ],
+   "reads": [],
+   "task": "t18"
+  },
+  {
+   "at": "2026-11-01T10:26Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Round 4 run.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t18"
+  },
+  {
+   "at": "2026-11-01T10:26Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 7: each type's steps as data and research allowed at Specify; a correction's cause back in the schema; the measurement at Learn; the hash id format defined, a collision failing at merge; merges checked against the first parent; about required where a doc can be superseded; copied lists deleted instead of checked (c8); c5 deferred; prime shorter; get's checkpoint 1 answer said; three findings escalated as questions 11 to 13 (keep old ids, where sessions start, MCP into aip-a195).",
+   "how": "by the aip-836d thread, answering round 4",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:26Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 4 answered (16 fixed, 3 escalated) and revision 7 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Answered (d-f83e): rename every doc and every reference.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t19"
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Answered (d-6b87): theOS threads start in theOS/.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t20"
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Answered (d-432d): the MCP server moves into aip-a195.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t21"
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 8: the rename covers every doc and every reference, prose and events included, with a lookup of old names (c12, d-f83e); the hook in theOS/.claude/settings.json (d-6b87); MCP gone to aip-a195, the verbs plain exported functions (c7, d-432d); checkpoint 4 dropped. Question 3 (link versions) stays open.",
+   "how": "by the aip-836d thread, from d-f83e to d-432d",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [
+    "d-f83e",
+    "d-6b87",
+    "d-432d"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:44Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 5 on revision 8: r5-paraphrase (6 Major, 5 Nit); r5-zoom-out (3 Major, 3 Nit). Not clean; the third round of this thread, so patching stops: every finding has a proposed answer, and you get question 14.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-105b",
+    "rv-13f0"
+   ],
+   "reads": [],
+   "task": "t22"
+  },
+  {
+   "at": "2026-11-01T10:44Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Round 5 run and recorded; the stop question asked.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t22"
+  },
+  {
+   "at": "2026-11-01T10:47Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "brain is the single source of truth: rename Sources to brain and move terms, decisions and sessions into the brain folder. To the open questions: do as you believe is best (question 14: apply round 5's answers and run one more round; the brain folder in the one migration, lessons, metrics and authors too); don't defer (question 3: link versions stay); ok (Gate A, read as approval if round 6 is clean).",
+   "how": "in the aip-836d thread, his words: \"Can you rename the Sources to BRAIN and move terms, decisions and sessions also into the new brain folder\", \"do as you believe is best\", \"dont defer\", \"ok\"; sent to avenMAIA to record as decisions",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:47Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 9: round 5's answers applied: reads first (checkpoint 1 needs nothing from aip-31df), the door for writes from checkpoint 2; the merge rule (only what differs from both parents) with brain index and a merge driver; a pre-push hook and avenMAIA's check on merged trees; step limits only for metrics and lessons; random hash ids; the rename's exception tied to one SHA; causes set by Samuel or a fresh checker; c7 restated; corrections at any step; c6 for words, renames.json for ids. Samuel's answers: one brain/ folder for everything brain keeps, moved in the one migration with the rename (checkpoint 4); link versions kept (c5); the outcome after checkpoint 3.",
+   "how": "by the aip-836d thread",
+   "writes": [
+    "aip-836d",
+    "rv-105b",
+    "rv-13f0"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:47Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 5 answered (all fixed) and revision 9 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t23"
+  },
+  {
+   "at": "2026-11-01T10:48Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Reference everything flat by hash ids, never by paths.",
+   "how": "in the aip-836d thread, his words: \"you should reference everything flat by hash ids right, never by paths\"; sent to avenMAIA to record as a decision",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:48Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 9, amended: a link is a flat id, never a path; brain resolves an id to its file (brain index writes the map for the apps); folders are only where files sit (protocol ids and layout, c10, c12).",
+   "how": "by the aip-836d thread",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:51Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 6 on revision 9: r6-paraphrase (6 Major, 5 Nit); r6-zoom-out (2 Major, 3 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-529e",
+    "rv-6928"
+   ],
+   "reads": [],
+   "task": "t25"
+  },
+  {
+   "at": "2026-11-01T10:51Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Round 6 run.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t25"
+  },
+  {
+   "at": "2026-11-01T10:51Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 10: the migration opens checkpoint 2, so schemas, the door and the checks are built once on flat hash ids (three checkpoints); every doc gets an id, aip and avenCEO too; ids.json maps ids to files; the skill written as theOS/.claude/skills/brain/SKILL.md; brain install sets up hooks, prime only reads; part defined (all or part); topic words warned when new; review prompts kept verbatim in the migration; c5 blame skips the migration commit; no MCP server, as aip-a195 is dropped (d-0603); questions carry Samuel's answers; Gate A asked again (question 15).",
+   "how": "by the aip-836d thread, answering round 6",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [
+    "d-0603"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:51Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 6 answered (all 16 fixed) and revision 10 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:53Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Samuel's answers recorded as decisions: d-eaaf (brain is one folder), d-e0db (round 5's answers applied, one more round; the door for writes from checkpoint 2), d-3956 (link versions stay), d-b301 (Gate A if round 6 is clean: it was not, so question 15 asks again), d-eb50 (links are flat hash ids). The questions point at them. Event times from revision 5 on restamped from their commits' times, at avenMAIA's ask.",
+   "how": "by the aip-836d thread",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [
+    "d-eaaf",
+    "d-e0db",
+    "d-3956",
+    "d-b301",
+    "d-eb50"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:56Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 10, amended: brain's MCP server back as checkpoint 4 (c11), over the same exported functions (d-9271); the first Gate A question marked replaced by question 15.",
+   "how": "by the aip-836d thread, from d-9271",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [
+    "d-9271"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:58Z",
+   "by": "a-4c7a",
+   "what": "gate-A",
+   "text": "Gate A passed for revision 10, with the MCP server as checkpoint 4 (d-1bc9).",
+   "how": "in chat to avenMAIA, relayed; your words kept in the decision",
+   "writes": [
+    "d-1bc9"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:58Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Gate A passed (d-1bc9).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T10:58Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Answered (d-1bc9).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t26"
+  },
+  {
+   "at": "2026-11-01T10:58Z",
+   "by": "a-6ffb",
+   "what": "started",
+   "text": "Build, checkpoint 1: the read verbs, checks first.",
+   "how": "by the aip-836d thread",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:03Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Answered (d-3956): link versions stay.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t13"
+  },
+  {
+   "at": "2026-11-01T11:03Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Checkpoint 1 built: brain/brain.mjs exports prime, holds and get, with the command; ui/wiki.js holds the one reflection rule (holds, holds in part, superseded) that avenCEO/app.js now calls; theOS/.claude/settings.json runs brain prime at session start; theOS/CLAUDE.md names it first; the skill theOS/.claude/skills/brain/SKILL.md; c7's test in brain/test/ with its fixtures, written first and failing, then passing (8 of 8).",
+   "how": "by the aip-836d thread; node --test theOS/brain/test/*.test.mjs",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:03Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 1 review by a fresh agent: 1 Blocker (a part named in free text counted as whole, so d-1ab2, d-0e44, d-87d6, d-fdc7 and d-f6da were left out of what holds), 2 Major (a Samuel task of an earlier step dropped; no skill), 5 Nit. All fixed, each with a fixture; the wording of the rule corrected (a chain does not bring an old doc back).",
+   "how": "a fresh subagent reading the record, the diff and running the tests",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:04Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 1 re-review by a fresh agent: no Blocker, 1 Major (brain get refused the ids prime and holds print), 6 Nit. The Major fixed with a test; Nits fixed but two: a question with only an answer text stays open, as the apps count it; 'newer' is enforced by brain add at checkpoint 2. Checkpoint 1 passes its gates: 9 of 9 tests.",
+   "how": "a fresh subagent reading the record, the commit and running the tests",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:04Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Checkpoint 1 done: the read verbs.",
+   "how": "node --test theOS/brain/test/*.test.mjs (9 pass); two fresh reviews",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:09Z",
+   "by": "a-6ffb",
+   "what": "started",
+   "text": "Checkpoint 2 prepared, not run (avenMAIA's rule: the migration waits for aip-31df's checkpoint 1 and avenMAIA's go). The code now reads both shapes: ui/wiki.js resolves a reference through brain/ids.json when it exists and as a path before; the apps and brain.mjs start from W.DEF and the indexes from W.indexOf, find steps by number, and pick the app by the doc's file. brain/migrate.mjs renames every doc to a flat hash id, moves the docs brain keeps into brain/, rewrites every reference, writes ids.json and renames.json, moves the Sources app to brain/ and points the dashboard at it; its audit finds old names and dangling ids. Its test passes on the fixtures (11 of 11 with checkpoint 1's). On a scratch copy of the real tree: 325 docs, 409 old names, no old name left, what holds and what waits unchanged (71 decisions, 39 terms, 5 tasks), the dashboard, avenCEO and brain apps load with the same counts and no errors; the only dangling ids were the made-up examples in this record's protocol, now reworded.",
+   "how": "by the aip-836d thread; node --test theOS/brain/test/*.test.mjs; node brain/migrate.mjs on a scratch copy; the apps in Chromium",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T11:33Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "After Gate A, d-09f1: hash ids stored, names shown. ui/wiki.js names every doc (D-n, AIP-n, a title, or what a review, research or session belongs to) and every id inside text; the apps escape all visible text through it and keep raw ids for paths, links and tooltips; the dashboard reads through ui/wiki.js; brain prime, holds and get answer with names; the migration keeps n on decisions and gives intents n from AIP-n. Scratch run on a copy of the real tree: 326 docs, no old name, no dangling id, prime's text identical before and after, and no raw hash id in the visible text of the dashboard, the decision, intent, review, session, term, lesson, gate and step pages, or the brain app. On today's tree the same pages show no raw id and no console error. 11 of 11 tests.",
+   "how": "by the aip-836d thread, from d-09f1; the scratch run and the apps in Chromium",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [
+    "d-09f1"
+   ],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T11:36Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "After Gate A, d-4e7c (superseding d-09f1): every doc is shown as its hash id and its title, decisions and intents included; no D-n or AIP-n numbers. W.name gives 'id · title', an id inside text reads the same way (inside a title, a second level by title alone); docs without a title are titled after what they belong to; brain's answers carry name and title and sort by time; the migration no longer keeps n and never mints an id that already appears in a text. Scratch run on the real tree: 326 docs, no old name; one dangling id, the made-up example in d-4e7c's own text. In the apps after the migration: no bare id and no D-n or AIP-n in the visible text of 16 pages (OLD-AIP-n, legacy, kept), no console error. 11 of 11 tests.",
+   "how": "by the aip-836d thread, from d-4e7c; the scratch run and the apps in Chromium",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [
+    "d-4e7c"
+   ],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T11:41Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Short decision titles after the migration (avenMAIA, from d-6e78): a decision's title loses a leading 'AIP-n: ' when that intent is in its intents; the decisions list and brain's answers show the intents beside it. Scratch run on the real tree with avenMAIA's reworded d-4e7c and checker prompts: 328 docs, 415 old names, no old name, no dangling id; the checker prompts read 'node brain/brain.mjs get <id>' and 'the doc def-…'; 11 app pages without a bare id, a D-n or an AIP-n beyond OLD-AIP-n, no console error. 11 of 11 tests.",
+   "how": "by the aip-836d thread; the scratch run, its audit and the apps in Chromium",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T12:23Z",
+   "by": "a-6ffb",
+   "what": "migrated",
+   "text": "The one migration (c12, D-49, D-53, D-65, D-69, D-76), on avenMAIA's go after AIP-1's checkpoint 1: 332 docs renamed to flat hash ids, 421 old names and paths in brain/renames.json; the docs brain keeps moved into brain/ (sources, decisions, sessions, terms, lessons, metrics, authors); the Sources app is brain's app; every reference rewritten as an id, review prompts verbatim, OLD-AIP-n kept. The audit: no old name, no dangling id. brain prime answers the same (75 decisions, 39 terms, 5 tasks for Samuel); brain's tests 11 of 11; AIP-1's check green (1271 states, 0 failed); 18 app pages show every doc as id and title, no bare id, no console error.",
+   "how": "node brain/migrate.mjs . from theOS/, one commit; the commit's SHA goes into brain/renames.json in the next",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T12:26Z",
+   "by": "a-6ffb",
+   "what": "parked",
+   "text": "Parked at a clean cut (D-78), after the migration merged (ce208cd49). Next session, first: t28; t29; t30 (the follow-ups avenMAIA found). Then the rest of checkpoint 2: schemas in the type docs, about where a doc can be superseded, brain add, edit, append, index (with the skill written from the verb list) and install, brain check failing a doc changed without an event (the only door from here), copied lists deleted. Then checkpoint 3 (the reflection, the link graph, renamed words, lists that only grow, link versions) and checkpoint 4 (brain's MCP server).",
+   "how": "by the AIP-3 thread, at avenMAIA's ask",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
+  }
+ ],
+ "reviews": [
+  "rv-ce82",
+  "rv-d17c",
+  "rv-61e3",
+  "rv-aa91",
+  "rv-5097",
+  "rv-fc7c",
+  "rv-c447",
+  "rv-01d1",
+  "rv-105b",
+  "rv-13f0",
+  "rv-529e",
+  "rv-6928"
+ ],
+ "source": {
+  "type": "idea",
+  "by": "a-4c7a",
+  "at": "2026-11-01",
+  "text": "Let's settle the schema of our single source of truth for everything we generate in AIPs, learnings and sources: what is a JSON file, what is a list of JSON entries, what is markdown, and what is both. And link every internal git resource by its commit hash, never by a bare file path, because history changes.",
+  "links": [
+   "def-e833"
+  ],
+  "ref": "d-0e44"
+ },
+ "tasks": [
+  {
+   "id": "t15",
+   "what": "Understand again: what existing memory systems do well (research thread)",
+   "step": 1,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t16",
+   "what": "One door to brain (d-5bce, d-87d6, d-d9fd) in the spec: revision 5",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t1",
+   "what": "Answer spec review round 1",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t2",
+   "what": "Revision 2",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t3",
+   "what": "Answer: the two simplifications (question 2)",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t11",
+   "what": "Revision 3: one logic for every type (d-0020), the simplifications (d-260c)",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t5",
+   "what": "Gate A: approve what must be true",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t6",
+   "what": "Checkpoint 1: the reads (holds() in ui/wiki.js, brain prime, holds, get, the hook)",
+   "step": 3,
+   "for": "checkpoint 1",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t7",
+   "what": "Checkpoint 2: the migration into brain/ with flat hash ids, then the door for writes",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t8",
+   "what": "Checkpoint 3: the reflection, the link graph, renamed words, lists that only grow, link versions",
+   "step": 3,
+   "for": "checkpoint 3",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t10",
+   "what": "Gate B: try it",
+   "step": 3,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t12",
+   "what": "Answer round 2 and write revision 4",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t4",
+   "what": "Spec review round 3: two fresh checkers, started by the aip-836d thread",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t13",
+   "what": "Your answer: defer the link versions (question 3)",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t17",
+   "what": "Answer spec review round 3 and revise",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t18",
+   "what": "Spec review round 4",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t19",
+   "what": "Answer: old ids kept or renamed (question 11)",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t20",
+   "what": "Answer: where theOS sessions start (question 12)",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t21",
+   "what": "Answer: MCP in aip-a195 or aip-836d (question 13)",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t22",
+   "what": "Spec review round 5",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t23",
+   "what": "Answer: after three rounds without a clean one, what next (question 14)",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t25",
+   "what": "Spec review round 6",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t26",
+   "what": "Answer: Gate A on revision 10, or one more round (question 15)",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t27",
+   "what": "Checkpoint 4: brain's MCP server",
+   "step": 3,
+   "for": "checkpoint 4",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t28",
+   "what": "Follow-up: this page still shows D-49, D-53, D-65, D-69 and D-76 in visible text (the migration event's own text, written after the rename); rename them to ids, or record why they stay",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t29",
+   "what": "Follow-up: brain/'s app is still titled Sources; title it brain (D-65)",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t30",
+   "what": "Follow-up: an id inside a title is named in full in prime (d-9271 reads 'back into aip-836d · brain: theOS's memory…'); show a nested id by its id alone, or reword the title",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "a-6ffb"
+  }
+ ],
+ "protocol": {
+  "name": "brain protocol v1",
+  "what": "The one door to brain (d-5bce). One program, theOS/brain/brain.mjs, with these verbs, each a plain function it exports. The command line calls them, and the skill theOS/.claude/skills/brain/SKILL.md, written by brain index from the verb list, teaches them (it loads because theOS threads start in theOS/, d-6b87). An MCP server serves the same functions to other sessions and tools (d-d9fd, d-9271), in aip-836d's last checkpoint. Fields keep their meaning forever; v1 only grows (new verbs, new optional fields). brain writes files; the agent commits them with its other work.",
+  "reads": [
+   {
+    "verb": "brain prime",
+    "does": "Prints the decisions and terms that hold now (id and title) and what waits for Samuel (open questions and his tasks); brain holds <type> gives the rest. A Claude Code hook in theOS/.claude/settings.json runs brain install (from checkpoint 2) and then brain prime at the start of a session and after compaction (when Claude Code shortens a long conversation to fit); theOS/CLAUDE.md names brain prime first."
+   },
+   {
+    "verb": "brain holds <type>",
+    "does": "Lists the docs of a type that hold now, from the one holds() in ui/wiki.js that the apps also use. A doc holds until a newer doc supersedes it (a chain does not bring an old one back); superseded only in part (part is anything but all, whole or left out), it holds in part. The result does not depend on the order branches were merged."
+   },
+   {
+    "verb": "brain get <id>",
+    "does": "Returns one doc, what supersedes it, and its links and backlinks (a link is any string that is an id), grouped by type from checkpoint 3: the field they sit in, such as supersedes, relates, intents or writes. A link whose target changed since the commit that added it is flagged 'changed since' (c5). An old name (d-0e44, aip-836d) is resolved through theOS/brain/renames.json."
+   },
+   {
+    "verb": "brain reflect <type> <draft>",
+    "does": "Lists the docs of the same type that hold (wholly or in part) and share a topic word (about) with the draft: the candidates it may supersede. The author judges."
+   }
+  ],
+  "writes_rule": "Every write takes --intent (an AIP) and --by (an author doc). It writes the doc and appends the event to that intent; the agent commits both together, and brain check fails a commit where they are apart. Only metrics and lessons are limited by step: they are written at Learn (d-f960); every other type, corrections included, may be written at any step, Closed too.",
+  "writes": [
+   {
+    "verb": "brain add <type> <file>",
+    "does": "Mints the doc's id: <prefix>-<hex>, the prefix short for the type and the hex 4 random characters, longer if the id exists on this branch (d-ac7d), and files the doc in its type's folder; decisions are written by avenMAIA, which mints their ids this way. Checks the doc against its type's schema; refuses a supersedes entry ({doc, part, what}: part is all, the default, or part) whose doc does not exist or did not hold, wholly or in part, at the parent commit. Warns about a topic word no other doc uses, showing the closest words in use. Runs brain reflect itself and writes into the event the candidates the doc does not supersede, for the reviewer to judge (d-0a3f). Runs brain index. Answers created or unchanged, and lists what the doc supersedes."
+   },
+   {
+    "verb": "brain edit <id> <file>",
+    "does": "Changes a doc in place for a correction that keeps its meaning (a typo, a title, d-6e78); a change of meaning is a new doc that supersedes it. Answers changed or unchanged."
+   },
+   {
+    "verb": "brain append <id> <list> <entry>",
+    "does": "Adds an entry to the end of a list that only grows (events, measurements, asks). Answers appended."
+   },
+   {
+    "verb": "brain index",
+    "does": "Writes every index doc from its folder (the static apps cannot list a folder). It runs inside the write that needs it, and the index is listed in that event's writes; it is never edited by hand, so a merge clash in one is resolved by running it again."
+   },
+   {
+    "verb": "brain install",
+    "does": "Sets up this clone for brain: a git pre-push hook that runs the check when files under theOS/ changed (calling any hook already there), and the merge driver for lists that only grow. Merges of brain's docs happen locally, by avenMAIA; GitHub's merge button ignores merge drivers."
+   }
+  ],
+  "check": {
+   "verb": "brain check",
+   "does": "A module that aip-31df's check command runs on every commit before it is pushed (from the pre-push hook) and that avenMAIA runs on every merged tree. It runs every claim's check below and fails a commit that changed a doc without an event of that commit (d-87d6); an intent's own doc is covered by its new events. A non-merge commit is checked against its parent; a merge commit only for what differs from both parents. Merges resolve with brain index (index docs and ids.json written again) and the merge driver, which keeps both sides' new entries, the first parent's first."
+  },
+  "errors": "Every refusal is a fixed code with the fix, for example no_intent (pass --intent <aip id>), schema (field x: expected y), step (a metric is written at Learn; the AIP stands at <step>), not_held (<id> was superseded by <id>).",
+  "not": [
+   "No delete and no withdraw: a doc stops holding only when a newer doc supersedes it through the reflection (d-072e).",
+   "No model inside the door: brain never guesses a supersede or a link.",
+   "No commits by brain, and no version guard on edit yet: each thread writes its own branch, so clashes show at merge."
+  ],
+  "layout": "brain/ holds brain's program (brain.mjs, test/), ids.json, renames.json, its app (index.html, app.js: today's Sources app, renamed brain) and every doc brain keeps, in folders by type: brain/sources, brain/decisions, brain/sessions, brain/terms, brain/lessons, brain/metrics, brain/authors. aip/ (the intents) and avenCEO/ (the harness) keep their folders; their docs get ids too. Folders are only where files sit; no link names one.",
+  "ids": "Every doc, intents and avenCEO's docs included, is referenced by its id alone, flat, never by a path: a type prefix and random hex (d- and 4 hex characters for a decision, aip- for an intent, src- for a source), unique across theOS. A link is any string that is an id. brain index writes theOS/brain/ids.json, the map from id to file, which brain and the static apps read, so a doc can move between folders without any link changing. Wherever a doc is shown, in the apps, in brain's answers and in text, it reads as its id and its title, \"aip-<hex> · brain: theOS's memory\" (d-4e7c); no D-n or AIP-n numbers. New decisions and intents get hash ids like every other doc and are ordered by time. ui/wiki.js does the naming (W.name, W.title, W.named), for the apps and for brain."
+ }
+}

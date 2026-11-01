@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-4ca4",
+ "n": 58,
+ "title": "Green: the check passes in the box",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "release",
+  "checks"
+ ],
+ "quote": "Yes.",
+ "means": "A theOS release is green when theOS's check command passes inside avenSANDBOX's image on the commit released.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-367c"
+ ],
+ "reflection": {
+  "checked": "every decision before d-4ca4 that held",
+  "result": "supersedes nothing"
+ }
+}

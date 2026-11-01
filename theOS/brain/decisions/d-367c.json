@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-367c",
+ "n": 30,
+ "title": "theOS's apps at aven.maia.city",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "release",
+  "apps"
+ ],
+ "quote": "Yes, that's what we want: theOS's apps as the site at aven.maia.city.",
+ "means": "theOS releases its apps as the site at aven.maia.city, in place of avenOS, once its release is green (aip-59ad's question).",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-a347"
+ ],
+ "reflection": {
+  "checked": "every decision before d-367c that held",
+  "result": "supersedes nothing"
+ }
+}

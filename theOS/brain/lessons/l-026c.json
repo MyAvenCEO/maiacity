@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-026c",
+ "status": "proposed",
+ "cue": "A new check is red on the current commit, and it is tempting to call it a false alarm.",
+ "lesson": "Look at the page as a person sees it before tuning the check: the first red of a new check is often a real escape.",
+ "evidence": "aip-31df: c1's first run on the current commit was red on three docs slides at 390 px; a screenshot showed the page really scrolled 13 to 43 px sideways, and the docs app was fixed (8115ed0).",
+ "confidence": "high",
+ "intent": "aip-31df"
+}

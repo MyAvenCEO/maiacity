@@ -1,0 +1,86 @@
+{
+ "type": "review",
+ "id": "rv-61e3",
+ "intent": "aip-836d",
+ "round": 2,
+ "lens": "paraphrase",
+ "commit": "e74702594",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-3.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "aip-836d (\"brain\") puts rules on theOS's memory. Every doc in the folders the apps read must match a JSON Schema kept in its type doc (c1). Each type is \"kept\" (never edited, only superseded) or \"living\" (revised in place), and every new doc lists the docs of its type it was checked against and what it supersedes (c3). Every changed doc must be written by an event added in the same change, by an author doc, and must fit its type's trace rule (c4). Renames become term docs with a terms check (c6), a command lists what holds for each type (c7), arrays that only grow may only be appended to (c2), and a link's version is the commit that added the citing line, with a \"changed since\" flag (c5).",
+  "existing": "Each thing is a typed JSON doc linked by bare path. Samuel's words become decisions D-n. avenMAIA runs the reflection by hand, and app.js computes what holds and what is superseded, for decisions and terms only. Each write is meant to be an event in an intent's events, and wiki.js computes the step and the trace from those events, but nothing enforces any of this. I cannot say when brain's checks run, or what \"base\" and \"a change\" mean (see the Blocker)."
+ },
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "c2, c4, checkpoint 1",
+   "text": "\"Base\" and \"a change\" are never defined. Round 1's answer says the check runs by the done rule before every push, against the last published version, but that text never reached the record, which says only \"After aip-31df's checkpoint 1\". aip-31df is stopped before Gate A, and nothing says what happens if it stays there.",
+   "answer": "fix",
+   "note": "Defined: a change is a commit and its base is its parent; brain's checks run on every new commit before it is pushed, through aip-31df's check command. Until aip-31df's checkpoint 1 exists, they wait; nothing else depends on it."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3 against c2 and the type docs",
+   "text": "metric is kept, yet its measurements grow; review is kept, yet answers are added later. Checkpoint 2's {doc, part, what} form and c3's id lists require rewriting existing decisions and terms; the d-bca7 to d-6e78 sweeps already rewrote decisions through agent events, which c3 and c4 would both fail. Nothing describes how an approved change to kept docs gets through.",
+   "answer": "fix",
+   "note": "The kept and living split is dropped: any doc may change, but only through an event of an AIP in the same commit (c4), and supersedes says what replaces what. A measurement is added by an AIP's Learn step, an answer by the answering event (d-f960)."
+  },
+  {
+   "sev": "Major",
+   "scope": "c4",
+   "text": "Does the intent doc an event is appended to count as a changed doc? If not, an untraced edit to an intent's claims passes as long as any event is appended; if so, the record's own events (understood, revised: writes []) break the rule. The step in the type docs is free text, so it cannot be checked mechanically.",
+   "answer": "fix",
+   "note": "An intent's own doc is covered by the events added to it in the same commit; every other changed doc must be in their writes. The step a type allows is written as step numbers, so it can be checked."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3, c7",
+   "text": "\"Holds\" and \"supersedes\" are undefined for sessions, reviews, authors, references and the living types; at which commit \"what held\" is read, and how two new docs of one type in one change list each other, is unsaid.",
+   "answer": "fix",
+   "note": "Holds and supersedes are defined for every type the same way, computed at the parent commit; two new docs in one commit are each checked against the docs that held at the parent."
+  },
+  {
+   "sev": "Major",
+   "scope": "c5",
+   "text": "A version from the commit that added the citing line resets whenever the line is rewritten (the d-bca7 to d-6e78 sweeps, checkpoint 2's migration), so a change to the target before the rewrite goes unflagged. Links to living docs, such as every decision's intents, would be flagged almost always. The check plants only the clean case.",
+   "answer": "escalate",
+   "note": "Asked as question 3: defer the link versions until a correction is traced to a link whose target moved."
+  },
+  {
+   "sev": "Major",
+   "scope": "c7",
+   "text": "The check only compares two lists; nothing tests that agents read what holds before they act.",
+   "answer": "fix",
+   "note": "c7 now promises the list and that theOS/CLAUDE.md names the command first; whether agents read it shows in the outcome."
+  },
+  {
+   "sev": "Major",
+   "scope": "avenCEO's definition",
+   "text": "Its rules, its live list and the reflection term still limit the reflection to decisions and terms, \"old ones never edited\"; the decision type still says \"verbatim\", which d-e9c7 replaced. No checkpoint updates them: the outdated-word failure aip-836d is meant to prevent.",
+   "answer": "fix",
+   "note": "The definition's rules, live list and Reflection term and the decision type are updated by checkpoint 1, in the same commit as the check."
+  },
+  {
+   "sev": "Nit",
+   "scope": "outcome, deferred",
+   "text": "No schema has a cause field for corrections; \"aip-31df's layout and sweep causes\" is defined only in aip-31df; \"missed supersede\" is not one of the outcome's causes; when the three sessions start is unsaid.",
+   "answer": "fix",
+   "note": "Correction events carry a cause field (decision, word, missed supersede, layout, other), in checkpoint 1's schemas; the three sessions start after checkpoint 2."
+  },
+  {
+   "sev": "Nit",
+   "scope": "assumptions",
+   "text": "\"A pinned commit never disappears\" dates from before d-260c, which dropped stored pins.",
+   "answer": "fix",
+   "note": "The pinned-commit assumption is replaced: git history is never rewritten, so a computed version always resolves."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c1, tasks",
+   "text": "c1's \"missing author\" names no field; the folders the apps read are not listed; task t4's who is a free string.",
+   "answer": "fix",
+   "note": "c1 names by: an author doc; the folders are listed (aip, decisions, sessions, sources, metrics, lessons, authors, avenCEO); the task's who is a role."
+  }
+ ]
+}

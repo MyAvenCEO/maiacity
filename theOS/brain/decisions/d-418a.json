@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-418a",
+ "n": 22,
+ "title": "Sources drop the read flag",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "sources",
+  "trace"
+ ],
+ "quote": "Drop the read flag: whether something was read belongs to an intent and its session, not to the source.",
+ "means": "A source doc says what the source is, not whether it was read: reading is an event of the intent that read it, with when, who and how, in its trace.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-87aa"
+ ],
+ "reflection": {
+  "checked": "every decision before d-418a that held",
+  "result": "supersedes nothing"
+ }
+}

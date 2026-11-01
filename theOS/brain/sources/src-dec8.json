@@ -1,0 +1,12 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-dec8",
+ "title": "Autobase: design",
+ "about": [
+  "p2p sync",
+  "local-first data",
+  "time and order"
+ ],
+ "url": "https://github.com/holepunchto/autobase/blob/main/DESIGN.md"
+}

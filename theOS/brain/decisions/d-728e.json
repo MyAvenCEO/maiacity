@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-728e",
+ "n": 16,
+ "title": "aip-836d's product is brain",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "naming",
+  "memory"
+ ],
+ "quote": "Name aip-836d's product our brain.",
+ "means": "aip-836d's product, theOS's memory and its schema, is called brain.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-0e44",
+  "d-cbd4"
+ ],
+ "reflection": {
+  "checked": "every decision before d-728e that held",
+  "result": "supersedes nothing"
+ }
+}

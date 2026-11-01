@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "t-66d6",
+ "word": "avenCEO",
+ "means": "Our agent harness framework: its steps, gates, doc types and checkers, and the Intents app that shows them. avenMAIA is the instance we use.",
+ "supersedes": [
+  {
+   "term": "t-bdba",
+   "how": "renamed: aven is avenCEO again (d-3d83)"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes aven (renamed)"
+ }
+}

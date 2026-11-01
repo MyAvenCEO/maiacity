@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "spec",
+ "id": "src-837a",
+ "title": "Decentralised MLS (draft)",
+ "about": [
+  "group encryption"
+ ],
+ "url": "https://github.com/phnx-im/dmls-spec/blob/main/draft-kohbrok-mls-dmls.md"
+}

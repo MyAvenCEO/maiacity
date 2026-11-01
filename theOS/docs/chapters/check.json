@@ -1,0 +1,217 @@
+{
+ "title": "Checking",
+ "slides": [
+  {
+   "title": "Writing is a chain of signatures.",
+   "text": "Mia ticks “buy milk”. Her phone's signer signs the change. Every {peer}, any device holding a copy, checks the links before merging: the signer is her phone agent's key, Mia's policy lets the phone act for her, Mia is in “household”, and “household” has update on this list. One broken link, and the change is dropped.",
+   "code": {
+    "type": "data:b3:R75…@b3:50b…#change",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "ops": [
+     "c40b11:7"
+    ],
+    "proof": [
+     "data:b3:7Hq…#house-list",
+     "policy:b3:h7r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:m3a…#mia-phone"
+    ],
+    "sig": {
+     "by": "agent:b3:p9c…#mia-phone",
+     "key": "ed25519:Mk7…",
+     "value": "…"
+    }
+   },
+   "deep": "Every peer checks a change before merging: the signature, the signer's registration in the agent's history, the agent's policy from its owner, the owner's place in the role, and a policy covering this operation on this data. Any broken link: dropped."
+  },
+  {
+   "title": "Two questions, every time.",
+   "text": "Every change has to pass two checks. Does it really come from Mia? Her own policies decide. May Mia do this to this data? The data's policies decide. Only both together let a change in.",
+   "flow": [
+    "signatures",
+    "the guardian behind them",
+    "who speaks?",
+    "may it?",
+    "accepted"
+   ],
+   "deep": "Agency and access stay apart. The chain signer → agent → owner → … → that identity's guardian only answers who is acting; policies on data only answer what that identity may do. Both are checked offline by every peer."
+  },
+  {
+   "title": "Under the hood, a policy is a capability.",
+   "text": "Each policy is a signed token, a {capability}. It carries its own {proof}: who signed it, and why they were allowed to, all the way back to the data's birth record. Any device can check it offline. Nobody can forge it.",
+   "code": {
+    "type": "data:b3:R9f…@b3:00f…#policy",
+    "to": "role:b3:k1m…#household",
+    "on": "data:b3:7Hq…#house-list",
+    "operations": {
+     "create": {},
+     "read": {},
+     "update": {}
+    },
+    "expires": "2026-12-01T00:00:00Z",
+    "proof": [
+     "data:b3:7Hq…#house-list",
+     "human:b3:q4x7…#you"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "Like a Biscuit or UCAN token, it carries its own proof: the records from the data's birth record through the owner to the agent that signed it, verifiable offline without any server. Only the owner's agents sign policies, so the chain never branches through anyone else. Like every signed or hashed thing, it is encoded as canonical CBOR, so the same policy always gives the same bytes."
+  },
+  {
+   "title": "Every device checks the same four things.",
+   "text": "Before a change goes in, or before a single byte goes out, a device checks the policy behind it.",
+   "list": [
+    "Every signature in the proof is valid, back to the birth record and the guardian behind each signer.",
+    "The policy hasn't ended, and the change was made before its expiry (Endings chapter).",
+    "The operation is listed in the policy.",
+    "Every condition holds."
+   ],
+   "deep": "Verification order: signatures along the chain, no ending in the causal past, operation covered, conditions hold. All deterministic, so every peer reaches the same verdict.",
+   "spec": {
+    "summary": "The verification every peer runs on every record, in order. Deterministic: the same records give the same verdict everywhere.",
+    "rules": [
+     {
+      "id": "verify.1_signature",
+      "text": "r.sig verifies under r.sig.key, and that key is the signer of r.sig.by at the revision r names (agent.rotation)."
+     },
+     {
+      "id": "verify.2_record_key",
+      "text": "r is the next record of its signer: its after includes the signer's previous record, and (agent, epoch, seq) is unique (OLD-AIP-61, OLD-AIP-69)."
+     },
+     {
+      "id": "verify.3_agent",
+      "text": "The signing agent's policy on its owner is live and covers the act: act for data operations, own for policies and ownership acts (OLD-AIP-58)."
+     },
+     {
+      "id": "verify.4_guardian",
+      "text": "That policy, and every policy in the chain, traces back to the owner's guardian (guardian.root, OLD-AIP-91)."
+     },
+     {
+      "id": "verify.5_identity_chain",
+      "text": "If r acts for an identity X other than the agent's owner, a chain of live identity policies leads from the owner to X, one role per hop (policy.chain)."
+     },
+     {
+      "id": "verify.6_data_policy",
+      "text": "A live policy on r's data, given to a role that holds X, covers r's operation, path and conditions (OLD-AIP-56)."
+     },
+     {
+      "id": "verify.7_not_ended",
+      "text": "No ending of a policy in the chain is in r's causal past, and r's signed time is before every used policy's expiry (OLD-AIP-60)."
+     },
+     {
+      "id": "verify.8_schema",
+      "text": "r fits the exact schema version it names; its type is a root schema ref (OLD-AIP-66, OLD-AIP-90)."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-56",
+     "OLD-AIP-58",
+     "OLD-AIP-60",
+     "OLD-AIP-61",
+     "OLD-AIP-66",
+     "OLD-AIP-69",
+     "OLD-AIP-90",
+     "OLD-AIP-91"
+    ]
+   }
+  },
+  {
+   "title": "Every change is checked on arrival.",
+   "text": "Before Alice's device merges Bob's CRDT ops, it checks each one against the policies in the Doc's own history. Bob's role has update, so his CRDT ops go in. A stranger's CRDT op on the same list is dropped, quietly, everywhere.",
+   "code": {
+    "type": "data:b3:R75…@b3:50b…#change",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "ops": [
+     "a17e02:18",
+     "a17e02:19"
+    ],
+    "proof": [
+     "data:b3:7Hq…#house-list",
+     "policy:b3:h7r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:b5l…#bob-laptop"
+    ],
+    "sig": {
+     "by": "agent:b3:b4l…#bob-laptop",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
+   },
+   "deep": "Verification happens before merge: signature, signer registration, the agent's policy, the role and the covering policy, evaluated against the policies the change says it had seen. Each change is checked on its own on arrival; rules that span concurrent changes, like a limit of 20, are settled when the view is built, in one fixed order (OLD-AIP-63). CRDT op IDs come from the signer, so nobody can write under someone else's."
+  },
+  {
+   "title": "Every record says what it had seen.",
+   "text": "Every signed record lists what its author had already seen: the latest changes of the data, of its policies and of every identity in its proof. It also carries its author's running number. So every device can tell what came before what without a clock, and a signer that leaves out its own earlier records is caught.",
+   "code": {
+    "type": "data:b3:R75…@b3:50b…#change",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "ops": [
+     "c40b11:9"
+    ],
+    "after": {
+     "data": [
+      "a17e02:20"
+     ],
+     "policies": [
+      "policy:b3:h7r…#household"
+     ],
+     "identities": {
+      "human:b3:m2a9…#mia": 4
+     }
+    },
+    "seq": 12,
+    "sig": {
+     "by": "agent:b3:p9c…#mia-phone",
+     "key": "ed25519:Mk7…",
+     "value": "…"
+    }
+   },
+   "deep": "“Saw it” means listed in after, directly or through what those records saw (OLD-AIP-61). A list counts only for its author's own authority: nobody can make someone else's ending disappear by leaving it out. Two different records with the same signer and number prove the signer lied; both are invalid."
+  },
+  {
+   "title": "Two things at once.",
+   "text": "Mia edits the list on a train, offline, at the same moment you remove her. Her edit didn't list your removal as seen, so when both devices meet, the removal wins: her edit is dropped everywhere. Every device decides the same way, so they all end up agreeing.",
+   "code": {
+    "removal": {
+     "type": "data:b3:R8d…@b3:ca4…#role",
+     "id": "role:b3:k1m…#household",
+     "identities": [
+      "human:b3:a8f3…#alice",
+      "human:b3:b0b…#bob"
+     ]
+    },
+    "change": {
+     "type": "data:b3:R75…@b3:50b…#change",
+     "on": "data:b3:7Hq…#house-list",
+     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+     "ops": [
+      "c40b11:9"
+     ],
+     "deps": [
+      "c40b11:8"
+     ]
+    },
+    "result": "removal wins, c40b11:9 dropped"
+   },
+   "deep": "Concurrency is resolved toward less authority (OLD-AIP-14): a removal and a change that didn't list it as seen count as concurrent, and the removal wins over the removed identity's own changes, even if the change claims an older place in the history. Nothing wins by being latest. If two holders of own remove each other at once, both removals stand and the guardian repairs (OLD-AIP-59)."
+  },
+  {
+   "title": "Checking, in short.",
+   "list": [
+    "Every peer checks every change before merging it.",
+    "An identity's own policies answer who speaks for it; the data's policies answer what may be done.",
+    "Policies carry their own proof, checked offline.",
+    "Every record lists what it had seen, so order needs no clock.",
+    "When it's unclear, less authority wins."
+   ],
+   "deep": "Verification is deterministic, so every peer reaches the same verdict without asking anyone."
+  }
+ ]
+}
