@@ -136,6 +136,15 @@
     "Change: tell me what"
    ],
    "answered": "d-1bc9"
+  },
+  {
+   "q": "Gate B for brain: try it for a few minutes. (1) Start a new Claude Code session in theOS/ and look at what it is told first: the decisions and terms that hold now, each as its id and title, and what waits for you. (2) Open the Intents app's Decisions list and one decision: each shows as id and title, marked holds, holds in part or superseded, with what it is for and, where a link's target changed after it was cited, a 'changed since' chip. (3) Open the brain app (the former Sources app). (4) Ask the session to record a small test decision and watch it go through brain add, then ask it to edit a decision file by hand and push: the push is refused. Does brain show you what holds now, readably, and keep its memory only through its door?",
+   "options": [
+    "Yes, brain works (Gate B passes; then Learn)",
+    "Change: tell me what",
+    "Send it back"
+   ],
+   "answered": "d-faaf"
   }
  ],
  "problem": {
@@ -1829,6 +1838,229 @@
    "writes": [],
    "reads": [],
    "task": "t9"
+  },
+  {
+   "at": "2026-11-01T14:46Z",
+   "by": "a-6ffb",
+   "what": "asked",
+   "text": "Gate B asked: four things to try in a few minutes (the session's first read, the Decisions list and a decision, the brain app, a write through the door and a hand edit refused).",
+   "how": "by the AIP-3 thread, sent to avenMAIA for you",
+   "writes": [],
+   "reads": [],
+   "task": "t10"
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "decision d-faaf · Gate B for brain",
+   "how": "brain add",
+   "writes": [
+    "d-faaf",
+    "ix-7380.items",
+    "s-ac54.decisions"
+   ],
+   "reads": [],
+   "task": "t10",
+   "left": [
+    "d-0603",
+    "d-113f",
+    "d-1372",
+    "d-19fb",
+    "d-1bc9",
+    "d-23e7",
+    "d-2519",
+    "d-3956",
+    "d-3d81",
+    "d-3e01",
+    "d-4e7c",
+    "d-4fff",
+    "d-5afb",
+    "d-6628",
+    "d-690b",
+    "d-6c0a",
+    "d-87aa",
+    "d-8912",
+    "d-9271",
+    "d-93eb",
+    "d-ae58",
+    "d-b43d",
+    "d-b916",
+    "d-d454",
+    "d-d483",
+    "d-e028",
+    "d-e0db",
+    "d-eaaf",
+    "d-eb50",
+    "d-f1a0",
+    "d-f20b",
+    "d-ff11",
+    "d-820e"
+   ]
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-4c7a",
+   "what": "gate-B",
+   "text": "Gate B passed: brain works (d-faaf).",
+   "how": "in chat to avenMAIA, relayed; your word kept in the decision",
+   "writes": [
+    "d-faaf"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Gate B passed (d-faaf).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t10"
+  },
+  {
+   "at": "2026-11-01T17:16Z",
+   "by": "a-6ffb",
+   "what": "edit",
+   "text": "aip-836d: questions",
+   "how": "brain edit",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [],
+   "task": "t10"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "lesson l-f422",
+   "how": "brain add",
+   "writes": [
+    "l-f422",
+    "ix-02b6.items"
+   ],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "lesson l-3429",
+   "how": "brain add",
+   "writes": [
+    "l-3429",
+    "ix-02b6.items"
+   ],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "add",
+   "text": "lesson l-8ece",
+   "how": "brain add",
+   "writes": [
+    "l-8ece",
+    "ix-02b6.items"
+   ],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-db7a.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-db7a"
+   ],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-a293.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-a293"
+   ],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-e42c.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-e42c"
+   ],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "append",
+   "text": "m-c535.measurements",
+   "how": "brain append",
+   "writes": [
+    "m-c535"
+   ],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "edit",
+   "text": "l-3429: evidence",
+   "how": "brain edit",
+   "writes": [
+    "l-3429"
+   ],
+   "reads": [],
+   "task": "t31"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "edit",
+   "text": "aip-836d: tasks",
+   "how": "brain edit",
+   "writes": [
+    "aip-836d"
+   ],
+   "reads": [],
+   "task": "t31"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "erratum",
+   "text": "The Learn writes above named task t11 (revision 3, long done) by mistake; they belong to t31, Learn: lessons and metrics. l-3429's evidence named the wrong decisions; corrected through brain edit.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t31"
+  },
+  {
+   "at": "2026-11-01T17:17Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Learn, first part: three lessons (l-f422 test a check on the real layout; l-3429 show a display rule before deciding it; l-8ece walk tracked files), and four measurements (first pass 0 of 4 checkpoints, 2 escapes, 6 spec rounds, 7 escalations). The outcome claim needs three sessions after checkpoint 3: it is measured then (t32), so Learn stays open.",
+   "how": "brain add lesson, brain append measurements",
+   "writes": [],
+   "reads": [],
+   "task": "t31"
   }
  ],
  "reviews": [
@@ -2023,6 +2255,18 @@
    "what": "Follow-up: an id inside a title is named in full in prime (d-9271 reads 'back into aip-836d · brain: theOS's memory…'); show a nested id by its id alone, or reword the title",
    "step": 3,
    "for": "checkpoint 2",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t31",
+   "what": "Learn: lessons and metrics from building brain",
+   "step": 4,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t32",
+   "what": "Learn: measure the outcome over the three sessions after checkpoint 3 (corrections whose cause is an outdated decision, an outdated word or a missed supersede)",
+   "step": 4,
    "who": "a-6ffb"
   }
  ],

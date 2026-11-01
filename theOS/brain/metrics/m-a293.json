@@ -5,5 +5,12 @@
  "what": "problems found in work already called done, per session",
  "want": "falling",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "session": "s-ac54",
+   "value": 2,
+   "count": 2,
+   "note": "aip-836d: brain check reported green while it checked no commit; the migration took a generated report for a doc; both found after the work was called done"
+  }
+ ]
 }

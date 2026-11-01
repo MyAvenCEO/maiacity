@@ -5,5 +5,12 @@
  "what": "rounds per checkpoint; intents sent back to Specify",
  "want": "falling",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "session": "s-ac54",
+   "value": 6,
+   "count": 6,
+   "note": "aip-836d: 6 spec review rounds before Gate A (r1 to r6); checkpoint reviews: 2 rounds for checkpoint 1, 1 each for 2 to 4, each with findings fixed"
+  }
+ ]
 }
