@@ -94,7 +94,7 @@
    "The work reaches main through the goal pull request you ask for after Gate B; the environment's snapshot clones main.",
    "Pasting the environment's script and the Mac run are yours, at Gate B."
   ],
-  "risk": "Can be undone: the move by git mv back (tried in a scratch checkout); the environment's script by pasting the previous one, kept in theOS/sandbox/; the image's old tags stay pullable. The environment's script is shared by every session in it. production is frozen by its ruleset; it moves with the release (AIP-5)."
+  "risk": "Can be undone: the move by git mv back (tried in a scratch checkout); the environment's script by pasting the previous one, kept in theOS/sandbox/; the image's old tags stay pullable. The environment's script is shared by every session in it. production is frozen by its ruleset; it moves with the release (AIP-5). The environment's undo restores the previous script, which still never fails a session but has no time limit, and its avenDB warm-up (bun run up) fails since the box moved."
  },
  "reuse": [
   {
@@ -641,6 +641,49 @@
    "how": "AIP-2's thread (D-44), read off the run's jobs",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:12Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 3's Review gate, round 1: c3-review (2 Blocker, 2 Major, 6 Nit). Not clean: run.sh broke on a Mac's bash 3.2 without a terminal; test.sh gave a false pass on a Mac and escaped its scratch folder; dockerd's start was never exercised.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, the diff and the files",
+   "writes": [
+    "aip/AIP-2/c3-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:11Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Checkpoint 3's round 1 answered (9 fixed, 1 declined with evidence): run.sh works on bash 3.2, asks the registry before saying 'not published', shows its pull; the environment script kills 30 s after its limit and its search root can be moved for the test; cloud-setup.sh stops the dockerd it started before the snapshot; test.sh skips the environment cases without timeout, asserts the hang started, and --cold tests dockerd's start; the undo's limits are in the risk.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c3-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:12Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c2 at round 2's inputs, run 41296312738 (push of c2d6c8e): theos-5c06a62013298353 built for amd64 and arm64, each smoked by digest on its own runner before the join (platform asserted, every tool answered; 88 s and 65 s), then joined; latest skipped off main.",
+   "how": "AIP-2's thread (D-44), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:13Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c4 after checkpoint 3's round 1: theOS/sandbox/test.sh --cold green against theos-5c06a62013298353 (failure, hang started and cut at 3 s, no setup file, found one folder down, dockerd stopped as after a snapshot, run.sh started it and ran the command). The environment's script for real from /home/user with dockerd down: exit 0 in 5 s (the image already here), dockerd stopped after the warm-up, run.sh worked after.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh",
+    "theOS/sandbox/environment-setup.sh"
+   ]
   }
  ],
  "reviews": [
@@ -650,7 +693,8 @@
   "aip/AIP-2/r2-zoom-out",
   "aip/AIP-2/r3-paraphrase",
   "aip/AIP-2/r3-zoom-out",
-  "aip/AIP-2/c2-review"
+  "aip/AIP-2/c2-review",
+  "aip/AIP-2/c3-review"
  ],
  "source": {
   "type": "idea",
