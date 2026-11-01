@@ -157,7 +157,7 @@
    "fails": "It checks something a person does not see, or is tuned to the known bug.",
    "check": "Its rule (every scroll container whose content is taller than it can scroll; the page never scrolls sideways; boxes made to scroll sideways are fine) is committed before the replay, then run at 390x844 and 1280x720: it fails at the parent of faf266961 in the one app there (theOS/docs), and passes on the current commit in the three apps.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "pass: red at faf266961's parent (59 states at 1280x720 whose box can't scroll), green on the current commit (1238 states, 232 view types, 69 s), 1 Nov"
   },
   {
    "id": "c2",
@@ -186,7 +186,9 @@
   "The operations-shape sweep (one of the three sweeps) has no check; the pixel-diff checker may catch it, nothing promises it.",
   "Running theOS's check command is part of the done rule, not enforced: enforcement is the deferred Stop hook.",
   "The published artifact not updated after a change: no check; the done rule asks for it.",
-  "Renamed words: AIP-3's c6; until then the done rule's sweep, which nothing enforces."
+  "Renamed words: AIP-3's c6; until then the done rule's sweep, which nothing enforces.",
+  "The docs check doesn't see content that spills above or left of a scroll box (a box centred with align-items or justify-content: center): scrollHeight doesn't count it (checkpoint 1's review, round 2).",
+  "Buttons per view type (Samuel, 1 Nov): buttons are pressed only in the first state of each view type, one of each kind, so a state behind one of several buttons of the same kind, or behind a button of a later state of a known view type, can be missed (fixtures/same-buttons.html was caught only when every button was pressed in every state). To be fine-tuned later."
  ],
  "done_rule": "A change to theOS is done when theOS's check command is green (the crawl and the docs check), a decision that renames a word has been swept for the old word, it is pushed to the work branch, and the theOS artifact (a private claude.ai page, republished by avenMAIA with its files) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply. The pixel diff and the look checker join it with AIP-6.",
  "aip_when": "An AIP is opened for work that needs your Gate A: a decision about what must be true (architecture, product behaviour, how we work). Small edits follow the done rule only.",
@@ -280,6 +282,15 @@
     "Build all three with the open findings"
    ],
    "answered": "decisions/D-39"
+  },
+  {
+   "q": "Checkpoint 1's Review gate was not clean three rounds in a row, so avenCEO's rule stops and asks you. The Mechanical gate holds (c1 red at faf266961's parent, green now in 178 s). Round 3 left 3 Major open, each with a small proposed fix: a fixed box that grows past the window, a sideways overflow clipped by body, and buttons pressed once per route and markup instead of once per state. What next?",
+   "options": [
+    "Round 4 after the three proposed fixes (recommended): each is a few lines, the time limit c4 is measured again",
+    "Build checkpoint 2 with round 3's findings open",
+    "Back to Specify: narrow c1's rule first"
+   ],
+   "answered": "decisions/D-77"
   }
  ],
  "events": [
@@ -1010,6 +1021,164 @@
     "decisions/D-44"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T11:30Z",
+   "by": "authors/avenmaia",
+   "what": "built",
+   "text": "Checkpoint 1: theOS/CLAUDE.md with the done rule as the record states it; theOS/package.json and package-lock.json pinning Playwright 1.64.1 (avenSANDBOX's image), nothing installed: the check uses theOS/node_modules when it exists, else the session's Playwright (1.63.0, Chromium in /opt/pw-browsers) and warns that it differs from the pin; the check command theOS/avenCEO/checks/check.mjs (serves theOS/, crawls from theOS/index.html, or theOS/docs/index.html where there is none, at 390x844 and 1280x720, report in theOS/avenCEO/checks/out/report.json) and the docs check's rule, docs-check.mjs. The rule was committed first (c871408), before the replays.",
+   "how": "by the thread, in code, run in this session",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T11:30Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Buttons moved from checkpoint 2 into checkpoint 1: a crawl of links alone reached 1 state per size at faf266961's parent and was green (2 states in 1 s), because that commit's lists sit behind buttons, so c1 could not fail there without them. Checkpoint 2 keeps the fixture, the screenshots, c4 and c2's replays.",
+   "how": "by the thread, measured before the rule's commit",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T11:30Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c1's replay at faf266961's parent (a git worktree, only theOS/docs/index.html there): red, exit 1. 359 states; at 1280x720, 52 list views (decisions, audit) and 38 slides whose body is taller than the window and cannot scroll; at 390x844, 4 slides that scroll sideways. At faf266961 itself, as a control: the 1280x720 failures are gone, the 390x844 sideways scroll stays (the docs bottom bar).",
+   "how": "node theOS/avenCEO/checks/check.mjs --root <worktree>/theOS, at 7a10517",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T11:30Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c1 on the current commit: the first run (c871408) was red on 6 states, at 390x844 only: three docs slides (identity-11, schema-13, keys-12) scrolled 13 to 43 px sideways, because the bottom bar's dots and Next didn't fit. Fixed as an ordinary edit under the done rule (8115ed0, theOS/docs/style.css); then green: 1298 states (649 per size) in 178 s, exit 0, at 7a10517.",
+   "how": "node theOS/avenCEO/checks/check.mjs, Playwright 1.63.0",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T11:30Z",
+   "by": "authors/avenmaia",
+   "what": "not run",
+   "text": "The undo of a republish (the version before) is avenMAIA's: this thread doesn't publish the artifact. The docs fix (8115ed0) is not republished either.",
+   "how": "noted for avenMAIA",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T11:30Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 1's Review gate, rounds 1 to 3 on c871408, d665cdf and 7a10517: round 1 3 Major, 5 Nit; round 2 1 Major, 4 Nit; round 3 3 Major, 2 Nit. Rounds 1 and 2 answered (fixed, contested with measurements, declined or carried); round 3's findings open with proposed answers. Not clean: the third round in a row.",
+   "how": "fresh subagents (Agent tool), each seeing only the record, the diff and the earlier rounds; the prompt is kept in the review doc",
+   "writes": [
+    "aip/AIP-1/c1-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T11:30Z",
+   "by": "authors/avenmaia",
+   "what": "stopped",
+   "text": "Three review rounds without a clean round: avenCEO's rule stops and asks Samuel what next (question 4). Checkpoint 2 doesn't start until checkpoint 1 has passed both gates.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:11Z",
+   "by": "authors/avenmaia",
+   "what": "built",
+   "text": "D-77's three fixes: a fixed box whose box or content reaches past the window fails whatever its overflow; sideways overflow clipped by body fails; buttons told apart by state, position and markup. Test pages in theOS/avenCEO/checks/fixtures/: fixed-box, body-clip and same-buttons must fail, clean must pass; all four did. With every button pressed in every state, the crawl took 361 to 623 s, over c4's 5 minutes; the hash fast path stays (without it, far slower).",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": [
+    "decisions/D-77"
+   ],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T12:11Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Start simpler: check per view type, to speed things up; fine-tune it later.",
+   "how": "in chat to AIP-1's thread; the decision is avenMAIA's to write",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:11Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The check runs per view type: the crawl follows every link, but checks and presses buttons only in the first state of each view type (the boxes it renders, by element and classes, whatever their text), one button of each kind. Current commit green: 980 states, 214 view types checked, in 42 s. faf266961's parent still red (4 list views at 1280x720, 9 s). fixed-box and body-clip still fail, clean passes; same-buttons is no longer caught (a gap).",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T12:14Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Run review round 4.",
+   "how": "in chat to AIP-1's thread",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:14Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 1's Review gate, round 4 on 84dde78: 2 Major, 3 Nit, not clean. All fixed: every state reached is checked again, only button pressing goes per view type; the test pages run with --fixtures.",
+   "how": "a fresh subagent (Agent tool) seeing only the record, the diff and the earlier rounds; the prompt is the review doc's",
+   "writes": [
+    "aip/AIP-1/c1-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:14Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "After round 4's fixes: current commit green, 977 states checked (213 view types) in 45 s; faf266961's parent red, 59 states at 1280x720 whose box can't scroll, in 9 s; --fixtures green (fixed-box and body-clip red, clean green).",
+   "how": "node theOS/avenCEO/checks/check.mjs, with --root <worktree>/theOS and --fixtures; Playwright 1.63.0",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T12:16Z",
+   "by": "authors/avenmaia",
+   "what": "merged",
+   "text": "claude/avendb-architect (220403c) merged into AIP-1's branch: AIP-3's shared-app helpers and brain; brain's line kept first in theOS/CLAUDE.md, the done rule below it. On the merged tree: check green, 1238 states checked (232 view types) in 69 s; --fixtures green, 3 of 3.",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:16Z",
+   "by": "authors/avenmaia",
+   "what": "gate",
+   "text": "Checkpoint 1 passed its Mechanical gate (c1 red at faf266961's parent, green now, the test pages right) and its Review gate by D-77: the check catches every planted page and passes on theOS's apps. Round 4, which Samuel asked for besides, had 2 Major and 3 Nit, all fixed; the fixes had no fifth round.",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": [
+    "decisions/D-77"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:16Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 1 built and through both gates. Not done by this thread: the undo of a republish, avenMAIA's (it publishes the artifact).",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
   }
  ],
  "reviews": [
@@ -1024,7 +1193,8 @@
   "aip/AIP-1/r5-paraphrase",
   "aip/AIP-1/r5-zoom-out",
   "aip/AIP-1/r6-paraphrase",
-  "aip/AIP-1/r6-zoom-out"
+  "aip/AIP-1/r6-zoom-out",
+  "aip/AIP-1/c1-review"
  ],
  "source": {
   "type": "idea",

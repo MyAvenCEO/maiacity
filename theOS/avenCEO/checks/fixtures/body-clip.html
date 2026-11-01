@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="expect" content="red">
+<title>Fixture: content clipped sideways by body</title>
+<!-- The docs check must fail here (AIP-1, D-77): html and body both hide sideways overflow, so body clips on its own
+     and the page's width never counts the wide table it cuts off. -->
+<style>
+  html, body { overflow-x: hidden; margin: 0; font: 16px/1.5 sans-serif; }
+  table { width: 1600px; }
+</style>
+</head>
+<body>
+<table><tr><td>Left</td><td>Middle</td><td style="text-align: right">The right end, which no one can reach</td></tr></table>
+</body>
+</html>
