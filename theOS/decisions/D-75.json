@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "D-75",
+ "n": 75,
+ "title": "Hash ids for every doc, shown by name",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "brain",
+  "links",
+  "apps"
+ ],
+ "quote": "Option (a), and migrate decisions and intents too.",
+ "means": "The migration gives every doc a flat hash id, decisions and intents included, and every link and reference is stored as that id (D-53, D-69). What people see is a name: the apps and brain prime show a decision as D-n and an intent as AIP-n, numbered by avenMAIA, who alone writes them, so the numbers cannot clash; every other doc shows its title. Text stored with ids reads with names.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-45",
+  "decisions/D-53",
+  "decisions/D-69"
+ ],
+ "reflection": {
+  "checked": "every decision before D-75 that held",
+  "result": "supersedes nothing; answers what D-45 left open (whether D-n and AIP-n stay as labels): they stay as the names shown"
+ }
+}
