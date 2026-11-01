@@ -76,7 +76,8 @@
     "Delete it: the guardian's secret belongs offline; I keep my copy (recommended, if it is the guardian's private key)",
     "Keep it: tell me what it is for",
     "Keep it, and limit the environment to the branch production"
-   ]
+   ],
+   "answer": "MaiaCityGuardian is legacy (avenDB's): leave it, we don't care about it here."
   }
  ],
  "reviews": [],
@@ -252,6 +253,15 @@
    "writes": [],
    "reads": [],
    "task": "t3"
+  },
+  {
+   "at": "2026-11-01T11:05Z",
+   "by": "authors/samuel-andert",
+   "what": "changed",
+   "text": "Limited the environment production to the branch production; added the required check 'theOS' to production's ruleset (any source). MaiaCityGuardian is legacy: leave it.",
+   "how": "in GitHub's settings, by hand; reported in chat to AIP-5's thread with screenshots",
+   "writes": [],
+   "reads": []
   }
  ],
  "problem": {
@@ -329,6 +339,9 @@
      },
      {
       "text": "Seen in Samuel's screenshots of the additional settings (1 Nov): required status checks 'Only from main' and 'avenSANDBOX', both from GitHub Actions; branches need not be up to date; 0 required approvals; allowed merge method Merge only. production's ruleset is set as aven/DB2/SANDBOX.md wrote it, so no pull request to production can merge until a workflow reports those two checks again."
+     },
+     {
+      "text": "Changed by Samuel (1 Nov ~11:05Z): the environment production now allows deployments from the branch production only (1 branch, 0 tags); production's ruleset now also requires a check named 'theOS', from any source, beside 'Only from main' and 'avenSANDBOX'. Until workflows report all three, nothing merges into production."
      }
     ]
    },
@@ -375,7 +388,8 @@
    "The deploy runs by itself after every green release from production, in the environment production, with its existing secrets (Samuel's answer, 1 Nov); it reuses the Caddy block and caddy.sh's link switch, learned from, not called from aven/.",
    "'Green' means theOS's check command (AIP-1) passes inside avenSANDBOX's image on the commit released (AIP-2's c3) (Samuel's answer, 1 Nov).",
    "Settings changes (production's ruleset, the environment) are Samuel's, as before.",
-   "avenOS is not kept reachable anywhere: its releases stay on GitHub, and the undo can bring it back (Samuel's answer, 1 Nov)."
+   "avenOS is not kept reachable anywhere: its releases stay on GitHub, and the undo can bring it back (Samuel's answer, 1 Nov).",
+   "theOS's release workflow reports two checks on a pull request to production: 'Only from main' and 'theOS' (theOS's check inside avenSANDBOX's image); the job names must match exactly. 'avenSANDBOX' was avenDB's box check and leaves the ruleset at Gate B; 'theOS' is pinned to the source GitHub Actions once it has reported."
   ],
   "risk": "Can be undone, as long as the release touches only the served pages: the previous build stays on the server (site/aven/releases keeps three) and avenOS 26.10.31v6's archive stays in its GitHub release, so an undo switches site/aven/current back, or redeploys that version; Caddy's previous config is kept as Caddyfile.before-<run>. The undo must be tried before it counts. Anything that touches the Aven Peer's key, the bucket, the passkeys' RP ID or the browsers' storage can't be undone, and stays out of this intent."
  },
