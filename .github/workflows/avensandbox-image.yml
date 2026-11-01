@@ -1,21 +1,14 @@
-# avenSANDBOX's image (aven/DB2/SANDBOX.md, "The box"): the tools and the third-party crates, compiled, never our code.
-# Built for amd64 (cloud sessions, CI) and arm64 (OrbStack on Apple Silicon), each on a runner of its own kind, and
-# joined into one image when any file its build reads changes. Tagged with a hash of those files
-# (aven/DB2/sandbox/box/tag.mjs, which aven/DB2/sandbox/up.mjs shares), so every checkout runs exactly its own box; the
-# paths below are the same files. main's build is also "latest". Public, so it pulls without a token.
+# avenSANDBOX's image, owned by theOS (theOS/aip/AIP-2.json): every tool theOS's checks are built and run with
+# (theOS/sandbox/box/Dockerfile). Built for amd64 (cloud sessions, runners) and arm64 (OrbStack on Apple Silicon), each
+# on a runner of its own kind, and joined into one image. Tagged theos-<hash of theOS/sandbox/box and this file>, so the
+# same inputs never build twice and every checkout runs exactly its own box; main's build is also "latest". Then a smoke
+# step proves every tool works inside it. Public, so it pulls without a token.
 name: avenSANDBOX image
 
 on:
   push:
     paths:
-      - aven/DB2/sandbox/box/Dockerfile
-      - aven/DB2/sandbox/box/deps.sh
-      - aven/DB2/sandbox/box/tag.mjs
-      - aven/DB2/.dockerignore
-      - aven/DB2/Cargo.toml
-      - aven/DB2/Cargo.lock
-      - aven/DB2/**/Cargo.toml
-      - aven/runtimes/registry/Cargo.toml
+      - theOS/sandbox/box/**
       - .github/workflows/avensandbox-image.yml
   workflow_dispatch:
 
@@ -36,7 +29,6 @@ jobs:
     outputs:
       name: ${{ steps.box.outputs.name }}
       image: ${{ steps.box.outputs.image }}
-      tools: ${{ steps.box.outputs.tools }}
       complete: ${{ steps.built.outputs.complete }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -45,9 +37,9 @@ jobs:
         run: |
           name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
           echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "image=$name:$(node aven/DB2/sandbox/box/tag.mjs)" >> "$GITHUB_OUTPUT"
-          echo "tools=$(node aven/DB2/sandbox/box/tag.mjs --tools)" >> "$GITHUB_OUTPUT"
-          node aven/DB2/sandbox/box/tag.mjs --files
+          tag="theos-$(printf '%s %s' "$(git rev-parse HEAD:theOS/sandbox/box)" "$(git rev-parse HEAD:.github/workflows/avensandbox-image.yml)" | sha256sum | cut -c1-16)"
+          echo "image=$name:$tag" >> "$GITHUB_OUTPUT"
+          echo "avenSANDBOX's tag: $tag (theOS/sandbox/box and this workflow)"
       - uses: docker/login-action@v4.7.0
         with:
           registry: ghcr.io
@@ -91,20 +83,15 @@ jobs:
         id: push
         uses: docker/build-push-action@v7.4.0
         with:
-          # aven/DB2, cut down by its .dockerignore to the manifests, the patched fork and deps.sh
-          context: aven/DB2
-          # aven/runtimes' file registry's manifest, which the Peers take by path, at /runtimes/registry
-          build-contexts: registry=aven/runtimes/registry
-          file: aven/DB2/sandbox/box/Dockerfile
+          # theOS/sandbox/box alone: the image holds tools, never our code
+          context: theOS/sandbox/box
+          file: theOS/sandbox/box/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          # avensandbox.tools, the Dockerfile's hash: which tools a box holds
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=avenSANDBOX: the tools avenDB is built and tested with
-            avensandbox.tools=${{ needs.plan.outputs.tools }}
+            org.opencontainers.image.description=avenSANDBOX: the tools theOS is built and checked with
           outputs: type=image,name=${{ needs.plan.outputs.name }},push-by-digest=true,name-canonical=true,push=true
-          # The layers' cache lives in the registry beside the image: the compiled crates are a layer of several GB,
-          # more than GitHub's 10 GB Actions cache holds for both platforms
+          # The layers' cache lives in the registry beside the image, per platform
           cache-from: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }},mode=max
       - name: Keep the digest
@@ -144,6 +131,30 @@ jobs:
         run: |
           docker buildx imagetools create --tag "$IMAGE" $(printf "$NAME@sha256:%s " *)
           docker buildx imagetools inspect "$IMAGE"
+
+  smoke:
+    name: Every tool works inside it
+    needs: [plan, publish]
+    if: always() && needs.plan.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Each tool answers, wasm32 is installed, Chromium launches
+        env:
+          IMAGE: ${{ needs.plan.outputs.image }}
+        run: |
+          docker run --rm "$IMAGE" bash -euc '
+            rustc --version; cargo --version; cargo clippy --version; rustfmt --version
+            rustup target list --installed | grep -x wasm32-unknown-unknown
+            wasm-bindgen --version; bun --version; node --version; lean --version; lake --version
+            versitygw --help > /dev/null && echo "versitygw ok"
+            clang --version | head -n 1; llvm-ar --version | head -n 1
+            cargo "+$AVEN_NIGHTLY" --version; cargo fuzz --version
+            cd /tmp && npm install --no-save --silent playwright@1.64.1 > /dev/null
+            node -e "require(\"playwright\").chromium.launch().then(async (b) => { console.log(\"chromium\", b.version()); await b.close(); })"
+          '
 
   latest:
     name: main's box is latest

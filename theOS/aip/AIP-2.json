@@ -474,6 +474,16 @@
    "writes": [],
    "reads": [],
    "task": "t5"
+  },
+  {
+   "at": "2026-11-01T09:54Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "Checkpoint 2: aven/DB2/sandbox/box/Dockerfile moved to theOS/sandbox/box/Dockerfile with every tool and without avenDB's crate step; avensandbox-image.yml back in .github/workflows/, built from theOS/sandbox/box, tagged theos-<hash of the folder and the workflow>, with a smoke step that proves every tool works inside it.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
   }
  ],
  "reviews": [

@@ -1,11 +1,10 @@
-# avenSANDBOX's image: the tools and the third-party crates, compiled, never our code (aven/DB2/SANDBOX.md, "Tools in
-# the image, our code outside it"). Every version is pinned at its newest stable release. Its build context is aven/DB2,
-# cut down by aven/DB2/.dockerignore to what the crates are compiled from. The image's tag is a hash of every file the
-# build reads (sandbox/box/tag.mjs, which up.mjs and .github/workflows/avensandbox-image.yml share), so a change to any
-# of them is a new box. Only GitHub builds it, on every push that changes one; `bun run up` only pulls it.
+# avenSANDBOX's image, owned by theOS (theOS/aip/AIP-2.json, D-24, D-33): every tool theOS's checks are built and run
+# with, never our code. Every version is pinned. Its build context is this folder alone, and its tag is the hash of this
+# folder and of .github/workflows/avensandbox-image.yml, which builds it on every push that changes either; theOS/sandbox/
+# run.sh pulls it and runs a command inside it with theOS/ mounted, the same in a cloud session, on a runner and on a Mac.
+# avenDB's own step (compiling its third-party crates into the image) stayed behind: it comes back for theOS's own
+# crates when theOS has a Cargo workspace.
 
-# The box's S3 server, versitygw (Versity's S3 gateway, Apache-2.0), taken from its own image, pinned by digest. The
-# binary is copied into the box below, so the box needs no third-party image at runtime.
 FROM ghcr.io/versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316 AS versitygw
 RUN cp "$(command -v versitygw)" /versitygw
 
@@ -69,17 +68,5 @@ RUN rustup toolchain install "${RUST_NIGHTLY}" --profile minimal \
     && rm -rf /opt/cargo/registry /opt/cargo/git \
     && cargo fuzz --version
 
-WORKDIR /work
 
-# The third-party crates, compiled, cargo-chef style, last, so a dependency change rebuilds only this layer. The context
-# brings only the manifests, the patched fork and deps.sh, which stubs our crates, builds them as `bun run up` and
-# `cargo test --workspace` do, and keeps only the dependencies in /work/target. Docker fills a new, empty volume from
-# the image's content at its mount path, so a new session's build folder (/work/target) and crates (/opt/cargo/registry)
-# start warm, and its first build compiles only our code and downloads nothing. The registry keeps the .crate files:
-# without them cargo downloads every crate again, though it compiles none.
-COPY . /work/
-# aven/runtimes' file registry, which the Peers take by path: its manifest only, from the workflow's named context
-# `registry` (.github/workflows/avensandbox-image.yml), stubbed like ours
-COPY --from=registry Cargo.toml /runtimes/registry/Cargo.toml
-RUN sh sandbox/box/deps.sh \
-    && find /work -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +
+WORKDIR /work
