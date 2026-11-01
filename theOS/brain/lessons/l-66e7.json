@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-66e7",
+ "status": "proposed",
+ "cue": "An outward action is taken on an older instruction while a newer one waits unread.",
+ "lesson": "Read every pending notification right before an outward action (a pull request, a push to a shared branch, a deploy, a settings change), not only at the start of the turn.",
+ "evidence": "aip-59ad: avenMAIA's 14:08Z message said not to open a pull request for checkpoint 2; it was read only after #1783 was opened on the 13:57Z instruction. The deploy shipped off, so nothing went live; avenMAIA kept #1783.",
+ "confidence": "high",
+ "intent": "aip-59ad"
+}

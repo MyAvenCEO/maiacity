@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-24e4",
+ "status": "proposed",
+ "cue": "A required status check is trusted to keep a branch safe.",
+ "lesson": "A required check is matched by its name and source only, and a pull request runs its own workflows, so it can report any required name green. Say that a pull request's checks catch mistakes; a guard against someone with write access needs a rule the pull request can't change.",
+ "evidence": "aip-59ad, checkpoint 1: rv-d660 round 2 found that a pull request could add a workflow reporting 'Only from main', 'avenSANDBOX' or 'theOS' green, and that pull_request_target now runs the default branch's copy; Samuel accepted write access as the guard (d-be19).",
+ "confidence": "high",
+ "intent": "aip-59ad"
+}

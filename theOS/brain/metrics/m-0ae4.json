@@ -5,5 +5,11 @@
  "what": "releases undone, and how long undoing took",
  "want": "rare, and minutes",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "intent": "aip-59ad",
+   "value": "0 undone for cause; 2 tried",
+   "note": "Run 41316680629 back to avenOS and 41316730374 forward to theOS, each one workflow run under a minute, at Gate B. A failed health switches back by itself; not yet needed."
+  }
+ ]
 }

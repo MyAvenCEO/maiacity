@@ -5,5 +5,11 @@
  "what": "rounds per checkpoint; intents sent back to Specify",
  "want": "falling",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "intent": "aip-59ad",
+   "value": "spec 1 round; checkpoint 1: 2 rounds; checkpoint 2: 1 round",
+   "note": "No round was clean. Spec round 1: 18 findings, all fixed, Gate A on revision 3 without a second round. Checkpoint 1: round 2's security Major escalated (d-be19). Checkpoint 2: 7 findings fixed, no second round. Sent back to Specify: 0."
+  }
+ ]
 }

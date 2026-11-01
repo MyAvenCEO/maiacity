@@ -5,5 +5,11 @@
  "what": "from inbox to measured",
  "want": "falling, never by skipping a gate",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "intent": "aip-59ad",
+   "value": "7 h 42 min",
+   "note": "source 09:33Z to Samuel's 'good' 17:15Z. Understand 32 min (to 10:05); Specify with one review round 50 min (to Gate A 10:55); waiting for aip-31df and aip-6fb1, and parked at the clean cut, 2 h 54 min (to 13:49); Build 42 min (to live 14:31) and the undo tried by 14:33; Samuel's look 2 h 42 min later. About 2 h 10 min of work in all."
+  }
+ ]
 }

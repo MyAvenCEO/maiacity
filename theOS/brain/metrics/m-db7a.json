@@ -5,5 +5,11 @@
  "what": "checkpoints that pass both gates in the first round",
  "want": "rising",
  "how": "by hand, until a metrics script exists",
- "measurements": []
+ "measurements": [
+  {
+   "intent": "aip-59ad",
+   "value": "0 of 2",
+   "note": "Neither checkpoint passed its Review gate in the first round."
+  }
+ ]
 }
