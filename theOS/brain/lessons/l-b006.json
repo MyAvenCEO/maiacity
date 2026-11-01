@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-b006",
+ "status": "proposed",
+ "cue": "A comparison passes when one side did almost nothing.",
+ "lesson": "A check that two runs are the same also bounds how much each covered; otherwise an empty run matches a full one.",
+ "evidence": "aip-6fb1's same.mjs compared only the states both runs reached: a report cut to 5 states was 'the same' as one of 1286 (rv-8bd0 round 3, a Major); it now fails beyond 10% reached by one run only.",
+ "confidence": "high",
+ "intent": "aip-f663"
+}
