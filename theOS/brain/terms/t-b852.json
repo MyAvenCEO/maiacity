@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-b852",
  "word": "Gate A, Gate B",
+ "about": [
+  "gate a, gate b"
+ ],
  "means": "Your two moments: approving what must be true, and trying the result.",
  "supersedes": [],
  "reflection": {

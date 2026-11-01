@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-d187",
  "word": "avenMAIA",
+ "about": [
+  "avenmaia"
+ ],
  "means": "The instance of avenCEO we use, the one Samuel Andert talks to. Every agent session (the orchestrator, its workers, its checkers) writes in brain as avenMAIA.",
  "supersedes": [
   {

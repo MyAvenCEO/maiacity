@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-544f",
  "word": "theOS",
+ "about": [
+  "theos"
+ ],
  "means": "A standalone, fresh project in theOS/, built from scratch: the architecture in these docs, and avenCEO. Legacy code (maiacity, avenDB) is never touched.",
  "supersedes": [],
  "reflection": {

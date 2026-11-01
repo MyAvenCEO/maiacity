@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-adea",
  "word": "Record",
+ "about": [
+  "record"
+ ],
  "means": "The JSON file of one AIP: its problem, claims, checkpoints, review and events.",
  "supersedes": [],
  "reflection": {

@@ -61,5 +61,80 @@
   "author": "human",
   "note": "Your words, recorded in the step that asked you; brain's reflection runs in the same event.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "title",
+   "subtype",
+   "by",
+   "at",
+   "session",
+   "about",
+   "quote",
+   "means",
+   "intents",
+   "supersedes",
+   "relates",
+   "reflection"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "decision"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^d-[0-9a-f]{4,}$"
+   },
+   "n": {
+    "type": "number"
+   },
+   "title": {
+    "type": "string"
+   },
+   "subtype": {
+    "type": "string"
+   },
+   "by": {
+    "type": "string"
+   },
+   "at": {
+    "type": "string"
+   },
+   "session": {
+    "type": "string"
+   },
+   "about": {
+    "type": "array",
+    "items": {
+     "type": "string"
+    }
+   },
+   "quote": {
+    "type": "string"
+   },
+   "means": {
+    "type": "string"
+   },
+   "intents": {
+    "type": "array"
+   },
+   "supersedes": {
+    "type": "array",
+    "items": {
+     "type": "object"
+    }
+   },
+   "relates": {
+    "type": "array"
+   },
+   "reflection": {
+    "type": "object"
+   }
+  }
  }
 }

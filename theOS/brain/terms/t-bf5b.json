@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-bf5b",
  "word": "Published",
+ "about": [
+  "published"
+ ],
  "means": "The theOS artifact: the dashboard and its three apps, as a private page. The last published version is the newest commit whose message names an artifact version; it is the base of the pixel diff.",
  "supersedes": [
   {

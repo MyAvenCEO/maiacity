@@ -17,6 +17,10 @@
   {
    "name": "reflection",
    "means": "what it was checked against and the result; who, when and how are on the event that wrote it"
+  },
+  {
+   "name": "renames",
+   "means": "the old word this term renamed, and the folders where the old word must not come back (c6)"
   }
  ],
  "written_by": "the orchestrator",
@@ -30,5 +34,56 @@
   "author": "agent",
   "note": "A new term runs brain's reflection in the event that writes it.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "word",
+   "about",
+   "means",
+   "supersedes",
+   "reflection"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "term"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^t-[0-9a-f]{4,}$"
+   },
+   "word": {
+    "type": "string"
+   },
+   "about": {
+    "type": "array",
+    "items": {
+     "type": "string"
+    }
+   },
+   "means": {
+    "type": "string"
+   },
+   "supersedes": {
+    "type": "array",
+    "items": {
+     "type": "object"
+    }
+   },
+   "reflection": {
+    "type": "object"
+   },
+   "renames": {
+    "type": "object",
+    "required": [
+     "old",
+     "in"
+    ]
+   }
+  }
  }
 }

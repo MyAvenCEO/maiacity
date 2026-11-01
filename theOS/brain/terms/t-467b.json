@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-467b",
  "word": "Checker (goldfish)",
+ "about": [
+  "checker (goldfish)"
+ ],
  "means": "A fresh agent that reviews with no history: only the record and what it links.",
  "supersedes": [],
  "reflection": {

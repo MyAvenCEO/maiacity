@@ -38,5 +38,63 @@
   "author": "agent",
   "note": "Written by the orchestrator as the session goes.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "orchestrator",
+   "from",
+   "to",
+   "commits",
+   "summary",
+   "asks",
+   "decisions",
+   "corrections",
+   "intents",
+   "parked"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "session"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^s-[0-9a-f]{4,}$"
+   },
+   "orchestrator": {
+    "type": "string"
+   },
+   "from": {
+    "type": "string"
+   },
+   "to": {
+    "type": "string"
+   },
+   "commits": {
+    "type": "object"
+   },
+   "summary": {
+    "type": "string"
+   },
+   "asks": {
+    "type": "array"
+   },
+   "decisions": {
+    "type": "array"
+   },
+   "corrections": {
+    "type": "array"
+   },
+   "intents": {
+    "type": "array"
+   },
+   "parked": {
+    "type": "array"
+   }
+  }
  }
 }

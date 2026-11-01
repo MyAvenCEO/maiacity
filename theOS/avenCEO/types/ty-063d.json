@@ -27,5 +27,20 @@
   "author": "agent",
   "note": "A check is written in the checkpoint that adds it.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [],
+  "properties": {
+   "type": {
+    "enum": [
+     "check"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^che-[0-9a-f]{4,}$"
+   }
+  }
  }
 }

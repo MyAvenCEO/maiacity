@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-77ca",
  "word": "OLD-AIP",
+ "about": [
+  "old-aip"
+ ],
  "means": "One of the 91 legacy intents, OLD-AIP-1 to OLD-AIP-91, in the Docs app until they are consolidated.",
  "supersedes": [],
  "reflection": {

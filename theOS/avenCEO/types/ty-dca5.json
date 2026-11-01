@@ -90,5 +90,106 @@
   "author": "human and agent",
   "note": "Its own events are its trace; its source is your words.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "title",
+   "kind",
+   "note",
+   "questions",
+   "events",
+   "reviews",
+   "source",
+   "tasks"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "intent"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^aip-[0-9a-f]{4,}$"
+   },
+   "title": {
+    "type": "string"
+   },
+   "kind": {
+    "type": "string"
+   },
+   "note": {
+    "type": "string"
+   },
+   "problem": {
+    "type": "object"
+   },
+   "reuse": {
+    "type": "array"
+   },
+   "options": {
+    "type": "array"
+   },
+   "claims": {
+    "type": "array"
+   },
+   "outcome": {
+    "type": "object"
+   },
+   "gaps": {
+    "type": "array"
+   },
+   "done_rule": {
+    "type": "string"
+   },
+   "aip_when": {
+    "type": "string"
+   },
+   "mockup": {
+    "type": "array"
+   },
+   "checkpoints": {
+    "type": "array"
+   },
+   "deferred": {
+    "type": "array"
+   },
+   "deleted": {
+    "type": "array"
+   },
+   "questions": {
+    "type": "array"
+   },
+   "events": {
+    "type": "array"
+   },
+   "reviews": {
+    "type": "array"
+   },
+   "source": {
+    "type": "object"
+   },
+   "tasks": {
+    "type": "array"
+   },
+   "measure": {
+    "type": "object"
+   },
+   "protocol": {
+    "type": "object"
+   },
+   "research": {
+    "type": "string"
+   },
+   "pixel_diff": {
+    "type": "array"
+   },
+   "carried": {
+    "type": "array"
+   }
+  }
  }
 }

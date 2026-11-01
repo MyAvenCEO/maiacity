@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "brain": {
+      "command": "node",
+      "args": ["${CLAUDE_PROJECT_DIR:-.}/brain/brain.mjs", "mcp"]
+    }
+  }
+}

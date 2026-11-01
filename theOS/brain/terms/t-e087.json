@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-e087",
  "word": "Rule ID",
+ "about": [
+  "rule id"
+ ],
  "means": "The stable name of one rule in an Architecture panel, for example verify.2_record_key.",
  "supersedes": [],
  "reflection": {

@@ -1,0 +1,4 @@
+# brain's docs merge with the driver brain install sets up (aip-836d)
+aip/*.json merge=brain-lists
+avenCEO/**/*.json merge=brain-lists
+brain/**/*.json merge=brain-lists

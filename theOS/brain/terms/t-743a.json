@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-743a",
  "word": "View",
+ "about": [
+  "view"
+ ],
  "means": "One state of the theOS docs app a person can reach: a slide, a panel, a tab, a page.",
  "supersedes": [],
  "reflection": {

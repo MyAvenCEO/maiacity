@@ -1026,7 +1026,7 @@
    "at": "2026-11-01T11:30Z",
    "by": "a-6ffb",
    "what": "built",
-   "text": "Checkpoint 1: theOS/CLAUDE.md with the done rule as the record states it; theOS/package.json and package-lock.json pinning Playwright 1.64.1 (avenSANDBOX's image), nothing installed: the check uses theOS/node_modules when it exists, else the session's Playwright (1.63.0, Chromium in /opt/pw-browsers) and warns that it differs from the pin; the check command theOS/avenCEO/checks/check.mjs (serves theOS/, crawls from theOS/index.html, or theOS/docs/index.html where there is none, at 390x844 and 1280x720, report in doc-cadc) and the docs check's rule, docs-check.mjs. The rule was committed first (c871408), before the replays.",
+   "text": "Checkpoint 1: theOS/CLAUDE.md with the done rule as the record states it; theOS/package.json and package-lock.json pinning Playwright 1.64.1 (avenSANDBOX's image), nothing installed: the check uses theOS/node_modules when it exists, else the session's Playwright (1.63.0, Chromium in /opt/pw-browsers) and warns that it differs from the pin; the check command theOS/avenCEO/checks/check.mjs (serves theOS/, crawls from theOS/index.html, or theOS/docs/index.html where there is none, at 390x844 and 1280x720, report in theOS/avenCEO/checks/out/report.json) and the docs check's rule, docs-check.mjs. The rule was committed first (c871408), before the replays.",
    "how": "by the thread, in code, run in this session",
    "writes": [],
    "reads": [],
@@ -1193,7 +1193,7 @@
    "at": "2026-11-01T12:27Z",
    "by": "a-6ffb",
    "what": "merged",
-   "text": "claude/avendb-architect (ce208cd) merged: AIP-3's migration, every doc by flat hash id in brain/. theOS/CLAUDE.md and the check's comments name aip-31df, aip-f4e2, d-19fb and d-5afb by id.",
+   "text": "claude/avendb-architect (ce208cd) merged: aip-836d's migration, every doc by flat hash id in brain/. theOS/CLAUDE.md and the check's comments name aip-31df, aip-f4e2, d-19fb and d-5afb by id.",
    "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
    "writes": [],
    "reads": []

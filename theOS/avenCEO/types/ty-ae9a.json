@@ -31,5 +31,49 @@
   "author": "agent",
   "note": "avenCEO's definition is built by aip-31df.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "subtype",
+   "id",
+   "name",
+   "after",
+   "who",
+   "what"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "gate"
+    ]
+   },
+   "subtype": {
+    "type": "string"
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^g-[0-9a-f]{4,}$"
+   },
+   "name": {
+    "type": "string"
+   },
+   "after": {
+    "type": "string"
+   },
+   "who": {
+    "type": "string"
+   },
+   "what": {
+    "type": "string"
+   },
+   "how": {
+    "type": "string"
+   },
+   "when": {
+    "type": "string"
+   }
+  }
  }
 }

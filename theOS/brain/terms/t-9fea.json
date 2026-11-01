@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-9fea",
  "word": "Intent",
+ "about": [
+  "intent"
+ ],
  "means": "Anything someone wants changed. An intent that needs your Gate A becomes an AIP.",
  "supersedes": [],
  "reflection": {
