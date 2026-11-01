@@ -103,6 +103,63 @@
      "note": "An erratum event restamps it: the session run ended 12:28:41, the runner's report was read 12:29:02."
     }
    ]
+  },
+  {
+   "round": 3,
+   "commit": "7acd188",
+   "reviewed": "git diff 0689d7e 7acd188 -- theOS/sandbox .github, the files, and the three out folders on a95dcb8",
+   "prompt": "(the round 2 prompt, with rounds 1 and 2 settled, brain's ids, check.sh, and the three out folders of the 12:49Z event)",
+   "result": "2 Major, 4 Nit: not clean. The third round without a clean one: by the rule the question goes to Samuel; every finding is fixed and the fixes are tried by machine (in the events).",
+   "findings": [
+    {
+     "sev": "Major",
+     "kind": "missing check",
+     "scope": "same.mjs: states reached by one run only are unbounded",
+     "text": "A report cut to 5 states compared 'the same' with a full one (exit 0); view types were not compared.",
+     "answer": "fix",
+     "note": "More than 10% of all states reached by one run only, or view type counts more than 10% apart, is a difference. Tried: the 5-state report against a full one exits 1; the real pairs (38 to 42 of about 1280, 230 to 238 view types) pass."
+    },
+    {
+     "sev": "Major",
+     "kind": "wrong fact",
+     "scope": "the 12:49Z event: the runner's 1279 states",
+     "text": "The runner's artifact for a95dcb8 has 1283.",
+     "answer": "fix",
+     "note": "An erratum event: 1283; 1279 was the run before's console line."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "Playwright versions not in the evidence",
+     "text": "report.json has no version.",
+     "answer": "fix",
+     "note": "check.sh reads it from the check's console line and writes it into commit.txt; same.mjs prints it."
+    },
+    {
+     "sev": "Nit",
+     "kind": "security",
+     "scope": "check.sh --out could remove theOS/ or the repository",
+     "text": "",
+     "answer": "fix",
+     "note": "--out must be avenCEO/checks/out or a folder under it, with no '..'. Tried: '', '.', '..', '/tmp/x', 'avenCEO/checks/out/../..' and 'avenCEO/checks' all exit 2 before anything is removed."
+    },
+    {
+     "sev": "Nit",
+     "kind": "bug",
+     "scope": "root's files after a box run on a non-root host",
+     "text": "",
+     "answer": "fix",
+     "note": "After a box run on a non-root host, check.sh hands the out folder back (chown through run.sh); a failed rm exits 2 with what to do."
+    },
+    {
+     "sev": "Nit",
+     "kind": "wrong fact",
+     "scope": "the workflow's header; the whole package.json in the hash",
+     "text": "",
+     "answer": "fix",
+     "note": "The header names the four inputs; the tag hashes only the Playwright pin line of theOS/package.json, so other dependency changes don't rebuild the box."
+    }
+   ]
   }
  ]
 }
