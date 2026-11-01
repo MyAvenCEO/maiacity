@@ -222,11 +222,12 @@ function flowSvg(F, key = 'f') {
 }
 
 // One avenCEO record, as its intent page: where it stands, then every part of the record in step order.
-const stageOf = (R) => { const has = (w) => R.events.some((e) => e.what === w);
-  const last = Math.max(0, ...R.review.map((r) => r.round || 1));
-  const clean = last && !R.review.filter((r) => (r.round || 1) === last).some((r) => r.findings.some((f) => f.sev !== 'Nit'));
-  const spec = !last ? 'Specify: waiting for the spec review' : clean ? 'Specify: waiting for Gate A' : `Specify: spec review round ${last + 1}`;
-  return !R.problem ? [1, 'Understand'] : !has('gate-A') ? [2, spec] : !has('gate-B') ? [3, 'Build'] : !has('measured') ? [4, 'Learn'] : [5, 'Closed']; };
+const stageOf = (R) => { const ev = R.events || [], has = (w) => ev.some((e) => e.what === w), rv = R.review || [];
+  const last = Math.max(0, ...rv.map((r) => r.round || 1));
+  const clean = last && !rv.filter((r) => (r.round || 1) === last).some((r) => r.findings.some((f) => f.sev !== 'Nit'));
+  const revised = last && ev.filter((e) => e.what === 'revised').length >= last;
+  const spec = !last ? 'Specify: waiting for the spec review' : clean ? 'Specify: waiting for Gate A' : revised ? `Specify: spec review round ${last + 1}` : `Specify: revising after round ${last}`;
+  return !has('understood') ? [1, 'Understand'] : !has('gate-A') ? [2, spec] : !has('gate-B') ? [3, 'Build'] : !has('measured') ? [4, 'Learn'] : [5, 'Closed']; };
 function renderRecord(R, F) {
   const [at, stage] = stageOf(R);
   const commit = (h) => `<a class="commit" href="https://github.com/myavenceo/maiacity/commit/${esc(h)}" target="_blank" rel="noopener">${esc(h)}</a>`;
@@ -253,12 +254,14 @@ function renderRecord(R, F) {
       <p><b>Why, until the root</b></p><ol>${p.whys.map((w) => `<li>${esc(w)}</li>`).join('')}</ol>${p.whys_note ? `<p class="dnote">${esc(p.whys_note)}</p>` : ''}
       <div class="agrid"><div><b>Truths</b>${ul(p.truths)}</div><div><b>Assumptions</b>${ul(p.assumptions)}</div></div>
       <p><b>Risk</b> ${esc(p.risk)}</p>`)}
-    ${sec('What exists already', table(['What', 'Used as'], R.reuse.map((r) => [r.what, r.use])), 'The zoom-out question first: what can we reuse instead of build?')}
+    ${sec('Used, and learned from', table(['What', 'How'], R.reuse.map((r) => [r.what, r.use])), 'theOS is standalone: theOS code is used; legacy code is only learned from, never touched.')}
     ${sec('2 · Specify: options', table(['Option', 'Why', ''], R.options.map((o) => [o.name, o.note, o.chosen ? 'chosen' : ''])))}
     ${sec('Claims', table(['Claim', 'Promise', 'How it could fail', 'Check', 'Kind', 'Result'], R.claims.map((c) => [c.id, c.promise, c.fails, c.check, c.kind, c.result])) + `<p class="outcome"><b>Outcome claim</b> ${esc(R.outcome.promise)} ${esc(R.outcome.how || '')} <span class="dnote">(${esc(R.outcome.kind)}, ${esc(R.outcome.result)})</span></p>${R.gaps?.length ? `<p class="dnote">Not covered yet: ${R.gaps.map(esc).join(' ')}</p>` : ''}`, 'Each claim is a promise with the check that would catch it failing. You approve these at Gate A.')}
+    ${R.done_rule ? sec('The done rule', `<p>${esc(R.done_rule)}</p>${R.aip_when ? `<p class="dnote">${esc(R.aip_when)}</p>` : ''}`) : ''}
     ${R.mockup ? sec('Mockup', ul(R.mockup)) : ''}
     ${sec('Checkpoints', table(['#', 'Adds', 'Claims'], R.checkpoints.map((c) => [String(c.n), c.adds, c.claims.join(', ')])), 'Smallest first; each passes the Mechanical and Review gates before the next starts.')}
-    ${R.deferred ? sec('Deferred, on purpose', table(['What', 'Until'], R.deferred.map((d) => [d.what, d.until])), 'Deleted from this AIP, each with what would bring it back.') : ''}
+    ${R.deferred ? sec('Deferred, on purpose', table(['What', 'Until'], R.deferred.map((d) => [d.what, d.until])), 'Taken out of this AIP, each with what would bring it back.') : ''}
+    ${R.deleted ? sec('Deleted', ul(R.deleted)) : ''}
     ${R.design ? sec(esc(R.design.title), table(['Kind', 'How it is kept'], R.design.rows.map((m) => [m.kind, m.how]))) : ''}
     ${sec('Spec review', review, 'Fresh checkers that saw only this record and the files it names, never the conversation that wrote it. Every finding is answered: fix, contest with evidence, escalate to you, or decline a Nit.')}
     ${sec('Gate A: your questions', `<ol class="gq">${R.questions.map((q) => `<li><b>${esc(q.q)}</b><ul>${q.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ul></li>`).join('')}</ol>`, 'What only you can decide. Your answers are written into this record, with the time.')}
@@ -336,6 +339,7 @@ async function openDoc(st, i = 0) {
       <h1>${esc(F.title)}</h1><p class="dlead">${esc(F.summary)}</p></header>
     <div class="dsvg">${flowSvg(F)}</div>
     <p class="dnote">Click a step for its detail. Diamonds are your gates (hover for what they check); dashed lines go back.</p>
+    ${F.live ? sec('What is live, and what comes later', `<div class="agrid"><div><b>Live now</b><ul>${F.live.now.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div><div><b>Later</b><ul>${F.live.later.map((v) => `<li>${esc(v)}</li>`).join('')}</ul></div></div>`, 'Everything below describes avenCEO as designed; this says which parts run today.') : ''}
     ${sec('Principles', ol(F.principles))}
     ${sec('The steps', steps)}
     ${sec('Gates', gates, 'Your gates. Inside Build, every checkpoint also passes its own gates (below).')}

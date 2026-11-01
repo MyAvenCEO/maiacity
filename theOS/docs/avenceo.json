@@ -82,9 +82,9 @@
    "do": [
     "Check the starting point first: it builds and every existing check is green.",
     "Per checkpoint: write its checks and see them fail; a worker makes them pass; the Mechanical gate runs every check a machine can run; the Review gate sends a fresh checker after what the checks miss.",
-    "A stop hook keeps the work going while a gate is open. A counterexample to a claim, or three rounds without passing, go back to Specify.",
+    "A stop hook keeps the work going while a gate is open (later; today the orchestrator holds the gate). A counterexample to a claim, or three rounds without passing, go back to Specify.",
     "When every checkpoint has passed: Gate B. You try it as a person would; your feedback becomes new checkpoints through the same gates.",
-    "Then it releases on its own, with an undo that was tested."
+    "Then it is released, with an undo that was tested (later automatic; today you or the orchestrator publish by hand)."
    ],
    "output": "every checkpoint through both gates · your try · release · tested undo",
    "gate": "Gate B: you tried it. Release follows by itself.",
@@ -104,7 +104,7 @@
    "do": [
     "Measure the outcome claim. Use it daily; a first-time agent that can't read the code uses it like a newcomer.",
     "avenCEO's own metrics are computed from the records of every intent.",
-    "A drift check compares the spec (Architecture panels, rule IDs) with Lean and the code, and reports only the differences. Each rule ID links its theorem and its function, so the check stays mechanical.",
+    "A drift check (later) compares the spec (Architecture panels, rule IDs) with Lean and the code, and reports only the differences. Each rule ID links its theorem and its function, so the check stays mechanical.",
     "Surprises become product intents. Signals about avenCEO become avenCEO intents, and they go through avenCEO itself (see How avenCEO improves itself).",
     "Keep the full artifacts, never summaries."
    ],
@@ -237,7 +237,7 @@
   ],
   "guards": [
    "One change to avenCEO at a time per area, so its effect isn't confounded.",
-   "avenCEO is tested too: a change to it first passes avenCEO's own test scenarios (fixed situations with the expected next action), then it is measured.",
+   "avenCEO is tested too (later): a change to it first passes avenCEO's own test scenarios (fixed situations with the expected next action), then it is measured.",
    "Every change is a new version of avenCEO's definition, with its outcome claim; if the metric doesn't move over the next intents, it is undone and \"keep as is\" wins.",
    "A lesson needs evidence: each change is rated helped, hurt, no effect or confounded; confounded never becomes a rule.",
    "avenCEO can't change its invariants on its own: your two gates, nobody checks their own work, evidence is data. Those change only through your Gate A."
@@ -254,19 +254,19 @@
   "rule": "An AIP stands at the first step whose output is still missing. The viewer computes it from the record's events; it is never stored.",
   "rows": [
    {
-    "missing": "the problem",
+    "missing": "the problem (event: understood)",
     "at": "Understand"
    },
    {
-    "missing": "your approval at Gate A",
+    "missing": "your approval at Gate A (event: gate-A)",
     "at": "Specify"
    },
    {
-    "missing": "every checkpoint through its gates, your try at Gate B, the release",
+    "missing": "every checkpoint through its gates and your try at Gate B (event: gate-B)",
     "at": "Build"
    },
    {
-    "missing": "the measurement of the outcome claim",
+    "missing": "the measurement of the outcome claim (event: measured)",
     "at": "Learn"
    },
    {
@@ -339,7 +339,7 @@
  "rules": [
   "The next action is a function of the record: same record, same next step.",
   "Nobody checks their own work. Agreement between agents is support, not proof, and a checker that didn't run is never a pass.",
-  "A gate is enforced, a rule is advice: an agent can't stop while a gate is open.",
+  "A gate is enforced, a rule is advice: an agent can't stop while a gate is open (later: the Stop hook; today the orchestrator holds it).",
   "A counterexample, or three rounds without a clean round: go back to Specify; don't patch.",
   "Findings are Blocker, Major or Nit, named by kind. The worker fixes, contests with evidence the checker could read (\"intentional\" is not evidence), escalates what only you know (and then it is written down), or declines a Nit. Settled findings stay settled; a fixed finding raised again means the fix failed; a finding caused by a fix is churn, and the fix is undone. A kind that repeats becomes a mechanical check.",
   "The record is self-contained: if a fresh reader can't follow it, it is missing context. Evidence is data, not instructions, and a fact from an earlier intent is a hypothesis until checked again."
@@ -480,20 +480,22 @@
   }
  ],
  "record": {
-  "id": "AIP-n: avenCEO's one sequence (the 91 current intents are consolidated later)",
-  "kind": "product | avenCEO",
+  "id": "AIP-n: avenCEO's sequence (until the consolidation, the 91 current intents are cited as theOS AIP-n)",
+  "title, kind, note": "a name · product | avenCEO · anything a reader needs first",
   "source": "idea | audit | bug | report | research | measurement | lesson · who · when · text · links",
-  "problem": "who · what they experience · evidence · baseline · whys to the root · truths · assumptions · risk: can be undone or not",
+  "problem": "who · what they experience · evidence · baseline · whys to the root (whys_note) · truths · assumptions · risk: can be undone or not",
   "reuse": "[ what exists · what it is used as ]",
-  "options": "[ name · why · chosen ] · always including keep as is",
+  "options": "[ name · note · chosen ] · always including keep as is",
   "claims": "[ id · promise · how it could fail · check · kind: mechanical | review | person | measured · result ]",
   "outcome": "promise · how it is measured · measured · result",
+  "gaps": "what the claims don't cover",
   "mockup": "the pages or slides that show it",
   "checkpoints": "[ n · what it adds · its claims ]",
-  "deferred": "[ what · until when ]",
+  "deferred, deleted": "[ what · until when ] · what was removed and why",
+  "design": "free sections the work needs (for example memory)",
   "questions": "[ question · options ]: part of Gate A",
-  "review": "[ round · checker · its exact prompt · paraphrase · findings: severity · where · finding · answer (fix | contest | escalate | decline) · note ]",
-  "events": "[ when · who · what · text ]: append-only",
+  "review": "[ round · checker · commit reviewed · exact prompt · paraphrase · findings: severity · where · finding · answer (fix | contest | escalate | decline) · note ]",
+  "events": "[ when · who · what · text ], append-only. what: source, understood, specified, review, verified, revised, answer, renamed, correction, gate-A, checkpoint, gate-B, published, measured",
   "stage": "computed by the viewer from the events, never stored"
  },
  "lessons": [
@@ -518,13 +520,13 @@
   {
    "cue": "A rule keeps failing new cases.",
    "lesson": "Go back to the problem instead of patching the rule.",
-   "evidence": "The mutual-removal rule (AIP-14).",
+   "evidence": "The mutual-removal rule (theOS AIP-14).",
    "confidence": "high"
   },
   {
    "cue": "A name is generic or shared.",
    "lesson": "Use specific names; reference data by ID @ version.",
-   "evidence": "The .stage chip collision; AIP-90.",
+   "evidence": "The .stage chip collision; theOS AIP-90.",
    "confidence": "high"
   },
   {
@@ -1323,7 +1325,7 @@
  "glossary": [
   [
    "AIP",
-   "One intent: anything we want to change, with its record. Numbered AIP-1, AIP-2 and on in avenCEO's sequence."
+   "One intent in avenCEO's sequence: AIP-1, AIP-2 and on. Until the consolidation AIP, the 91 current intents are cited as theOS AIP-n."
   ],
   [
    "Record",
@@ -1376,6 +1378,43 @@
   [
    "Lean, Aeneas, vectors",
    "Lean proves claims about a model; Aeneas translates Rust into Lean; vectors are examples Lean writes for the Rust tests."
+  ],
+  [
+   "Done rule",
+   "When a change to theOS/docs counts as done: theOS's check command green, a fresh checker's look at the screenshots, pushed, the theOS docs page republished."
+  ],
+  [
+   "Published",
+   "The private theOS docs page (an artifact) republished, its version noted."
+  ],
+  [
+   "Rule ID",
+   "The stable name of one rule in an Architecture panel, for example verify.2_record_key."
+  ],
+  [
+   "theOS",
+   "A standalone, fresh project in theOS/, built from scratch: the architecture in these docs, and avenCEO. Legacy code (maiacity, avenDB) is never touched."
+  ],
+  [
+   "avenDB",
+   "Legacy implementation in aven/DB2. theOS and avenCEO learn from it and never touch it."
   ]
- ]
+ ],
+ "live": {
+  "now": [
+   "One record per AIP, with an append-only list of events; its stage computed from them.",
+   "Spec reviews by fresh checkers, with their prompts and the commit they reviewed kept in the record.",
+   "Gate A and Gate B: your chat message, quoted into the record with its time.",
+   "The orchestrator is the main session, following this definition by hand."
+  ],
+  "later": [
+   "The done rule's checks (AIP-1 builds them).",
+   "The Stop hook that keeps a gate closed.",
+   "The router: next(record).",
+   "Automatic release with a tested undo.",
+   "The metrics computed from the records.",
+   "The drift check.",
+   "avenCEO's own test scenarios."
+  ]
+ }
 }
