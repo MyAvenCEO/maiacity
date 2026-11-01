@@ -3,9 +3,10 @@
 # to production all three report; on a push to production 'avenSANDBOX' and 'theOS' run again on the commit that landed,
 # so what is released is what was checked (d-4ca4: green is theOS's check inside the box on the commit released).
 # The jobs never need one another: a job skipped because another failed would count as passed for a required check.
+# The deploy (checkpoint 2) runs on a push to production after both checks are green, in the environment production
+# (branch production only, d-f6da; d-06a8: a deploy starts by itself), and is the only job that reads a secret.
 # No paths filter: a required check must report on every pull request. A draft runs nothing (the repository's rule);
-# a draft can't merge, and marking it ready runs all three. Nothing here deploys yet (checkpoint 2).
-# Actions are pinned by commit.
+# a draft can't merge, and marking it ready runs all three. # Actions are pinned by commit.
 # production's pushes queue in one group: a newer push replaces a waiting one, so the newest commit, which holds every
 # change before it, is the one checked (and, from checkpoint 2, deployed).
 name: theOS
@@ -71,3 +72,39 @@ jobs:
           path: theOS/avenCEO/checks/out/
           if-no-files-found: warn
           overwrite: true
+
+  # theOS's deploy (c3, c5): the commit's theOS/ tree into its own folder on v1's server, the link switched, then the
+  # health step: each page byte for byte the tree's, the Aven Peer's paths as before. Never a required check.
+  deploy:
+    name: Deploy to aven.maia.city
+    needs: [box, check]
+    if: github.event_name == 'push' && needs.box.result == 'success' && needs.check.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    env:
+      SITE: aven.maia.city
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: SSH to the server, its host keys pinned
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: theOS/release/ssh.sh "$SITE"
+      - name: The Aven Peer's answers before
+        run: theOS/release/health.sh before "https://$SITE" peer-before.txt
+      - name: The tree, packed and deployed
+        run: |
+          tree=$(git rev-parse HEAD:theOS)
+          git archive --format=tar.gz -o theos.tar.gz HEAD:theOS
+          mkdir -p deployed && tar -xzf theos.tar.gz -C deployed
+          ssh prod 'mkdir -p theos-release'
+          scp -q theOS/release/deploy.sh theos.tar.gz prod:theos-release/
+          ssh prod "bash theos-release/deploy.sh $tree theos-release/theos.tar.gz" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Health
+        run: |
+          { echo "### aven.maia.city: theOS $(git rev-parse --short=12 HEAD:theOS) (commit ${GITHUB_SHA:0:12})"; echo
+            theOS/release/health.sh after "https://$SITE" deployed peer-before.txt; } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"
