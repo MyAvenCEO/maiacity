@@ -73,6 +73,11 @@
   "sources/basic-memory",
   "sources/beads",
   "sources/anthropic-memory-tool",
-  "sources/claude-code-memory"
+  "sources/claude-code-memory",
+  "sources/hindsight-paper",
+  "sources/mem0-paper",
+  "sources/memgpt-paper",
+  "sources/sleep-time-compute-paper",
+  "sources/zep-paper"
  ]
 }
