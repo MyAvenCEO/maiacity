@@ -1,6 +1,6 @@
 {
  "what": "Every old name and path of a doc, and the hash id it was renamed to (the brain migration, c12). commit is the migration commit: the one commit allowed to rewrite history (c2).",
- "commit": null,
+ "commit": "a1cc36219a1951f2b6136fed381300d7f7cfe1d0",
  "names": {
   "aip/AIP-1/c1-review": "rv-7122",
   "aip/AIP-1/r1-paraphrase": "rv-6b74",
