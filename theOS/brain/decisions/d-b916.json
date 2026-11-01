@@ -1,0 +1,34 @@
+{
+ "type": "decision",
+ "id": "d-b916",
+ "title": "Resume brain now, beside the release",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01T14:10Z",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "brain"
+ ],
+ "quote": "Please also continue the work on brain.",
+ "means": "aip-836d (brain) is unparked and built now, in its own thread, beside aip-59ad: tasks t28 to t30 first, then the rest of checkpoint 2 (the door for writes), checkpoint 3 (the reflection and the link graph), checkpoint 4 (the MCP server), Gate B with Samuel and Learn. It starts from main and comes back through its own pull requests (d-6628).",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "doc": "d-93eb",
+   "part": "aip-836d stays parked",
+   "what": "aip-836d is built now."
+  }
+ ],
+ "relates": [
+  "d-1bc9",
+  "d-9271",
+  "d-6628"
+ ],
+ "reflection": {
+  "checked": "every decision before d-b916 that held",
+  "result": "supersedes d-93eb in part (aip-836d no longer parked)"
+ }
+}
