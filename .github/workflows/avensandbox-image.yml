@@ -3,7 +3,7 @@
 # on a runner of its own kind, and joined into one image. Tagged theos-<hash of theOS/sandbox/box, this file and
 # theOS/sandbox/tag.sh>, so the same inputs never build twice and every checkout runs exactly its own box. Each
 # platform's build is smoked by digest (every tool works inside it) before the join gives it its tag; main's box is
-# also "latest". Actions are pinned by commit. Public, so it pulls without a token.
+# also "latest"; last, theOS's check runs inside it. Actions are pinned by commit. Public, so it pulls without a token.
 name: avenSANDBOX image
 
 on:
@@ -98,8 +98,8 @@ jobs:
           cache-from: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }},mode=max
       # The box is smoked on its own platform by digest, before any tag names it: a box that fails here is never
-      # joined, so its tag never exists and the next run builds it again. The playwright package comes from npm at
-      # test time (the image holds the browser, not the package): it proves the image's own Chromium launches.
+      # joined, so its tag never exists and the next run builds it again. Playwright's package is in the image
+      # (NODE_PATH), so Chromium's launch needs no network.
       - name: Every tool works inside it (${{ matrix.arch }})
         env:
           IMAGE: ${{ needs.plan.outputs.name }}@${{ steps.push.outputs.digest }}
@@ -114,7 +114,6 @@ jobs:
             versitygw --help > /dev/null; echo "versitygw ok"
             clang --version | head -n 1; llvm-ar --version | head -n 1
             cargo "+$AVEN_NIGHTLY" --version; cargo fuzz --version
-            cd /tmp && npm install --no-save --silent playwright@1.64.1 > /dev/null
             node -e "require(\"playwright\").chromium.launch().then(async (b) => { console.log(\"chromium\", b.version()); await b.close(); })"
           '
       - name: Keep the digest
@@ -178,3 +177,26 @@ jobs:
           NAME: ${{ needs.plan.outputs.name }}
           IMAGE: ${{ needs.plan.outputs.image }}
         run: docker buildx imagetools create --tag "$NAME:latest" "$IMAGE"
+
+  # The last step (AIP-2 c3): theOS's check command (AIP-1), inside this box through theOS/sandbox/run.sh, the same way a
+  # cloud session and a Mac run it.
+  check:
+    name: theOS's check inside the box
+    needs: [plan, publish]
+    if: >-
+      !cancelled() && needs.plan.result == 'success'
+      && (needs.plan.outputs.complete == 'true' || needs.publish.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: theOS/sandbox/run.sh node avenCEO/checks/check.mjs
+        run: theOS/sandbox/run.sh node avenCEO/checks/check.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: theos-check-report
+          path: theOS/avenCEO/checks/out/report.json
+          if-no-files-found: warn

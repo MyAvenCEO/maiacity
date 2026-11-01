@@ -855,6 +855,47 @@
     "lessons/a-yagni-review-cuts-what-the-person-asked-for"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T11:47Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "AIP-1's branch claude/theos-aip-1 (76f0f00) merged into AIP-2's branch: theOS's check command (theOS/avenCEO/checks/check.mjs) and theOS/package.json pinning Playwright 1.64.1. AIP-1's checkpoint 1 is built and green there, but its Review gate stopped after three unclean rounds and waits for Samuel (AIP-1's question 4): checkpoint 4 builds on a check command whose own gate is still open.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "aip/AIP-1"
+   ]
+  },
+  {
+   "at": "2026-11-01T11:48Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "Checkpoint 4: Playwright's package (1.64.1) in the image on NODE_PATH, so theOS's check runs inside the box with no install and no network; the smoke step launches Chromium without npm; a last job in the image workflow, theOS's check inside the box through run.sh, its report kept as the run's artifact.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t9"
+  },
+  {
+   "at": "2026-11-01T11:58Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "c3 here, before the image is rebuilt: in a scratch image (the published box plus playwright@1.64.1 installed through this session's proxy), theOS/sandbox/run.sh env NODE_PATH=/usr/lib/node_modules node avenCEO/checks/check.mjs: green, 1456 states (728 per size), 0 failed, Playwright 1.64.1, 178 s. The same check in this cloud session outside the box: green, 1456 states, 0 failed, 272 s, but with the session's Playwright 1.63.0 (the check warns it is off the pin). Chromium launched in the scratch image with --network none.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/avenCEO/checks/check.mjs"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:02Z",
+   "by": "authors/avenmaia",
+   "what": "erratum",
+   "text": "A stray git checkout in AIP-2's thread detached HEAD at eff1a84 for one command (the first check run in the box failed because check.mjs was not in that tree); the branch was restored at once, and no commit was made in between.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
