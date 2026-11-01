@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // theOS's check command (AIP-1): serve theOS/, crawl every state a person can reach from an HTML entry page, and run
-// the docs check (docs-check.mjs) on one state of each view type, at 390x844 and 1280x720. Exits 1 when a state fails, 2 when the check
-// itself could not run. Usage: node theOS/avenCEO/checks/check.mjs [--root <theOS dir>] [--entry <page under the root>] [--out <dir>]
+// the docs check (docs-check.mjs) on each, at 390x844 and 1280x720; --fixtures runs the check's own test pages instead.
+// Exits 1 when a state fails, 2 when the check itself could not run.
+// Usage: node theOS/avenCEO/checks/check.mjs [--root <theOS dir>] [--entry <page under the root>] [--out <dir>] [--fixtures]
 import { createServer } from 'node:http';
 import { createRequire, Module } from 'node:module';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docsCheck } from './docs-check.mjs';
@@ -18,7 +19,8 @@ function args(argv) {
   const o = { root: resolve(HERE, '../..'), entry: null, out: join(HERE, 'out') };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
-    if (k === '--help' || k === '-h') { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 4).join('\n')); process.exit(0); }
+    if (k === '--fixtures') { o.fixtures = true; continue; }
+    if (k === '--help' || k === '-h') { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 5).join('\n')); process.exit(0); }
     if (!['--root', '--entry', '--out'].includes(k) || argv[i + 1] === undefined) throw new Error(`unknown argument: ${k}`);
     const v = argv[++i];
     o[k.slice(2)] = k === '--entry' ? v : resolve(v);
@@ -152,30 +154,26 @@ async function press(page, b) {
   return ok;
 }
 
-// Every state a person can reach from the entry page at one size, by following links and pressing buttons. The docs
-// check runs on the first state of each view type, and only there are buttons pressed, one of each kind; every other
-// state is read only for its links. A first version, for speed (Samuel, 1 Nov): bugs that show only with some text, like a long
-// chapter, can be missed.
+// Every state a person can reach from the entry page at one size, by following links and pressing buttons, each checked
+// by the docs check when first reached. Buttons are pressed only in the first state of each view type, one of each kind:
+// a first version, for speed (Samuel, 1 Nov); a state behind one of several buttons of the same kind can be missed.
 async function crawl(browser, size, start, origin) {
   const context = await browser.newContext({ viewport: size });
   for (const f of [countFetches, pageButtons, pageView]) await context.addInitScript(f);
   context.on('page', async (p) => { if (await p.opener()) await p.close(); }); // a link or button that opens a new tab
   const states = [], keys = new Set(), views = new Set(), queue = [], loaded = new Set();
-  let seen = 0;
-  // A new state: its links are queued; when its view type is new, it is checked, kept and queued to have its buttons
-  // pressed.
+  // A new state is checked and kept, and its links are queued; when its view type is new, it is queued to have its
+  // buttons pressed too.
   const found = async (page, recipe) => {
     const key = await keyOf(page);
     if (keys.has(key) || !page.url().startsWith(origin)) return key;
-    if (++seen > MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
+    if (states.length >= MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
     keys.add(key);
-    for (const l of (await actions(page, origin)).links) if (!loaded.has(l)) { loaded.add(l); queue.push({ visit: l }); }
-    const view = await page.evaluate(() => window.__view());
-    if (views.has(view)) return key;
-    views.add(view);
     const state = { size: `${size.width}x${size.height}`, url: page.url().slice(origin.length + 1), recipe, key, fails: await page.evaluate(docsCheck) };
     states.push(state);
-    queue.push({ state });
+    for (const l of (await actions(page, origin)).links) if (!loaded.has(l)) { loaded.add(l); queue.push({ visit: l }); }
+    const view = await page.evaluate(() => window.__view());
+    if (!views.has(view)) { views.add(view); queue.push({ state }); }
     return key;
   };
   const open = async () => {
@@ -218,11 +216,24 @@ async function crawl(browser, size, start, origin) {
       } finally { busy--; }
     }
   };
-  const tick = setInterval(() => console.error(`${size.width}x${size.height}: ${seen} states, ${states.length} view types, ${queue.length} to do`), 15000);
+  const tick = setInterval(() => console.error(`${size.width}x${size.height}: ${states.length} states, ${views.size} view types, ${queue.length} to do`), 15000);
   await Promise.all(pages.map(work));
   clearInterval(tick);
   await context.close();
-  return { states, seen };
+  return { states, views: views.size };
+}
+
+// Crawl from one entry page at both sizes; print what failed. Returns the report.
+async function run(browser, origin, root, entry, out) {
+  const t0 = Date.now();
+  const runs = await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${entry}`, origin)));
+  const states = runs.flatMap((r) => r.states), failed = states.filter((s) => s.fails.length);
+  const results = states.map(({ size, url, recipe, fails, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }) }));
+  const report = { root, entry, seconds: Math.round((Date.now() - t0) / 1000), reached: states.length, views: runs.reduce((n, r) => n + r.views, 0), failed: failed.length, results };
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 1));
+  for (const s of failed) for (const f of s.fails) console.log(`FAIL ${s.size} ${s.url}${s.recipe.clicks.length ? ` after ${s.recipe.clicks.length} button(s)` : ''}\n  ${f.rule}: ${f.where} (content ${f.content}px, box ${f.box}px, overflow ${f.overflow})`);
+  return report;
 }
 
 async function main() {
@@ -231,22 +242,24 @@ async function main() {
   const server = await serve(o.root);
   const origin = `http://127.0.0.1:${server.address().port}`;
   const browser = await pw.chromium.launch();
-  const t0 = Date.now();
   try {
-    const runs = await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${o.entry}`, origin)));
-    const states = runs.flatMap((r) => r.states), seen = runs.reduce((n, r) => n + r.seen, 0);
-    const failed = states.filter((s) => s.fails.length);
-    const results = states.map(({ size, url, recipe, fails, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }) }));
-    const report = { root: o.root, entry: o.entry, playwright: version, seconds: Math.round((Date.now() - t0) / 1000), states: seen, checked: states.length, failed: failed.length, results };
-    mkdirSync(o.out, { recursive: true });
-    writeFileSync(join(o.out, 'report.json'), JSON.stringify(report, null, 1));
-    for (const s of SIZES.map((x) => `${x.width}x${x.height}`)) {
-      const mine = states.filter((x) => x.size === s);
-      console.log(`${s}: ${mine.length} view types checked, ${mine.filter((x) => x.fails.length).length} failed`);
+    if (o.fixtures) {
+      // The check's own test: each page in fixtures/ says in <meta name="expect"> whether the check must be red or green.
+      let wrong = 0;
+      for (const f of readdirSync(join(HERE, 'fixtures')).filter((x) => x.endsWith('.html')).sort()) {
+        const expect = /<meta name="expect" content="(red|green)">/.exec(readFileSync(join(HERE, 'fixtures', f), 'utf8'))?.[1];
+        const r = await run(browser, origin, o.root, `avenCEO/checks/fixtures/${f}`, join(o.out, 'fixtures', f));
+        const got = r.failed ? 'red' : 'green';
+        if (got !== expect) wrong++;
+        console.log(`${got === expect ? 'ok' : 'WRONG'} ${f}: ${got}, expected ${expect ?? 'nothing (no meta)'}`);
+      }
+      console.log(`${wrong ? 'red' : 'green'}: the check's own test, ${wrong} wrong`);
+      process.exitCode = wrong ? 1 : 0;
+      return;
     }
-    for (const s of failed) for (const f of s.fails) console.log(`FAIL ${s.size} ${s.url}${s.recipe.clicks.length ? ` after ${s.recipe.clicks.length} button(s)` : ''}\n  ${f.rule}: ${f.where} (content ${f.content}px, box ${f.box}px, overflow ${f.overflow})`);
-    console.log(`${failed.length ? 'red' : 'green'}: ${seen} states, ${states.length} view types checked, in ${report.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
-    process.exitCode = failed.length ? 1 : 0;
+    const r = await run(browser, origin, o.root, o.entry, o.out);
+    console.log(`${r.failed ? 'red' : 'green'}: ${r.reached} states checked (${r.views} view types), ${r.failed} failed, in ${r.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
+    process.exitCode = r.failed ? 1 : 0;
   } finally {
     await browser.close();
     server.close();

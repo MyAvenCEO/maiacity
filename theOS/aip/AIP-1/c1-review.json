@@ -120,42 +120,86 @@
    "round": 3,
    "commit": "7a10517",
    "diff": "4325499..7a10517",
-   "result": "Not clean: 3 Major, 2 Nit; the third round in a row. avenCEO's rule stops here: the findings stay open with the answers proposed, and Samuel is asked (the record's questions).",
+   "result": "Not clean: 3 Major, 2 Nit; the third round in a row. Samuel answered (D-77): the three fixes, each proved by a test page; then he asked for a check per view type. He asked for a fourth round.",
    "findings": [
     {
      "sev": "Major",
      "scope": "docs-check.mjs, the fixed-box rule",
      "text": "Round 2's fix has two holes: a fixed box with overflow auto but no height bound grows to fit its content, so it passes while its bottom is out of reach; and only the box's own rect is tested, so 2000px spilling out of a 300px fixed box passes. Drop the overflow condition and use max(rect.bottom, rect.top + scrollHeight).",
-     "answer": "open",
-     "note": "Proposed: fix as suggested (two lines), then rerun both replays."
+     "answer": "fix",
+     "note": "Fixed (c6a4945) as D-77 says: a fixed box fails when its box, whatever its overflow, or its content (max(rect.bottom, rect.top + scrollHeight) for a box that doesn't scroll itself) reaches past the window. fixtures/fixed-box.html fails, fixtures/clean.html (a fixed panel that scrolls itself) passes."
     },
     {
      "sev": "Major",
      "scope": "docs-check.mjs, the sideways rule",
      "text": "Round 1's fix doesn't hold when html and body both have overflow-x hidden: body clips on its own, so the document's scrollWidth never counts the hidden content. Compare body.scrollWidth with the window too.",
-     "answer": "open",
-     "note": "Proposed: fix as suggested."
+     "answer": "fix",
+     "note": "Fixed (c6a4945): body.scrollWidth is compared with the window too. fixtures/body-clip.html fails."
     },
     {
      "sev": "Major",
      "scope": "check.mjs, crawl(), which buttons are pressed",
      "text": "Buttons are told apart only by route and markup: ten identical 'Show more' buttons on one route give one press; a button pressed in one state of a route is skipped in its later states; a button that once changed the route is never pressed again on that document, so a 'Next' whose target depends on the item is followed once. The run can be green on states it never saw. Key by state, index and markup, or write the hole into the record's gaps.",
-     "answer": "open",
-     "note": "Proposed: key by state key, index and markup, and measure c4; keep the per-document shortcut only if the time needs it, written into gaps. Not run yet."
+     "answer": "fix",
+     "note": "Fixed in c6a4945 (every button in every state; fixtures/same-buttons.html failed), then changed by Samuel's direct ask (84dde78): the check runs per view type, one button of each kind, for speed; the per-state pressing took 361 to 623 s. The page is a known gap in the record's gaps."
     },
     {
      "sev": "Nit",
      "scope": "docs-check.mjs, the fixed-box rule",
      "text": "Once tightened, a bottom sheet parked off-screen with translateY(100%) fails though nothing looks wrong.",
-     "answer": "open",
-     "note": "Proposed: decline, as round 2's off-canvas drawer: none in the apps today."
+     "answer": "decline",
+     "note": "Declined as proposed (D-77): none in the apps today."
     },
     {
      "sev": "Nit",
      "scope": "check.mjs, the crawl's size",
      "text": "inPlaceOnly exists only to repair the hash fast path; reach() and found() each have two modes, and each optimisation adds a dedup key that can skip a state. The measured cost should decide.",
-     "answer": "open",
-     "note": "Proposed: measure the crawl without the hash fast path; delete it and inPlaceOnly if c4 still holds."
+     "answer": "fix",
+     "note": "Measured as proposed: without the hash fast path the crawl was far over the 5 minutes, so the fast path and inPlaceOnly stay; the fast path now also runs after a button press, since the state reached is checked against the expected one."
+    }
+   ]
+  },
+  {
+   "round": 4,
+   "commit": "84dde78",
+   "diff": "4325499..84dde78",
+   "asked_by": "Samuel, in chat to AIP-1's thread: \"run round 4\"",
+   "result": "Not clean: 2 Major, 3 Nit; all answered in the next commit.",
+   "findings": [
+    {
+     "sev": "Major",
+     "scope": "check.mjs, crawl() and found()",
+     "text": "The docs check is skipped on every state whose view type was already seen, though the saving comes from pressing buttons once per view type, not from skipping a DOM walk. Docs bugs depend on content: the same markup with longer text overflows. Run the docs check on every new state; keep view types only for buttons.",
+     "answer": "fix",
+     "note": "Fixed: every state reached is checked (977 states, 213 view types, 45 s, against 42 s before); buttons are pressed only in the first state of each view type."
+    },
+    {
+     "sev": "Major",
+     "scope": "check.mjs, which state is first of its view type",
+     "text": "With three workers on one queue, which state represents a view type depends on timing, so a commit can be red on one run and green on the next.",
+     "answer": "fix",
+     "note": "Fixed by the same change: the check no longer depends on which state comes first; only the buttons pressed do."
+    },
+    {
+     "sev": "Nit",
+     "scope": "theOS/CLAUDE.md",
+     "text": "It says the docs check runs on every state it reaches; the code checked one per view type.",
+     "answer": "fix",
+     "note": "True again after the fix; CLAUDE.md also says buttons are pressed per view type and names --fixtures."
+    },
+    {
+     "sev": "Nit",
+     "scope": "fixtures/*.html",
+     "text": "The expected results are only in comments and nothing runs them; same-buttons.html is a page the check is known to pass.",
+     "answer": "fix",
+     "note": "Fixed: each page carries <meta name=\"expect\" content=\"red|green\">, and check.mjs --fixtures runs them all and fails on a wrong one (green: 3 of 3). same-buttons.html deleted; its case stays in the record's gaps."
+    },
+    {
+     "sev": "Nit",
+     "scope": "check.mjs, report.states",
+     "text": "states means the reached states in the report and the checked view types on the console.",
+     "answer": "fix",
+     "note": "Renamed: reached (states checked) and views (view types)."
     }
    ]
   }

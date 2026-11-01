@@ -188,7 +188,7 @@
   "The published artifact not updated after a change: no check; the done rule asks for it.",
   "Renamed words: AIP-3's c6; until then the done rule's sweep, which nothing enforces.",
   "The docs check doesn't see content that spills above or left of a scroll box (a box centred with align-items or justify-content: center): scrollHeight doesn't count it (checkpoint 1's review, round 2).",
-  "Per view type (Samuel, 1 Nov): a bug that shows only with some text (a long chapter's bottom bar) or behind one of several buttons of the same kind (fixtures/same-buttons.html) can be missed; to be fine-tuned later."
+  "Buttons per view type (Samuel, 1 Nov): buttons are pressed only in the first state of each view type, one of each kind, so a state behind one of several buttons of the same kind, or behind a button of a later state of a known view type, can be missed (fixtures/same-buttons.html was caught only when every button was pressed in every state). To be fine-tuned later."
  ],
  "done_rule": "A change to theOS is done when theOS's check command is green (the crawl and the docs check), a decision that renames a word has been swept for the old word, it is pushed to the work branch, and the theOS artifact (a private claude.ai page, republished by avenMAIA with its files) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply. The pixel diff and the look checker join it with AIP-6.",
  "aip_when": "An AIP is opened for work that needs your Gate A: a decision about what must be true (architecture, product behaviour, how we work). Small edits follow the done rule only.",
@@ -1115,6 +1115,36 @@
    "what": "changed",
    "text": "The check runs per view type: the crawl follows every link, but checks and presses buttons only in the first state of each view type (the boxes it renders, by element and classes, whatever their text), one button of each kind. Current commit green: 980 states, 214 view types checked, in 42 s. faf266961's parent still red (4 list views at 1280x720, 9 s). fixed-box and body-clip still fail, clean passes; same-buttons is no longer caught (a gap).",
    "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T12:14Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Run review round 4.",
+   "how": "in chat to AIP-1's thread",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:14Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 1's Review gate, round 4 on 84dde78: 2 Major, 3 Nit, not clean. All fixed: every state reached is checked again, only button pressing goes per view type; the test pages run with --fixtures.",
+   "how": "a fresh subagent (Agent tool) seeing only the record, the diff and the earlier rounds; the prompt is the review doc's",
+   "writes": [
+    "aip/AIP-1/c1-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:14Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "After round 4's fixes: current commit green, 977 states checked (213 view types) in 45 s; faf266961's parent red, 59 states at 1280x720 whose box can't scroll, in 9 s; --fixtures green (fixed-box and body-clip red, clean green).",
+   "how": "node theOS/avenCEO/checks/check.mjs, with --root <worktree>/theOS and --fixtures; Playwright 1.63.0",
    "writes": [],
    "reads": [],
    "task": "t5"

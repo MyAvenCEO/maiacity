@@ -17,7 +17,9 @@ The check command, from the repository's root:
     node theOS/avenCEO/checks/check.mjs
 
 It serves theOS/, crawls from theOS/index.html (theOS/docs/index.html where there is no dashboard) at 390x844 and
-1280x720, runs the docs check on every state it reaches, and exits non-zero on a failure. `--help` lists its options.
+1280x720, runs the docs check on every state it reaches, and exits non-zero on a failure. Buttons are pressed only in
+the first state of each view type, one of each kind (for speed, Samuel, 1 Nov). `--fixtures` runs the check's own test
+pages (theOS/avenCEO/checks/fixtures/, each says whether it must be red or green). `--help` lists its options.
 
 Playwright is pinned in theOS/package.json to the version of avenSANDBOX's image (theOS/sandbox/box/Dockerfile), the
 only source of the browser. Do not install packages into theOS/node_modules in a cloud session: the check uses the
