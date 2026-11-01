@@ -115,6 +115,7 @@ jobs:
         if: steps.switch.outputs.go == 'true'
         run: theOS/release/health.sh before "https://$SITE" peer-before.txt
       - name: The tree, packed and deployed
+        id: deploy
         if: steps.switch.outputs.go == 'true'
         shell: bash
         run: |
@@ -123,7 +124,8 @@ jobs:
           mkdir -p deployed && tar -xzf theos.tar.gz -C deployed
           ssh prod 'mkdir -p theos-release'
           scp -q theOS/release/deploy.sh theOS/release/undo.sh theos.tar.gz prod:theos-release/
-          ssh prod "bash theos-release/deploy.sh $tree theos-release/theos.tar.gz" | tee -a "$GITHUB_STEP_SUMMARY"
+          ssh prod "bash theos-release/deploy.sh $tree theos-release/theos.tar.gz" | tee -a "$GITHUB_STEP_SUMMARY" deployed.txt
+          grep -q ' is current (previous: ' deployed.txt && echo "switched=true" >> "$GITHUB_OUTPUT" || true
       - name: Health
         if: steps.switch.outputs.go == 'true'
         shell: bash
@@ -131,3 +133,11 @@ jobs:
           { echo "### aven.maia.city: theOS $(git rev-parse --short=12 HEAD:theOS) (commit ${GITHUB_SHA:0:12})"; echo
             theOS/release/health.sh after "https://$SITE" deployed peer-before.txt; } | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
+      # A deploy whose health is red goes back by itself to the build before (undo.sh: previous), so a failed release
+      # never stays live; the job stays red.
+      - name: Health was red, so back to the build before
+        if: failure() && steps.deploy.outputs.switched == 'true'
+        shell: bash
+        run: |
+          echo "::error::health is red after the deploy: switching back to the build before"
+          ssh prod "bash theos-release/undo.sh /opt/maia-city/site/aven" | tee -a "$GITHUB_STEP_SUMMARY"

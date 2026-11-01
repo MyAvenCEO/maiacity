@@ -61,7 +61,10 @@ else:
     first = [i for i, x in enumerate(steps) if x.get('id') == 'switch']
     if not first: errors.append('the deploy has no switch step')
     else:
+        back = [x for x in steps if x.get('if') == "failure() && steps.deploy.outputs.switched == 'true'" and 'undo.sh' in str(x.get('run', ''))]
+        if len(back) != 1: errors.append('the deploy does not switch back by itself when health is red')
         for x in steps[first[0] + 1:]:
+            if x in back: continue
             if x.get('if') != "steps.switch.outputs.go == 'true'": errors.append(f'the deploy step {x.get("name")!r} runs while the switch is off')
         for x in steps[:first[0]]:
             if 'secrets.' in yaml.safe_dump(x): errors.append('a step before the switch reads a secret')

@@ -690,6 +690,18 @@
    "writes": [],
    "reads": [],
    "task": "t7"
+  },
+  {
+   "at": "2026-11-01T14:16Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "At avenMAIA's suggestion: when the health step is red after a deploy that switched the link, the job runs undo.sh itself and goes back to the build before; test.sh asserts that step and its condition (a mutation to always() turns it red). #1783 kept, deploy still off.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [
+    ".github/workflows/theos.yml",
+    "theOS/release/test.sh"
+   ],
+   "reads": []
   }
  ],
  "problem": {
@@ -898,7 +910,7 @@
   },
   {
    "id": "c4",
-   "promise": "A theOS deploy is undone by one command: Actions, 'theOS undo', Run workflow, from production (.github/workflows/theos-undo.yml, in the environment production), which runs theOS/release/undo.sh on the server and switches site/aven/current back to the build before (site/aven/previous), or to the build named: 26.10.31v6 is avenOS, theos-<12 hex> a theOS build. Then aven.maia.city serves that build until a push to production changes theOS/.",
+   "promise": "A theOS deploy is undone by one command: Actions, 'theOS undo', Run workflow, from production (.github/workflows/theos-undo.yml, in the environment production), which runs theOS/release/undo.sh on the server and switches site/aven/current back to the build before (site/aven/previous), or to the build named: 26.10.31v6 is avenOS, theos-<12 hex> a theOS build. Then aven.maia.city serves that build until a push to production changes theOS/. A deploy whose health step is red switches back to the build before by itself, and the job stays red.",
    "fails": "The undo is untested, the earlier build is gone, or the undo leaves a mix.",
    "check": "Tried in the temporary folder: theOS to theOS, undo again forward, back to avenOS after the first deploy and by name after two, a missing name refused; then once on the server at Gate B with Samuel: deploy, undo to avenOS, deploy again, the health step green each time.",
    "kind": "mechanical",
