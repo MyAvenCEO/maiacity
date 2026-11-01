@@ -117,7 +117,8 @@ export function get(docs, ref) {
   for (const [p, d] of docs) if (p !== path && d.type !== 'index') for (const [k, xs] of Object.entries(byField(d, (q) => q === path))) (backlinks[k] ??= []).push(p);
   for (const k of Object.keys(backlinks)) backlinks[k].sort();
   // a doc that holds and rests on one that no longer does: a warning for the maintenance pass
-  const citesSuperseded = holdsOf(docs, path) === 'superseded' ? [] : [...new Set(Object.entries(links).filter(([k]) => k !== 'supersedes').flatMap(([, xs]) => xs))].filter((q) => docs.has(q) && holdsOf(docs, q) === 'superseded');
+  const own = new Set(links.supersedes || []); // what it supersedes itself, it may name
+  const citesSuperseded = holdsOf(docs, path) === 'superseded' ? [] : [...new Set(Object.entries(links).filter(([k]) => k !== 'supersedes').flatMap(([, xs]) => xs))].filter((q) => !own.has(q) && docs.has(q) && holdsOf(docs, q) === 'superseded');
   return plain({ id: path, name: W.name(doc, path), doc, holds: holdsOf(docs, path), supersededBy, links, backlinks, citesSuperseded });
 }
 

@@ -354,7 +354,8 @@ export function check(root, { range } = {}) {
     for (const [id, x] of all) {
       if (!STEADY.includes(x.doc.type) || holdsIn(all, id) === 'superseded') continue;
       const { supersedes: _s, reflection: _r, ...rest } = x.doc;
-      for (const t of new Set(strings(rest).flatMap((v) => v.match(IDS) || []))) if (t !== id && all.has(t) && holdsIn(all, t) === 'superseded') warnings.push(`${id} cites ${t}, which no longer holds`);
+      const own = new Set((x.doc.supersedes || []).map(target)); // what it supersedes itself, it may name
+      for (const t of new Set(strings(rest).flatMap((v) => v.match(IDS) || []))) if (t !== id && !own.has(t) && all.has(t) && holdsIn(all, t) === 'superseded') warnings.push(`${id} cites ${t}, which no longer holds`);
     }
   } catch { /* no ids.json here */ }
   return { range: r, commits: shas.length, fails, warnings };
