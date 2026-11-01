@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // theOS's check command (AIP-1): serve theOS/, crawl every state a person can reach from an HTML entry page, and run
-// the docs check (docs-check.mjs) on each, at 390x844 and 1280x720. Exits 1 when a state fails, 2 when the check
+// the docs check (docs-check.mjs) on one state of each view type, at 390x844 and 1280x720. Exits 1 when a state fails, 2 when the check
 // itself could not run. Usage: node theOS/avenCEO/checks/check.mjs [--root <theOS dir>] [--entry <page under the root>] [--out <dir>]
 import { createServer } from 'node:http';
 import { createRequire, Module } from 'node:module';
@@ -11,7 +11,7 @@ import { docsCheck } from './docs-check.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SIZES = [{ width: 390, height: 844 }, { width: 1280, height: 720 }];
-const WORKERS = 6; // pages per size, sharing one queue
+const WORKERS = 3; // pages per size, sharing one queue
 const MOST = 5000; // states per size: more means a route shows new text each time (a clock), and the crawl would not end
 
 function args(argv) {
@@ -98,7 +98,7 @@ async function actions(page, origin) {
   const { hrefs, buttons } = await page.evaluate(() => {
     // getAttribute, not .href: a link inside an SVG has no string href.
     const hrefs = [...document.querySelectorAll('a[href]')].map((a) => { try { return new URL(a.getAttribute('href'), document.baseURI).href; } catch { return null; } });
-    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML }));
+    const buttons = window.__buttons().map((b, i) => ({ i, html: b.outerHTML, kind: b.tagName + [...b.classList].sort().map((c) => `.${c}`).join('') }));
     return { hrefs, buttons };
   });
   const links = [...new Set(hrefs)].filter((h) => {
@@ -108,8 +108,17 @@ async function actions(page, origin) {
   return { links, buttons };
 }
 
-// A state is a route and what it shows: the same URL with the same rendered text is one state.
-const keyOf = async (page) => `${page.url()}\n${await page.evaluate(() => document.body?.innerText ?? '')}`;
+// A state is a route and what it shows: the same URL with the same rendered text and the same view is one state.
+const keyOf = async (page) => `${page.url()}\n${await page.evaluate(() => `${document.body?.innerText ?? ''}\n${window.__view()}`)}`;
+
+// A view type: which boxes, by element and classes, the page renders, whatever their text. All decision pages are one view type,
+// unless one of them shows a part the others don't. Installed in every page, next to countFetches.
+// Only boxes count (an element that isn't inline), since they make the layout; inline text styling doesn't.
+function pageView() {
+  window.__view = () => [...new Set([...document.querySelectorAll('body *')]
+    .filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'inline')
+    .map((e) => e.tagName.toLowerCase() + [...e.classList].sort().map((c) => `.${c}`).join('')))].sort().join(' ');
+}
 
 // Bring the page to a state: its URL, then its buttons pressed again. Returns the key it reached, or null when a button
 // is gone. When the page is on that document, only the hash changes, which is much faster; an app can keep something
@@ -143,33 +152,31 @@ async function press(page, b) {
   return ok;
 }
 
-// Every state a person can reach from the entry page at one size, by following links and pressing buttons; the docs
-// check runs on each state when it is first reached. Every button is pressed once in every state it shows in.
+// Every state a person can reach from the entry page at one size, by following links and pressing buttons. The docs
+// check runs on the first state of each view type, and only there are buttons pressed, one of each kind; every other
+// state is read only for its links. A first version, for speed (Samuel, 1 Nov): bugs that show only with some text, like a long
+// chapter, can be missed.
 async function crawl(browser, size, start, origin) {
   const context = await browser.newContext({ viewport: size });
-  await context.addInitScript(countFetches);
-  await context.addInitScript(pageButtons);
+  for (const f of [countFetches, pageButtons, pageView]) await context.addInitScript(f);
   context.on('page', async (p) => { if (await p.opener()) await p.close(); }); // a link or button that opens a new tab
-  const states = [], keys = new Map(), queue = [], loaded = new Set();
-  // A new state is checked, kept and queued to be opened; with layoutOnly, a known one is checked again and kept only
-  // when it fails, never opened (its key already is).
-  const found = async (page, recipe, layoutOnly = false) => {
+  const states = [], keys = new Set(), views = new Set(), queue = [], loaded = new Set();
+  let seen = 0;
+  // A new state: its links are queued; when its view type is new, it is checked, kept and queued to have its buttons
+  // pressed.
+  const found = async (page, recipe) => {
     const key = await keyOf(page);
-    if ((keys.has(key) && !layoutOnly) || !page.url().startsWith(origin)) return key;
-    if (states.length >= MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
+    if (keys.has(key) || !page.url().startsWith(origin)) return key;
+    if (++seen > MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
+    keys.add(key);
+    for (const l of (await actions(page, origin)).links) if (!loaded.has(l)) { loaded.add(l); queue.push({ visit: l }); }
+    const view = await page.evaluate(() => window.__view());
+    if (views.has(view)) return key;
+    views.add(view);
     const state = { size: `${size.width}x${size.height}`, url: page.url().slice(origin.length + 1), recipe, key, fails: await page.evaluate(docsCheck) };
-    if (layoutOnly) { if (state.fails.length) states.push({ ...state, layoutOnly }); return key; }
-    keys.set(key, state);
     states.push(state);
-    queue.push(state);
+    queue.push({ state });
     return key;
-  };
-  const visit = async (page, url) => {
-    if (loaded.has(url)) return;
-    loaded.add(url);
-    await reach(page, { url, clicks: [] });
-    loaded.add(page.url());
-    await found(page, { url: page.url(), clicks: [] });
   };
   const open = async () => {
     const page = await context.newPage();
@@ -177,40 +184,45 @@ async function crawl(browser, size, start, origin) {
     return page;
   };
   const pages = await Promise.all(Array.from({ length: WORKERS }, open));
-  await visit(pages[0], start);
+  loaded.add(start);
+  queue.push({ visit: start });
   let busy = 0;
   const work = async (page) => {
     for (;;) {
-      const state = queue.shift();
-      if (!state) { if (!busy) break; await new Promise((r) => setTimeout(r, 50)); continue; }
+      const job = queue.shift();
+      if (!job) { if (!busy) break; await new Promise((r) => setTimeout(r, 50)); continue; }
       busy++;
       try {
+        if (job.visit) {
+          await reach(page, { url: job.visit, clicks: [] });
+          loaded.add(page.url());
+          await found(page, { url: page.url(), clicks: [] });
+          continue;
+        }
+        const { state } = job;
         // A route followed in place can show what its URL loaded afresh doesn't (the app kept something open): that
-        // state is checked but can't be brought back, so it isn't opened further; what the URL shows is a state too.
+        // state is checked but can't be brought back, so its buttons aren't pressed; what the URL shows is a state too.
         if ((await reach(page, state.recipe, state.key)) !== state.key) { state.inPlaceOnly = true; await found(page, { url: page.url(), clicks: [] }); continue; }
-        const { links, buttons } = await actions(page, origin);
         const here = origin + '/' + state.url;
         let moved = false;
-        for (const b of buttons) {
+        const kinds = new Set(); // one button of each kind (element and classes): the others of its kind lead to the same view types
+        for (const b of (await actions(page, origin)).buttons) {
+          if (kinds.has(b.kind)) continue;
+          kinds.add(b.kind);
           if (moved && (await reach(page, state.recipe, state.key)) !== state.key) break;
           moved = false;
           if (!(await press(page, b))) continue;
-          const route = page.url() !== here;
-          const recipe = route ? { url: page.url(), clicks: [] } : { ...state.recipe, clicks: [...state.recipe.clicks, b] };
-          const key = await found(page, recipe);
-          // A button can change only the layout (the same text): that view is checked too, and kept when it fails.
-          if (key === state.key) await found(page, recipe, true);
-          moved = key !== state.key;
+          const recipe = page.url() !== here ? { url: page.url(), clicks: [] } : { ...state.recipe, clicks: [...state.recipe.clicks, b] };
+          moved = (await found(page, recipe)) !== state.key;
         }
-        for (const l of links) await visit(page, l);
       } finally { busy--; }
     }
   };
-  const tick = setInterval(() => console.error(`${size.width}x${size.height}: ${states.length} states, ${queue.length} to open`), 15000);
+  const tick = setInterval(() => console.error(`${size.width}x${size.height}: ${seen} states, ${states.length} view types, ${queue.length} to do`), 15000);
   await Promise.all(pages.map(work));
   clearInterval(tick);
   await context.close();
-  return states;
+  return { states, seen };
 }
 
 async function main() {
@@ -221,18 +233,19 @@ async function main() {
   const browser = await pw.chromium.launch();
   const t0 = Date.now();
   try {
-    const states = (await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${o.entry}`, origin)))).flat();
+    const runs = await Promise.all(SIZES.map((s) => crawl(browser, s, `${origin}/${o.entry}`, origin)));
+    const states = runs.flatMap((r) => r.states), seen = runs.reduce((n, r) => n + r.seen, 0);
     const failed = states.filter((s) => s.fails.length);
-    const results = states.map(({ size, url, recipe, fails, inPlaceOnly, layoutOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }), ...(layoutOnly && { layoutOnly }) }));
-    const report = { root: o.root, entry: o.entry, playwright: version, seconds: Math.round((Date.now() - t0) / 1000), states: states.length, failed: failed.length, results };
+    const results = states.map(({ size, url, recipe, fails, inPlaceOnly }) => ({ size, url, clicks: recipe.clicks.map((b) => b.html.slice(0, 120)), fails, ...(inPlaceOnly && { inPlaceOnly }) }));
+    const report = { root: o.root, entry: o.entry, playwright: version, seconds: Math.round((Date.now() - t0) / 1000), states: seen, checked: states.length, failed: failed.length, results };
     mkdirSync(o.out, { recursive: true });
     writeFileSync(join(o.out, 'report.json'), JSON.stringify(report, null, 1));
     for (const s of SIZES.map((x) => `${x.width}x${x.height}`)) {
       const mine = states.filter((x) => x.size === s);
-      console.log(`${s}: ${mine.length} states, ${mine.filter((x) => x.fails.length).length} failed`);
+      console.log(`${s}: ${mine.length} view types checked, ${mine.filter((x) => x.fails.length).length} failed`);
     }
     for (const s of failed) for (const f of s.fails) console.log(`FAIL ${s.size} ${s.url}${s.recipe.clicks.length ? ` after ${s.recipe.clicks.length} button(s)` : ''}\n  ${f.rule}: ${f.where} (content ${f.content}px, box ${f.box}px, overflow ${f.overflow})`);
-    console.log(`${failed.length ? 'red' : 'green'}: ${states.length} states in ${report.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
+    console.log(`${failed.length ? 'red' : 'green'}: ${seen} states, ${states.length} view types checked, in ${report.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
     process.exitCode = failed.length ? 1 : 0;
   } finally {
     await browser.close();

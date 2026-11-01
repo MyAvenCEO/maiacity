@@ -187,7 +187,8 @@
   "Running theOS's check command is part of the done rule, not enforced: enforcement is the deferred Stop hook.",
   "The published artifact not updated after a change: no check; the done rule asks for it.",
   "Renamed words: AIP-3's c6; until then the done rule's sweep, which nothing enforces.",
-  "The docs check doesn't see content that spills above or left of a scroll box (a box centred with align-items or justify-content: center): scrollHeight doesn't count it (checkpoint 1's review, round 2)."
+  "The docs check doesn't see content that spills above or left of a scroll box (a box centred with align-items or justify-content: center): scrollHeight doesn't count it (checkpoint 1's review, round 2).",
+  "Per view type (Samuel, 1 Nov): a bug that shows only with some text (a long chapter's bottom bar) or behind one of several buttons of the same kind (fixtures/same-buttons.html) can be missed; to be fine-tuned later."
  ],
  "done_rule": "A change to theOS is done when theOS's check command is green (the crawl and the docs check), a decision that renames a word has been swept for the old word, it is pushed to the work branch, and the theOS artifact (a private claude.ai page, republished by avenMAIA with its files) is republished, its version noted in the commit message. In theOS, the repository's root check (aven/ops/devx/check.mjs) does not apply. The pixel diff and the look checker join it with AIP-6.",
  "aip_when": "An AIP is opened for work that needs your Gate A: a decision about what must be true (architecture, product behaviour, how we work). Small edits follow the done rule only.",
@@ -1086,6 +1087,37 @@
    "how": "by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T12:11Z",
+   "by": "authors/avenmaia",
+   "what": "built",
+   "text": "D-77's three fixes: a fixed box whose box or content reaches past the window fails whatever its overflow; sideways overflow clipped by body fails; buttons told apart by state, position and markup. Test pages in theOS/avenCEO/checks/fixtures/: fixed-box, body-clip and same-buttons must fail, clean must pass; all four did. With every button pressed in every state, the crawl took 361 to 623 s, over c4's 5 minutes; the hash fast path stays (without it, far slower).",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": [
+    "decisions/D-77"
+   ],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T12:11Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Start simpler: check per view type, to speed things up; fine-tune it later.",
+   "how": "in chat to AIP-1's thread; the decision is avenMAIA's to write",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:11Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The check runs per view type: the crawl follows every link, but checks and presses buttons only in the first state of each view type (the boxes it renders, by element and classes, whatever their text), one button of each kind. Current commit green: 980 states, 214 view types checked, in 42 s. faf266961's parent still red (4 list views at 1280x720, 9 s). fixed-box and body-clip still fail, clean passes; same-buttons is no longer caught (a gap).",
+   "how": "AIP-1's thread (a Claude Code session started by avenMAIA, D-43), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
   }
  ],
  "reviews": [

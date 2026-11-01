@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fixture: identical buttons</title>
-<!-- The docs check must fail here (AIP-1, D-77): three identical "Show more" buttons on one route; only the third
+<!-- Per view type (Samuel, 1 Nov) the check presses one button of each kind and misses this page: a known gap in
+     AIP-1's record. D-77 asked it to fail here: three identical "Show more" buttons on one route; only the third
      card's content is cut off, so a crawl that presses identical buttons once never sees it. -->
 <style>
   body { margin: 0; padding: 16px; font: 16px/1.5 sans-serif; }
