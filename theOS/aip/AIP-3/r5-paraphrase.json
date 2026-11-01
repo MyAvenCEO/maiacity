@@ -1,0 +1,93 @@
+{
+ "type": "review",
+ "id": "aip/AIP-3/r5-paraphrase",
+ "intent": "aip/AIP-3",
+ "round": 5,
+ "lens": "paraphrase",
+ "commit": "2a44f4898",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-3.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "brain follows rules: a schema and allowed steps per type, one program with fixed verbs for every write, each write an event of an AIP, brain check (run from AIP-1's check command) failing a commit that breaks the rules; hash ids for new docs and one rename of the old; supersedes checked at the parent, a typed link graph, lists that only grow, copied lists deleted, renamed words guarded. Success: no correction caused by an outdated decision, word or missed supersede over three sessions after checkpoint 2.",
+  "existing": "About a hundred JSON docs edited by hand; ui/wiki.js and avenCEO/app.js compute what holds and which step wrote what; no schema, no growth check, bare-path links; decisions numbered by avenMAIA, the reflection by hand; an AIP's step computed from its events; no CI."
+ },
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "c2 and c12, the migration's exception",
+   "text": "Nothing marks which event is the migration; a hand-typed event could unlock history rewriting.",
+   "answer": "fix",
+   "note": "Applied in revision 9: the exception is one commit: brain writes its SHA into theOS/brain/renames.json, and c2 accepts only that SHA."
+  },
+  {
+   "sev": "Major",
+   "scope": "c12 vs the legacy root CLAUDE.md",
+   "text": "The legacy root CLAUDE.md names theOS/aip/AIP-2.json and theOS/decisions/D-24.json; the rename leaves them dangling and c12's scan misses them.",
+   "answer": "fix",
+   "note": "Applied in revision 9: legacy text is not changed; c12 says so, and renames.json resolves those names; the scan covers theOS/ only, on purpose."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome, the cause",
+   "text": "The corrected agent labels its own correction's cause; 'other' removes it from the count; today's corrections have no cause, so the baseline needs a hand count.",
+   "answer": "fix",
+   "note": "Applied in revision 9: the cause is Samuel's words or, at Learn, a fresh checker's label; the baseline is labelled the same way by a fresh checker at Gate A."
+  },
+  {
+   "sev": "Major",
+   "scope": "c7",
+   "text": "Its check looks for text in settings.json and CLAUDE.md; nothing detects agents reading raw files.",
+   "answer": "fix",
+   "note": "Applied in revision 9: c7's failure is restated as 'brain prime shows a superseded doc as holding or misses what waits', checked on the fixtures; raw reads are the outcome's to measure."
+  },
+  {
+   "sev": "Major",
+   "scope": "protocol.check, merges",
+   "text": "Read literally, every merge that brings docs from a branch fails.",
+   "answer": "fix",
+   "note": "Applied in revision 9: as r5-zoom-out: non-merge commits are checked against their parent; a merge only for what differs from both parents."
+  },
+  {
+   "sev": "Major",
+   "scope": "D-46 vs enforcement",
+   "text": "brain check runs by the done rule only; a thread that skips it pushes unchecked writes.",
+   "answer": "fix",
+   "note": "Applied in revision 9: the session-start hook also installs a git pre-push hook that runs the check, and avenMAIA runs brain check on every merged tree; until AIP-2's pipeline, that is the enforcement, written as an assumption."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c12 wording",
+   "text": "The parenthesis reads as if D-12 and AIP-3 are exceptions; quotes and renames.json itself are unsaid.",
+   "answer": "fix",
+   "note": "Applied in revision 9: 'old names such as D-12 or AIP-3; OLD-AIP-n is legacy and kept'; quotes are rewritten like any reference; renames.json is excluded from the scan."
+  },
+  {
+   "sev": "Nit",
+   "scope": "checkpoint 1, type docs' writer",
+   "text": "types/type.json says written by Samuel through avenCEO intents, not avenMAIA.",
+   "answer": "fix",
+   "note": "Applied in revision 9: the type docs change as AIP-3's writes, approved by Samuel at Gate A."
+  },
+  {
+   "sev": "Nit",
+   "scope": "mockup",
+   "text": "2-specify asks for slides and an Architecture panel diff; this is three text lines.",
+   "answer": "fix",
+   "note": "Applied in revision 9: brain has no new screen; the mockup is the hook's text and the existing app lists, shown as such at Gate A."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c1, closed intents",
+   "text": "No step after Closed, so a correction on a closed intent is refused.",
+   "answer": "fix",
+   "note": "Applied in revision 9: corrections may be written at any step, Closed included."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c6 vs renames.json",
+   "text": "Two rename mechanisms with no stated relation; c6's scope format undefined.",
+   "answer": "fix",
+   "note": "Applied in revision 9: renames.json is for ids, c6 for words; c6's scope is a list of folders."
+  }
+ ]
+}

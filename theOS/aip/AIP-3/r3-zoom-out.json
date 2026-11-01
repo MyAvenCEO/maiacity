@@ -1,0 +1,61 @@
+{
+ "type": "review",
+ "id": "aip/AIP-3/r3-zoom-out",
+ "intent": "aip/AIP-3",
+ "round": 3,
+ "lens": "zoom-out",
+ "commit": "11fab927d",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-3.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there that the plan rebuilds needlessly? Search theOS/ to find out.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "checkpoint 1, c4: where brain check runs",
+   "text": "Revision 2 settled that brain's checks run through AIP-1's check command; that dropped out. theOS has no CI, package.json or ajv, which AIP-1's checkpoint 1 builds; two check commands and two first rules would be built.",
+   "answer": "fix",
+   "note": "brain check is a module that AIP-1's check command runs, before every push by the done rule; AIP-1 builds package.json, the command and theOS/CLAUDE.md; AIP-3 adds one line to CLAUDE.md naming brain prime. CI dropped."
+  },
+  {
+   "sev": "Major",
+   "scope": "c9: hash ids and merges",
+   "text": "brain add also edits decisions/index.json and appends to the same events array, so two branches still clash; the rename rewrites old events, which c2 forbids.",
+   "answer": "fix",
+   "note": "Index docs are written only by brain from their folders (c8), so a clash there is resolved by writing them again; two appends to one array are both kept, the first parent's first, which c2 accepts against the first parent. c9's test covers this merge. The rename is c2's one named exception (c12). Keeping numbered names is contested: D-49 decided to rename."
+  },
+  {
+   "sev": "Major",
+   "scope": "brain edit --expect and one commit per write",
+   "text": "Each thread has its own branch and tree, so the guard has no case to catch; brain making its own commits clashes with agents committing code and docs together.",
+   "answer": "fix",
+   "note": "--expect deferred until two writers share one tree; brain writes files only, the agent commits, and brain check enforces the event-in-the-same-commit rule."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "The door half cannot be measured; the pre-commit log is lost with the container.",
+   "answer": "fix",
+   "note": "Dropped: the outcome counts corrections by cause only; the door is c4's to enforce."
+  },
+  {
+   "sev": "Nit",
+   "scope": "checkpoint 3, MCP",
+   "text": "AIP-4 has no checkpoints yet; a test of equal answers mostly tests the adapter.",
+   "answer": "fix",
+   "note": "Checkpoint 3 starts when AIP-4 passes Gate A; one smoke call per verb."
+  },
+  {
+   "sev": "Nit",
+   "scope": "checkpoint 1 (round 2's order nit half landed)",
+   "text": "The single supersedes form and the move of holds() into ui/wiki.js are not in checkpoint 1.",
+   "answer": "fix",
+   "note": "Both named in checkpoint 1."
+  },
+  {
+   "sev": "Nit",
+   "scope": "order",
+   "text": "Checkpoint 1 is not small; c2 is part of the root cause but last.",
+   "answer": "fix",
+   "note": "Checkpoint 1 shrinks to what the door needs (reflect, edit, MCP out); c2 moves to checkpoint 2, after the rename."
+  }
+ ]
+}
