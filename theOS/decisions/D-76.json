@@ -13,7 +13,7 @@
   "apps"
  ],
  "quote": "No: reference the hash and the title.",
- "means": "No D-n or AIP-n numbers. Every doc, decisions and intents included, gets a flat hash id in the migration and is referenced by it (D-53, D-69). Wherever a doc is shown, in the apps, in brain prime and in text, it reads as its hash id with its title, for example \"aip-69af · brain: theOS's memory\". New decisions and intents get hash ids like every other doc, and their order is their time.",
+ "means": "No D-n or AIP-n numbers. Every doc, decisions and intents included, gets a flat hash id in the migration and is referenced by it (D-53, D-69). Wherever a doc is shown, in the apps, in brain prime and in text, it reads as its hash id with its title, for example \"aip-<hex> · brain: theOS's memory\". New decisions and intents get hash ids like every other doc, and their order is their time.",
  "intents": [
   "aip/AIP-3"
  ],
