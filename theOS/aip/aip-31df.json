@@ -165,7 +165,7 @@
    "fails": "A state behind a button, or a renamed data file, is never seen.",
    "check": "On the current commit it reaches every route the docs list (stories.json, intents.json, the index docs), and, in a test that starts at theOS/avenCEO/checks/fixtures/, a state planted behind a button; at the parents of 106ba0e5f and 3ddc07339 it reaches the OLD-AIP pages and their Learn tabs, with no edit per commit.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "open: per view type (d-5afb) the crawl reaches on the current commit 96 to 98 of 123 slides, 91 of 91 OLD-AIP pages and 334 of 334 docs by id; at the parents of 106ba0e5f and 3ddc07339, all 91 OLD-AIP pages and the Learn tab on 9 of 23; the test page's state behind a button is reached (coverage.mjs, 1 Nov). Not every route the docs list: Samuel decides at Gate B whether c2 narrows to d-5afb's scope."
   },
   {
    "id": "c4",
@@ -173,7 +173,7 @@
    "fails": "The check is slow and is skipped.",
    "check": "Timed in the session's box on a one-doc change with an empty cache (the box is reclaimed, so the cache lives only as long as the session); each screenshot taken after document.fonts.ready.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "pass: 101 s on a one-doc change with an empty cache, 1318 states and screenshots (1 Nov); the check now fails itself at 300 s"
   }
  ],
  "outcome": {
@@ -1239,6 +1239,17 @@
    "writes": [],
    "reads": [],
    "task": "t6"
+  },
+  {
+   "at": "2026-11-01T12:59Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 1 on 520a776: 2 Blocker, 2 Major, 2 Nit, not clean. Fixed: the time limit (the check is red at 300 s), data attribute names only in a button's kind, the comment, red-after-click for the button test page, the coverage count committed as coverage.mjs. Contested: the screenshots (checkpoint 2 lists them; they cost about 35 s). Escalated: c2 is not met as written, its numbers recorded; narrowing it is Samuel's at Gate B.",
+   "how": "a fresh subagent (Agent tool) seeing only the record, d-5afb, the diff and checkpoint 1's review; the prompt is the review doc's",
+   "writes": [
+    "rv-19f5"
+   ],
+   "reads": []
   }
  ],
  "reviews": [
@@ -1254,7 +1265,8 @@
   "rv-40be",
   "rv-d847",
   "rv-22e5",
-  "rv-7122"
+  "rv-7122",
+  "rv-19f5"
  ],
  "source": {
   "type": "idea",

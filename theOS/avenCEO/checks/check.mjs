@@ -13,6 +13,7 @@ import { docsCheck } from './docs-check.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SIZES = [{ width: 390, height: 844 }, { width: 1280, height: 720 }];
 const WORKERS = 3; // pages per size, sharing one queue
+const LIMIT = 300; // seconds: c4, the check finishes in under 5 minutes or it is red
 const MOST = 5000; // states per size: more means a route shows new text each time (a clock), and the crawl would not end
 
 function args(argv) {
@@ -113,15 +114,16 @@ async function actions(page, origin) {
 // A state is a route and what it shows: the same URL with the same rendered text and the same view is one state.
 const keyOf = async (page) => `${page.url()}\n${await page.evaluate(() => `${document.body?.innerText ?? ''}\n${window.__view()}`)}`;
 
-// A view type: which boxes the page renders, whatever their text, each named by its kind (element, classes and the
-// names of its data attributes, so a tab button with data-tab differs from a plain one). All decision pages are one view
-// type, unless one of them shows a part the others don't. Only boxes count (an element that isn't inline), since they
-// make the layout; inline text styling doesn't. Installed in every page, next to countFetches.
+// A view type: which boxes the page renders, whatever their text, each named by element and classes. All decision pages
+// are one view type, unless one of them shows a part the others don't. Only boxes count (an element that isn't inline),
+// since they make the layout; inline text styling doesn't. A button's kind adds the names of its data attributes, so a
+// tab (data-tab) isn't taken for a plain button. Installed in every page, next to countFetches.
 function pageView() {
   window.__kind = (e) => e.tagName.toLowerCase() + [...e.classList].sort().map((c) => `.${c}`).join('')
     + Object.keys(e.dataset).sort().map((k) => `[${k}]`).join('');
   window.__view = () => [...new Set([...document.querySelectorAll('body *')]
-    .filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'inline').map(window.__kind))].sort().join(' ');
+    .filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'inline')
+    .map((e) => e.tagName.toLowerCase() + [...e.classList].sort().map((c) => `.${c}`).join('')))].sort().join(' ');
 }
 
 // Bring the page to a state: its URL, then its buttons pressed again. Returns the key it reached, or null when a button
@@ -172,7 +174,7 @@ async function crawl(browser, size, start, origin, out) {
     if (states.length >= MOST) throw new Error(`more than ${MOST} states at ${size.width}x${size.height}; the last at ${page.url()}: does a route show new text each time?`);
     keys.add(key);
     const state = { size: `${size.width}x${size.height}`, url: page.url().slice(origin.length + 1), recipe, key, fails: await page.evaluate(docsCheck) };
-    states.push(state); // before any await: its number names its screenshot, and parallel pages mustn't share one
+    states.push(state); // its number, read right after with no await between, names its screenshot: parallel pages mustn't share one
     // A screenshot of the state as a person sees it in the window; settle() waited for document.fonts.ready.
     state.shot = join('shots', state.size, `${String(states.length).padStart(4, '0')}.png`);
     await page.screenshot({ path: join(out, state.shot) });
@@ -254,9 +256,11 @@ async function main() {
       // The check's own test: each page in fixtures/ says in <meta name="expect"> whether the check must be red or green.
       let wrong = 0;
       for (const f of readdirSync(join(HERE, 'fixtures')).filter((x) => x.endsWith('.html')).sort()) {
-        const expect = /<meta name="expect" content="(red|green)">/.exec(readFileSync(join(HERE, 'fixtures', f), 'utf8'))?.[1];
+        // red-after-click: red, and only in states reached by pressing a button.
+        const expect = /<meta name="expect" content="(red|green|red-after-click)">/.exec(readFileSync(join(HERE, 'fixtures', f), 'utf8'))?.[1];
         const r = await run(browser, origin, o.root, `avenCEO/checks/fixtures/${f}`, join(o.out, 'fixtures', f));
-        const got = r.failed ? 'red' : 'green';
+        const bad = r.results.filter((x) => x.fails.length);
+        const got = !bad.length ? 'green' : bad.every((x) => x.clicks.length) ? 'red-after-click' : 'red';
         if (got !== expect) wrong++;
         console.log(`${got === expect ? 'ok' : 'WRONG'} ${f}: ${got}, expected ${expect ?? 'nothing (no meta)'}`);
       }
@@ -265,8 +269,9 @@ async function main() {
       return;
     }
     const r = await run(browser, origin, o.root, o.entry, o.out);
+    if (r.seconds >= LIMIT) console.log(`FAIL the check took ${r.seconds} s, at or over its limit of ${LIMIT} s (c4)`);
     console.log(`${r.failed ? 'red' : 'green'}: ${r.reached} states checked (${r.views} view types), ${r.failed} failed, in ${r.seconds} s with Playwright ${version}; report in ${join(o.out, 'report.json')}`);
-    process.exitCode = r.failed ? 1 : 0;
+    process.exitCode = r.failed || r.seconds >= LIMIT ? 1 : 0;
   } finally {
     await browser.close();
     server.close();
