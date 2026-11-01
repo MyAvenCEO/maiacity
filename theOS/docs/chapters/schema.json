@@ -5,7 +5,7 @@
    "title": "Nothing without a schema.",
    "text": "Every piece of data names its {schema}: the shape its content must have. Your to-do list says it has a title and items, and each item has a text and a done flag. No piece of data exists without one.",
    "code": {
-    "type": "theos/genesis@1",
+    "type": "data:b3:Rfe…@b3:105…#genesis",
     "nonce": "b3:4f1…",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "policy": {
@@ -30,6 +30,7 @@
    "title": "A schema is data too.",
    "text": "A schema is itself a Doc: a JSON Schema with its own birth record, its own owner and its own policies. Anyone may use a schema they can read, so many lists can share one to-do schema.",
    "code": {
+    "$schema": "data:b3:Mta…@b3:0e1…#schema",
     "type": "object",
     "properties": {
      "title": {
@@ -68,6 +69,71 @@
    "deep": "Schemas are written in JSON Schema and edited as a Loro Doc like any other data, so they sync, merge and carry policies. Each published version is frozen: its canonical CBOR is hashed, and that frozen version travels with every piece of data that pins it (D66)."
   },
   {
+   "title": "Even records follow schemas.",
+   "text": "Policies, roles, endings and changes are records, and every record names the schema version it follows, exactly like data. A small set of root schemas comes built into theOS, named by their hashes. At the root sits the {meta-schema}: the schema every schema follows, itself included.",
+   "code": {
+    "meta": "data:b3:Mta…@b3:0e1…#schema",
+    "records": {
+     "policy": "data:b3:R9f…@b3:00f…#policy",
+     "role": "data:b3:R8d…@b3:ca4…#role",
+     "change": "data:b3:R75…@b3:50b…#change",
+     "ending": "data:b3:R5b…@b3:d4b…#ending",
+     "…": "…"
+    }
+   },
+   "deep": "The engine carries one root manifest: the meta-schema and every record schema, each as data ID @ version. It trusts exactly those hashes, never a name. A new engine release ships a new manifest, with lenses from the old record versions (D67, D90).",
+   "spec": {
+    "summary": "The bootstrap: what checks the first schema. A fixed manifest of root schema versions, with the meta-schema validating itself.",
+    "records": [
+     {
+      "name": "root manifest",
+      "about": "Built into each engine release; not signed by anyone, identified by its hash.",
+      "fields": [
+       [
+        "meta",
+        "schema ref",
+        "the meta-schema: JSON Schema 2020-12 plus theOS's vocabulary (stored keys, lenses)"
+       ],
+       [
+        "records",
+        "kind → schema ref",
+        "one entry per record kind: genesis, identity, epoch, invite, policy, role, ending, envelope, keyring, change, chunk, operation, want, news, lens, migration …"
+       ],
+       [
+        "lenses",
+        "list",
+        "lenses from the previous manifest's record versions"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "root.by_hash",
+      "text": "A record's type is a schema ref; it is checked against that exact version, and a type not in the device's manifest (or reachable from it by lenses) waits."
+     },
+     {
+      "id": "root.meta_fixed_point",
+      "text": "The meta-schema validates itself, and every schema version, root or not, validates against it."
+     },
+     {
+      "id": "root.no_names",
+      "text": "No record, operation or policy refers to a schema by a name; the #label after a ref is ignored by every check."
+     },
+     {
+      "id": "root.upgrade",
+      "text": "A new manifest keeps every old root version readable through lenses; old records are never rewritten."
+     }
+    ],
+    "decisions": [
+     "D50",
+     "D66",
+     "D67",
+     "D90"
+    ]
+   }
+  },
+  {
    "title": "Data pins a version.",
    "text": "A schema can change over time. So data names the exact version it follows, written after an @: the hash of that version. The version itself travels with the data, so nobody, not even the schema's owner, can take it away from your list.",
    "code": {
@@ -95,7 +161,7 @@
    "title": "A new version comes with a lens.",
    "text": "When a schema changes, its author writes a {lens}: how to read the old shape as the new one, and back. Here text becomes title, priority starts at 0, and old phones see an empty link. Applied to the old version, a lens must give exactly the new one, so anyone can check it.",
    "code": {
-    "type": "theos/lens@1",
+    "type": "data:b3:R45…@b3:d27…#lens",
     "from": "data:b3:Sc4…@b3:1f0…#todo-list",
     "to": "data:b3:Sc4…@b3:7a2…#todo-list",
     "ops": [
@@ -125,7 +191,7 @@
    "title": "Moving on rewrites nothing.",
    "text": "The owner signs one {migration}: this list now follows version 2, through this lens. Nothing in the list is rewritten. Each field keeps the name it is stored under, and every device reads the list in the version its app knows: yours in version 2, Mia's old phone still in version 1.",
    "code": {
-    "type": "theos/migration@1",
+    "type": "data:b3:Rc5…@b3:590…#migration",
     "on": "data:b3:7Hq…#house-list",
     "from": "data:b3:Sc4…@b3:1f0…#todo-list",
     "to": "data:b3:Sc4…@b3:7a2…#todo-list",
@@ -180,7 +246,7 @@
    "title": "Values have schemas too.",
    "text": "A photo or a PDF never changes, but it still has a shape: its type and its size. A Value's metadata Doc names a schema for the Value and one for itself, so even a file is never just loose bytes.",
    "code": {
-    "type": "theos/meta@1",
+    "type": "data:b3:Rcb…@b3:030…#meta",
     "id": "data:b3:Mm3…#movie-meta",
     "value": "value:b3:9f2c…#movie",
     "value_schema": "data:b3:Vd1…@b3:8e5…#video",

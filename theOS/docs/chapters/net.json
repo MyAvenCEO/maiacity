@@ -10,7 +10,7 @@
    "title": "You dial identities, not devices.",
    "text": "Every agent has an {address} on the network: its signer's public key. But you never need to know it. Each identity publishes a signed record of its agents, and each agent's history holds its current address. You dial Alice, and the connection goes to whichever of her agents is online.",
    "code": {
-    "type": "theos/directory@1",
+    "type": "data:b3:R8d…@b3:392…#directory",
     "id": "human:b3:a8f3…#alice",
     "agents": [
      "agent:b3:a1p…#alice-phone",
@@ -48,7 +48,7 @@
        [
         "identity",
         "human or coop ID",
-        "whose directory to look up (theos/directory@1)"
+        "whose directory record to look up"
        ],
        [
         "relay",
@@ -102,7 +102,7 @@
    "title": "Both sides know who they talk to.",
    "text": "Every connection is encrypted with the two devices' keys. Then the agent shows that its key is registered in its own history, and whose agent it is. The other side knows: this is Alice's phone, acting for Alice.",
    "code": {
-    "type": "theos/proof@1",
+    "type": "data:b3:Ref…@b3:643…#proof",
     "key": "ed25519:k51q…",
     "agent": "agent:b3:a1p…#alice-phone",
     "for": "human:b3:a8f3…#alice",

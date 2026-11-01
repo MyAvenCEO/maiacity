@@ -5,7 +5,7 @@
    "title": "Writing is a chain of signatures.",
    "text": "Mia ticks “buy milk”. Her phone's signer signs the change. Every {peer}, any device holding a copy, checks the links before merging: the signer is her phone agent's key, Mia's policy lets the phone act for her, Mia is in “household”, and “household” has update on this list. One broken link, and the change is dropped.",
    "code": {
-    "type": "theos/change@1",
+    "type": "data:b3:R75…@b3:50b…#change",
     "on": "data:b3:7Hq…#house-list",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "ops": [
@@ -40,7 +40,7 @@
    "title": "Under the hood, a policy is a capability.",
    "text": "Each policy is a signed token, a {capability}. It carries its own {proof}: who signed it, and why they were allowed to, all the way back to the data's birth record. Any device can check it offline. Nobody can forge it.",
    "code": {
-    "type": "theos/policy@1",
+    "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "role:b3:k1m…#household",
     "on": "data:b3:7Hq…#house-list",
     "operations": {
@@ -76,7 +76,7 @@
    "title": "Every change is checked on arrival.",
    "text": "Before Alice's device merges Bob's CRDT ops, it checks each one against the policies in the Doc's own history. Bob's role has update, so his CRDT ops go in. A stranger's CRDT op on the same list is dropped, quietly, everywhere.",
    "code": {
-    "type": "theos/change@1",
+    "type": "data:b3:R75…@b3:50b…#change",
     "on": "data:b3:7Hq…#house-list",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "ops": [
@@ -101,7 +101,7 @@
    "title": "Every record says what it had seen.",
    "text": "Every signed record lists what its author had already seen: the latest changes of the data, of its policies and of every identity in its proof. It also carries its author's running number. So every device can tell what came before what without a clock, and a signer that leaves out its own earlier records is caught.",
    "code": {
-    "type": "theos/change@1",
+    "type": "data:b3:R75…@b3:50b…#change",
     "on": "data:b3:7Hq…#house-list",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "ops": [
@@ -132,7 +132,7 @@
    "text": "Mia edits the list on a train, offline, at the same moment you remove her. Her edit didn't list your removal as seen, so when both devices meet, the removal wins: her edit is dropped everywhere. Every device decides the same way, so they all end up agreeing.",
    "code": {
     "removal": {
-     "type": "theos/role@1",
+     "type": "data:b3:R8d…@b3:ca4…#role",
      "id": "role:b3:k1m…#household",
      "identities": [
       "human:b3:a8f3…#alice",
@@ -140,7 +140,7 @@
      ]
     },
     "change": {
-     "type": "theos/change@1",
+     "type": "data:b3:R75…@b3:50b…#change",
      "on": "data:b3:7Hq…#house-list",
      "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
      "ops": [

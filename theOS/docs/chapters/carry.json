@@ -15,7 +15,7 @@
    "title": "want",
    "text": "Before a carrier sends anything, even sealed chunks, the asker proves that a policy gives it want. The carrier hands out a fresh challenge, and the asker signs its request over it, so the request can't be replayed anywhere else. The carrier checks the chain and that no ending has cut it. A stranger, or the plumber after his policy ended, gets nothing, not even ciphertext. Read includes want.",
    "code": {
-    "type": "theos/want@1",
+    "type": "data:b3:Rb5…@b3:f23…#want",
     "on": "data:b3:7Hq…#house-list",
     "challenge": "b3:c91e…",
     "proof": [
@@ -36,7 +36,7 @@
    "title": "keep",
    "text": "Your backup is one of your agents, with a narrow policy from you: it may act for you only to want and keep the list. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so no envelope is ever made for it: to it they're just sealed bytes.",
    "code": {
-    "type": "theos/policy@1",
+    "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "agent:b3:k8b…#backup",
     "on": "human:b3:q4x7…#you",
     "operations": {
@@ -64,7 +64,7 @@
    "title": "sync",
    "text": "The street's always-on peer gets sync. Your policy gives want and sync to a role that holds the street coop, and the street's own policy lets its server act for it only for carrying. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
    "code": {
-    "type": "theos/policy@1",
+    "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "role:b3:e9s…#street-carrier",
     "on": "data:b3:7Hq…#house-list",
     "operations": {
@@ -107,7 +107,7 @@
    "text": "When you end the plumber's policy, carriers see the ending as well, because endings aren't hidden from them. From then on they send his agents nothing: no new chunks and no old ones. A carrier that hasn't heard yet can still send only sealed bytes, and since the data key turned, those show him nothing new.",
    "code": {
     "ending": {
-     "type": "theos/ending@1",
+     "type": "data:b3:R5b…@b3:d4b…#ending",
      "kind": "revoke",
      "ends": "policy:b3:p3q…#plumber",
      "sig": {

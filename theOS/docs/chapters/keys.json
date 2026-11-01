@@ -31,7 +31,7 @@
    "title": "Envelopes only for keys you can trust.",
    "text": "Each agent publishes its lock, an encryption key, in its own history, signed by its signer. Envelopes may only be made for locks found there, and only by someone a policy allows. Otherwise an attacker could slip in a lock of their own, and writers would quietly encrypt to them.",
    "code": {
-    "type": "theos/identity@1",
+    "type": "data:b3:R1d…@b3:b08…#identity",
     "id": "agent:b3:p9c…#mia-phone",
     "owner": "human:b3:m2a9…#mia",
     "signer": "ed25519:Mk7…",
@@ -48,7 +48,7 @@
    "title": "Adding Mia to a role: an envelope per agent.",
    "text": "The owner adds Mia to the role record and puts the role key in an envelope for each of Mia's agents that may read for her: her phone and her laptop, not her backup. Mia can read everything the role can read, starting from today's state; older history stays closed unless the owner opens it.",
    "code": {
-    "type": "theos/envelope@1",
+    "type": "data:b3:Rab…@b3:140…#envelope",
     "key": "rolekey:household/2",
     "for": "agent:b3:p9c…#mia-phone",
     "lock": "x25519:4kd…",
@@ -66,7 +66,7 @@
    "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed policy change in the item's history, and every device enforces it.",
    "code": {
     "policy": {
-     "type": "theos/policy@1",
+     "type": "data:b3:R9f…@b3:00f…#policy",
      "to": "role:b3:r4p…#plumber",
      "on": "data:b3:3Tk…#fix-tap",
      "operations": {
@@ -75,7 +75,7 @@
      }
     },
     "envelope": {
-     "type": "theos/envelope@1",
+     "type": "data:b3:Rab…@b3:140…#envelope",
      "key": "datakey:fix-tap/1",
      "for": "role:b3:r4p…#plumber",
      "sealed": "hpke:…"
@@ -98,12 +98,12 @@
    "text": "Taking update away is just a signed policy change. Taking read away means ending the policy and giving a new one without read. The data key turns, and the new one goes to the owner's reading agents and every reading role except that one.",
    "code": {
     "ending": {
-     "type": "theos/ending@1",
+     "type": "data:b3:R5b…@b3:d4b…#ending",
      "kind": "revoke",
      "ends": "policy:b3:d6r…#kids"
     },
     "keyring": {
-     "type": "theos/keyring@1",
+     "type": "data:b3:R8c…@b3:dc3…#keyring",
      "on": "data:b3:7Hq…#house-list",
      "generation": 3,
      "key": "datakey:house-list/3",
@@ -120,7 +120,7 @@
    "title": "Where does the data key live?",
    "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its policies. Its generation counts how often the data key has turned. The keyring holds the data key in envelopes: one for each of the owner's reading agents, one for each role that may read. {Carriers}, peers that store or forward data they can't read, like a backup, store it like everything else, sealed and unreadable.",
    "code": {
-    "type": "theos/keyring@1",
+    "type": "data:b3:R8c…@b3:dc3…#keyring",
     "on": "data:b3:7Hq…#house-list",
     "generation": 3,
     "key": "datakey:house-list/3",
@@ -143,7 +143,7 @@
    "title": "A Value's key rides with its Doc.",
    "text": "A Value has a keyring too, with just one envelope: the Value's key, sealed under its metadata Doc's data key. So whoever can open the Doc can open the Value, and the Value needs no policies of its own. Because a Value never changes, its key never turns: someone who already opened it keeps what they saw.",
    "code": {
-    "type": "theos/keyring@1",
+    "type": "data:b3:R8c…@b3:dc3…#keyring",
     "on": "value:b3:9f2c…#movie",
     "generation": 1,
     "envelopes": [

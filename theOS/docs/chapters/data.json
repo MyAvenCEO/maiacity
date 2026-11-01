@@ -11,7 +11,7 @@
    "text": "When data is born, your agent signs its {birth record}: which schema it follows, and its first policy, naming its owner. The data's ID is the hash of that record. So the list is named by its own birth: it doesn't come from any account, and nobody can make a second birth for the same ID.",
    "deep": "The data ID is data:b3: and the BLAKE3 hash of this record without its signature (D50, D64). An agent acting for the owner with own signs it, and a random nonce keeps two births apart. A second birth record would simply be different data, so no key has to be kept secret or destroyed.",
    "code": {
-    "type": "theos/genesis@1",
+    "type": "data:b3:Rfe…@b3:105…#genesis",
     "nonce": "b3:4f1…",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "policy": {
@@ -74,7 +74,7 @@
    "title": "A Value never changes.",
    "text": "Its name is the hash of its bytes, so it can't be swapped without everyone noticing. It travels in ranges, and you fetch only the parts you need: the first minute of a movie, page 3 of a PDF.",
    "code": {
-    "type": "theos/value@1",
+    "type": "data:b3:Rf3…@b3:2b6…#value",
     "id": "value:b3:9f2c…#movie",
     "size": 1503238554,
     "tree": "BLAKE3, 1 KiB blocks"
@@ -85,7 +85,7 @@
    "title": "Every Value has its own Doc.",
    "text": "The movie never changes, but its name, its notes and who may see it do. So every Value comes with a small Doc: its metadata. Whoever may read that Doc can open the Value; how, comes in the Keys chapter.",
    "code": {
-    "type": "theos/meta@1",
+    "type": "data:b3:Rcb…@b3:030…#meta",
     "id": "data:b3:Mm3…#movie-meta",
     "value": "value:b3:9f2c…#movie",
     "schema": "data:b3:Mt7…@b3:4c2…#media-meta",

@@ -14,7 +14,7 @@
     "summary": "An agent is an identity owned by exactly one human or coop. Its record says who it is; what it may do comes only from policies (D58).",
     "records": [
      {
-      "name": "theos/identity@1 (an agent)",
+      "name": "identity record (an agent)",
       "about": "The agent's own history: one record per change of key or epoch, each signed by the agent's current signer.",
       "fields": [
        [
@@ -65,7 +65,7 @@
       ]
      },
      {
-      "name": "theos/epoch@1",
+      "name": "epoch record",
       "about": "Written once by a restored or reinstalled device before anything else.",
       "fields": [
        [
@@ -130,7 +130,7 @@
    "title": "You and your first agent are born together.",
    "text": "When you start, your phone's agent makes its signer and signs one record: your birth, its own birth, and its first {policy}, a signed statement of what an agent may do: “this agent may act for you.” From then on, you exist, and you own it. Nothing has to come first.",
    "code": {
-    "type": "theos/genesis@1",
+    "type": "data:b3:Rfe…@b3:105…#genesis",
     "creates": [
      "human",
      "agent"
@@ -159,7 +159,7 @@
     "summary": "One record creates a human (or coop) and its first agent, and gives that agent its first policy.",
     "records": [
      {
-      "name": "theos/genesis@1 (identity)",
+      "name": "genesis record (identity)",
       "fields": [
        [
         "creates",
@@ -223,7 +223,7 @@
    "title": "Each agent gets only what you give it.",
    "text": "You can have many agents: your laptop, your watch, a server, even an AI assistant. Each gets its own policy from you, saying what it may do for you. Your phone may do everything; your watch only what concerns your health; your assistant only your shopping list. What an agent may not touch, it gets no keys for either.",
    "code": {
-    "type": "theos/policy@1",
+    "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "agent:b3:w3t…#watch",
     "on": "human:b3:q4x7…#you",
     "operations": {
@@ -253,7 +253,7 @@
     "summary": "Every further agent gets one policy from the identity it acts for, with conditions on act.",
     "records": [
      {
-      "name": "theos/policy@1 (on an identity)",
+      "name": "policy record (on an identity)",
       "fields": [
        [
         "to",
@@ -318,7 +318,7 @@
    "title": "A new device joins with a one-time code.",
    "text": "To add your laptop, your phone writes an {invite}: a one-time key, an expiry, and exactly what the new device may do. You scan its code with the laptop, which makes its own signer and signs its birth together with the one-time key. The invite already says what it gets, so no other device of yours has to be online, and the code is worthless after one use or ten minutes.",
    "code": {
-    "type": "theos/invite@1",
+    "type": "data:b3:Rf5…@b3:2bc…#invite",
     "on": "human:b3:q4x7…#you",
     "key": "ed25519:Iv9…",
     "expires": "2026-11-01T10:10:00Z",
@@ -341,7 +341,7 @@
     "summary": "Pairing without a second device online: the invite is the policy, signed in advance; the birth record proves possession of the one-time secret.",
     "records": [
      {
-      "name": "theos/invite@1",
+      "name": "invite record",
       "about": "Written into the identity's history by an agent with govern.",
       "fields": [
        [
@@ -377,7 +377,7 @@
       ]
      },
      {
-      "name": "theos/genesis@1 (agent by invite)",
+      "name": "genesis record (agent by invite)",
       "fields": [
        [
         "creates",
@@ -461,7 +461,7 @@
    "text": "Together you form a {coop}: an identity made of identities. It has a {role}, a named set of identities, called “members”, which holds you and Mia. A policy lets that role act for the coop. Neither of you is the coop alone, and it lives on even if one of you loses every agent.",
    "deep": "There are no membership records: a coop's members are simply its “members” role, and policies say what that role may do. A role holds humans or coops, never agents or signers.",
    "code": {
-    "type": "theos/role@1",
+    "type": "data:b3:R8d…@b3:ca4…#role",
     "id": "role:b3:h8m…#home/members",
     "of": "coop:b3:c7n2…#home",
     "identities": [
@@ -479,7 +479,7 @@
    "title": "A coop decides by its own policies.",
    "text": "A policy on the coop says what its “members” role may do for it: act, ordinary changes for the coop, and own, writing and ending the policies on the coop's data. The third kind, govern, changing the coop's own roles and policies, goes to a {governor}: a role with exactly one identity, for now you. One top, so nobody can remove each other at the same moment. Before you step down, you hand govern on.",
    "code": {
-    "type": "theos/policy@1",
+    "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "role:b3:h9g…#home/governor",
     "on": "coop:b3:c7n2…#home",
     "operations": {
@@ -500,7 +500,7 @@
    "title": "Coops can hold coops.",
    "text": "Your street is a coop of homes, and a home is a coop of people. The street's “members” role holds the home coops, and a policy on the street says what they may do for it: here, act, but not own or govern. A home acts through its own members' agents. Coops can sit inside coops as deep as you like, never in a circle.",
    "code": {
-    "type": "theos/policy@1",
+    "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "role:b3:s9m…#street/members",
     "on": "coop:b3:s5t8…#street",
     "operations": {

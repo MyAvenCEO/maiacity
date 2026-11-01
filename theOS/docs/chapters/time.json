@@ -38,7 +38,7 @@
    "title": "Snapshots let the past go.",
    "text": "At key turns older than 30 days, the history is {cut}: newcomers get a {snapshot}, the current state with no history, so they never see what was deleted. The older keys go to the owner's archive. A writer who comes back from before the cut loses, and gets a conflict view of what was not adopted.",
    "code": {
-    "type": "theos/chunk@1",
+    "type": "data:b3:R78…@b3:c7e…#chunk",
     "id": "chunk:b3:s9n…#snapshot",
     "on": "data:b3:7Hq…#house-list",
     "snapshot": true,
@@ -77,7 +77,7 @@
    "title": "Some things must be kept for years.",
    "text": "Bookkeeping must be kept for ten years. At any time, the owner can say {retain}: keep this until 2036. From then on, nobody can cut, shred or erase it before that date, and the date can only move later. Identities in a retention role, like your tax adviser, help keep it.",
    "code": {
-    "type": "theos/retain@1",
+    "type": "data:b3:R7e…@b3:b60…#retain",
     "on": "data:b3:2Nv…#invoices-2026",
     "until": "2036-12-31T00:00:00Z",
     "role": "role:b3:t3x…#retainers",

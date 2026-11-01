@@ -15,7 +15,7 @@
   {
    "title": "Mia, Alice and Bob get the list.",
    "text": "You make a role “household”, give it read, create and update on the list, and add Mia, Alice and Bob. They can see the list, add things and tick them off. They can't delete it, and they can't write policies.",
-   "deep": "Mia, Alice and Bob are added to the role “household”. Technically: the owner signs a new role record (theos/role@1) with them in it and seals the role key to each one's reading agents (both explained in the Keys chapter). The data's policies don't change at all."
+   "deep": "Mia, Alice and Bob are added to the role “household”. Technically: the owner signs a new role record (the role record) with them in it and seals the role key to each one's reading agents (both explained in the Keys chapter). The data's policies don't change at all."
   },
   {
    "title": "The plumber gets one item.",
@@ -26,7 +26,7 @@
    "title": "Every policy is one sentence.",
    "text": "A policy says: this role may perform these operations, on this data, until a date: its {expiry}. Nothing more. Everything anyone may ever do with your data is written in policies like this one.",
    "code": {
-    "type": "theos/policy@1",
+    "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "role:b3:k1m…#household",
     "on": "data:b3:7Hq…#house-list",
     "operations": {
@@ -96,7 +96,7 @@
    "title": "Conditions make a policy narrower.",
    "text": "Each operation can carry {conditions}: only entries that match, only so many times. Like the path, they can only narrow.",
    "code": {
-    "type": "theos/policy@1",
+    "type": "data:b3:R9f…@b3:00f…#policy",
     "to": "role:b3:d5k…#kids",
     "on": "data:b3:7Hq…#house-list",
     "operations": {
@@ -141,7 +141,7 @@
    "title": "Only the owner never expires.",
    "text": "The policy in the birth record names the owner. It has no expiry, so data can never end up with nobody allowed to look after it. Every other policy expires.",
    "code": {
-    "type": "theos/genesis@1",
+    "type": "data:b3:Rfe…@b3:105…#genesis",
     "nonce": "b3:4f1…",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "policy": {

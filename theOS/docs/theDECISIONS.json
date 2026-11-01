@@ -998,7 +998,7 @@
    "title": "Record conventions",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"after\", \"seq\", \"sig\"} in canonical CBOR (shown as JSON), decoded strictly; examples omit after and seq except where they matter (D61). IDs are typed: human:, coop:, agent:, data:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record without its signature; value: b3: is the hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). A birth record (genesis) holds a random nonce or the keys it creates, so no two share an ID. A record cannot contain its own hash, so inside a birth record the identities it creates are named by kind (“this human”, “this agent”); their IDs are b3(kind ‖ record). One genesis record can create a human or coop and its first agent. A schema is pinned as its data ID, @ and the hash of the frozen version (D66): data:b3:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}; every record is signed by an agent. A proof is the ordered list of record IDs from a birth record to the acting agent; examples always show a policy's proof. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation, lens, migration. Lenses and migrations have lens: and migration: IDs. Identity policies do not expire unless they say so.",
+   "decision": "Every stored or sent thing is a record: {\"type\": <schema ref of its kind>, …fields, \"after\", \"seq\", \"sig\"} (D90) in canonical CBOR (shown as JSON), decoded strictly; examples omit after and seq except where they matter (D61). IDs are typed: human:, coop:, agent:, data:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record without its signature; value: b3: is the hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). A birth record (genesis) holds a random nonce or the keys it creates, so no two share an ID. A record cannot contain its own hash, so inside a birth record the identities it creates are named by kind (“this human”, “this agent”); their IDs are b3(kind ‖ record). One genesis record can create a human or coop and its first agent. A schema is pinned as its data ID, @ and the hash of the frozen version (D66): data:b3:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}; every record is signed by an agent. A proof is the ordered list of record IDs from a birth record to the acting agent; examples always show a policy's proof. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation, lens, migration. Lenses and migrations have lens: and migration: IDs. Identity policies do not expire unless they say so.",
    "why": "Slides and code use the same shapes and names, so the examples are drafts of the real schema, not illustrations.",
    "sources": [
     {
@@ -1108,7 +1108,7 @@
    "title": "One operation shape everywhere",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Policies write operations as one object keyed by operation name: {\"read\": {\"at\": \"/items\"}, \"create\": {\"at\": \"/items\", \"limit\": 20}}, defined once as a schema. Each name appears once; its value holds the conditions: at (a JSON Pointer or a list of them, default \"\" = the whole data or identity), where and limit, which only narrow. The engine's record (theos/operation@1) uses the same fields for one specific operation (find, set …). An engine operation is allowed when a policy names its broad operation, its path lies under at, and where and limit hold. The Operations object is one recursive schema: on an identity policy, act's data condition maps data IDs to Operations objects, so data policies, agent scopes and engine operations share it.",
+   "decision": "Policies write operations as one object keyed by operation name: {\"read\": {\"at\": \"/items\"}, \"create\": {\"at\": \"/items\", \"limit\": 20}}, defined once as a schema. Each name appears once; its value holds the conditions: at (a JSON Pointer or a list of them, default \"\" = the whole data or identity), where and limit, which only narrow. The engine's record (its operation record) uses the same fields for one specific operation (find, set …). An engine operation is allowed when a policy names its broad operation, its path lies under at, and where and limit hold. The Operations object is one recursive schema: on an identity policy, act's data condition maps data IDs to Operations objects, so data policies, agent scopes and engine operations share it.",
    "why": "One source of truth for what an operation is: no repeated keys, no bare names next to objects, and every example, record and check reads the same fields.",
    "sources": [
     {
@@ -1362,8 +1362,8 @@
    "slides": [
     "schema-1",
     "schema-2",
-    "schema-3",
-    "schema-4"
+    "schema-4",
+    "schema-5"
    ],
    "status": "decided",
    "date": "2026-10-31"
@@ -1384,10 +1384,10 @@
     }
    ],
    "slides": [
-    "schema-5",
     "schema-6",
     "schema-7",
-    "schema-10"
+    "schema-8",
+    "schema-11"
    ],
    "status": "decided",
    "date": "2026-10-31"
@@ -1408,7 +1408,7 @@
     }
    ],
    "slides": [
-    "schema-8"
+    "schema-9"
    ],
    "status": "decided",
    "date": "2026-10-31"
@@ -1543,8 +1543,8 @@
     }
    ],
    "slides": [
-    "schema-5",
-    "schema-6"
+    "schema-6",
+    "schema-7"
    ]
   },
   {
@@ -1856,7 +1856,7 @@
    ],
    "slides": [
     "end-6",
-    "schema-4"
+    "schema-5"
    ]
   },
   {
@@ -1900,6 +1900,24 @@
    ],
    "slides": [
     "keys-3"
+   ]
+  },
+  {
+   "id": "D90",
+   "title": "Records follow schemas too; a root manifest with the meta-schema",
+   "status": "decided",
+   "date": "2026-11-01",
+   "decision": "A record's type is a schema ref (data ID @ version), never a name. Each engine release carries one root manifest: the meta-schema (JSON Schema 2020-12 plus theOS's vocabulary for stored keys and lenses) and one schema version per record kind. The engine trusts exactly those hashes. The meta-schema validates itself, and every schema version, root or not, validates against it. A record whose type isn't in the device's manifest, or reachable from it through lenses, waits. A new manifest keeps old record versions readable through lenses; records are never rewritten.",
+   "why": "The rule “refer to schemas by data ID and version, never by name” must hold for records too, and something has to check the first schema: a fixed, hash-named root set with a self-validating meta-schema closes the loop.",
+   "sources": [
+    {
+     "label": "JSON Schema 2020-12: meta-schemas",
+     "url": "https://json-schema.org/draft/2020-12/json-schema-core"
+    }
+   ],
+   "slides": [
+    "schema-2",
+    "schema-3"
    ]
   }
  ]

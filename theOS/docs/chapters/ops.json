@@ -5,19 +5,19 @@
    "title": "Everything you do is an operation.",
    "text": "Reading a list, ticking an item, searching your notes: each is an {operation}, a small piece of JSON that says what to do, on which data, at which path. One engine runs them all.",
    "code": {
-    "type": "theos/operation@1",
+    "type": "data:b3:Rfc…@b3:b60…#operation",
     "operation": "get",
     "on": "data:b3:7Hq…#house-list",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "at": ""
    },
-   "deep": "An operation is JSON: {operation, on, schema, at, …arguments}, the record theos/operation@1. One engine parses it, validates it against the schema, runs it locally and returns a result or a set of CRDT ops."
+   "deep": "An operation is JSON: {operation, on, schema, at, …arguments}, the record the operation record. One engine parses it, validates it against the schema, runs it locally and returns a result or a set of CRDT ops."
   },
   {
    "title": "A simple query.",
    "text": "“What's still open, soonest first?” An operation takes data, narrows it and hands back an answer. It runs on your own device, over what you can already read.",
    "code": {
-    "type": "theos/operation@1",
+    "type": "data:b3:Rfc…@b3:b60…#operation",
     "operation": "find",
     "on": "data:b3:7Hq…#house-list",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
@@ -34,7 +34,7 @@
    "title": "Changes are operations too.",
    "text": "Ticking an item is a {set} at a path. The engine checks it against the schema, turns it into CRDT ops and signs them. An operation is what you mean; CRDT ops are what gets stored.",
    "code": {
-    "type": "theos/operation@1",
+    "type": "data:b3:Rfc…@b3:b60…#operation",
     "operation": "set",
     "on": "data:b3:7Hq…#house-list",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
@@ -54,7 +54,7 @@
    "title": "Every operation names its schema.",
    "text": "An operation says which data, which version of its schema and which path. The engine checks the input against the schema before it runs: a set at /items/0/done must be true or false. A wrong operation fails on your own device, before anything is stored.",
    "code": {
-    "type": "theos/operation@1",
+    "type": "data:b3:Rfc…@b3:b60…#operation",
     "operation": "set",
     "on": "data:b3:7Hq…#house-list",
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
@@ -68,7 +68,7 @@
    "title": "Walking a graph.",
    "text": "Data links to data: a list to its items, an item to a photo, a person to their friends. A {walk} follows links hop by hop, and stops wherever you can't read further.",
    "code": {
-    "type": "theos/operation@1",
+    "type": "data:b3:Rfc…@b3:b60…#operation",
     "operation": "walk",
     "on": "data:b3:1Pf…#your-profile",
     "schema": "data:b3:Pf3…@b3:2d9…#profile",
@@ -88,7 +88,7 @@
    "title": "Searching by words or by meaning.",
    "text": "A {search} finds the notes that best match your words; a {near} finds the ones closest in meaning, so “plumbing problems” also finds “water under the sink”. Both indexes are built on your device, from what you can read, and never leave it.",
    "code": {
-    "type": "theos/operation@1",
+    "type": "data:b3:Rfc…@b3:b60…#operation",
     "operation": "search",
     "on": "data:b3:5Wn…#notes",
     "schema": "data:b3:Nt2…@b3:6b1…#note",
@@ -105,7 +105,7 @@
    "title": "Operations chain together.",
    "text": "The answer of one operation is the input of the next. Search by meaning, follow the links to whoever is assigned, keep only what's open.",
    "code": {
-    "type": "theos/operation@1",
+    "type": "data:b3:Rfc…@b3:b60…#operation",
     "operation": "chain",
     "steps": [
      {
