@@ -134,7 +134,8 @@
     "Approve revision 10 at Gate A (recommended: the round-6 findings were order and definitions, all answered without a new direction)",
     "One more review round first",
     "Change: tell me what"
-   ]
+   ],
+   "answered": "decisions/D-74"
   }
  ],
  "problem": {
@@ -334,7 +335,7 @@
  "checkpoints": [
   {
    "n": 1,
-   "adds": "Reads first, needing nothing from AIP-1: holds() moved from avenCEO/app.js into ui/wiki.js (three states: holds, holds in part, superseded); brain prime, holds and get as exported functions and the command; the hook in theOS/.claude/settings.json and the first line of theOS/CLAUDE.md.",
+   "adds": "Reads first, needing nothing from AIP-1: holds() moved from avenCEO/app.js into ui/wiki.js (three states: holds, holds in part, superseded); brain prime, holds and get as exported functions and the command; the hook in theOS/.claude/settings.json and the first line of theOS/CLAUDE.md. The skill is written by hand here (brain index writes it from checkpoint 2); links and backlinks are flat until checkpoint 3 groups them by type.",
    "claims": [
     "c7"
    ]
@@ -1434,6 +1435,101 @@
    "reads": [
     "decisions/D-72"
    ]
+  },
+  {
+   "at": "2026-11-01T10:58Z",
+   "by": "authors/samuel-andert",
+   "what": "gate-A",
+   "text": "Gate A passed for revision 10, with the MCP server as checkpoint 4 (D-74).",
+   "how": "in chat to avenMAIA, relayed; your words kept in the decision",
+   "writes": [
+    "decisions/D-74"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:58Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Gate A passed (D-74).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T10:58Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Answered (D-74).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t26"
+  },
+  {
+   "at": "2026-11-01T10:58Z",
+   "by": "authors/avenmaia",
+   "what": "started",
+   "text": "Build, checkpoint 1: the read verbs, checks first.",
+   "how": "by the AIP-3 thread",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:03Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Answered (D-67): link versions stay.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t13"
+  },
+  {
+   "at": "2026-11-01T11:03Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Checkpoint 1 built: brain/brain.mjs exports prime, holds and get, with the command; ui/wiki.js holds the one reflection rule (holds, holds in part, superseded) that avenCEO/app.js now calls; theOS/.claude/settings.json runs brain prime at session start; theOS/CLAUDE.md names it first; the skill theOS/.claude/skills/brain/SKILL.md; c7's test in brain/test/ with its fixtures, written first and failing, then passing (8 of 8).",
+   "how": "by the AIP-3 thread; node --test theOS/brain/test/*.test.mjs",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:03Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 1 review by a fresh agent: 1 Blocker (a part named in free text counted as whole, so D-8, D-12, D-46, D-59 and D-63 were left out of what holds), 2 Major (a Samuel task of an earlier step dropped; no skill), 5 Nit. All fixed, each with a fixture; the wording of the rule corrected (a chain does not bring an old doc back).",
+   "how": "a fresh subagent reading the record, the diff and running the tests",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:04Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 1 re-review by a fresh agent: no Blocker, 1 Major (brain get refused the ids prime and holds print), 6 Nit. The Major fixed with a test; Nits fixed but two: a question with only an answer text stays open, as the apps count it; 'newer' is enforced by brain add at checkpoint 2. Checkpoint 1 passes its gates: 9 of 9 tests.",
+   "how": "a fresh subagent reading the record, the commit and running the tests",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T11:04Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 1 done: the read verbs.",
+   "how": "node --test theOS/brain/test/*.test.mjs (9 pass); two fresh reviews",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
   }
  ],
  "reviews": [
@@ -1620,7 +1716,7 @@
    },
    {
     "verb": "brain holds <type>",
-    "does": "Lists the docs of a type that hold now, from the one holds() in ui/wiki.js that the apps also use. A doc holds unless a doc that holds supersedes it; superseded only in part, it holds in part. The result does not depend on the order branches were merged."
+    "does": "Lists the docs of a type that hold now, from the one holds() in ui/wiki.js that the apps also use. A doc holds until a newer doc supersedes it (a chain does not bring an old one back); superseded only in part (part is anything but all, whole or left out), it holds in part. The result does not depend on the order branches were merged."
    },
    {
     "verb": "brain get <id>",

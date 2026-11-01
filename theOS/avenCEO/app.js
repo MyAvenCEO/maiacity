@@ -96,23 +96,21 @@ function toc() {
 // The trace (shared with Sources): the events of every intent that wrote or read a doc.
 const traceOf = (path) => sec('Trace', W.traceTable(path, HERE, G.docs, G.trace ??= W.trace(G.docs)), "The events that wrote or read this doc, from the intents' lifecycles.");
 
-// brain's reflection: a decision or term holds until a later one supersedes it; superseded in part, the rest still holds. Derived, never stored.
-function supersededBy(path) {
-  return [...ofType('decision'), ...ofType('term')].flatMap(([p, d]) => (d.supersedes || []).filter((s) => (s.decision || s.term) === path).map((s) => ({ p, ...s })));
-}
-function holds(path) { const by = supersededBy(path); return by.some((s) => s.part !== 'part') ? 'superseded' : by.length ? 'holds in part' : 'holds'; }
+// brain's reflection (ui/wiki.js, shared with brain.mjs): a doc holds until a newer one supersedes it; superseded in part, the rest still holds.
+const supersededBy = (path) => W.supersededBy(G.docs, path);
+const holds = (path) => W.holds(G.docs, path);
 const holdChip = (path) => { const h = holds(path); return `<span class="chip ${h === 'holds' ? 'sage' : h === 'superseded' ? 'blocker' : 'ochre'}">${h}</span>`; };
 function reflection(d, path) {
   const by = supersededBy(path), word = d.type === 'term' ? 'Term' : 'Decision';
   return sec('Superseded by', by.length ? table([word, 'Part', 'What changed'], by.map((s) => [L(s.p), e(s.part || 'whole'), T(s.what || s.how)])) : '')
-    + sec('Supersedes', d.supersedes?.length ? table([word, 'Part', 'What changed'], d.supersedes.map((s) => [L(s.decision || s.term), e(s.part || 'whole'), T(s.what || s.how)])) : '')
+    + sec('Supersedes', d.supersedes?.length ? table([word, 'Part', 'What changed'], d.supersedes.map((s) => [L(W.target(s)), e(s.part || 'whole'), T(s.what || s.how)])) : '')
     + sec('Builds on', d.relates?.length ? `<p>${d.relates.map(L).join(' · ')}</p>` : '')
     + sec("brain's reflection", d.reflection ? `<p>Checked against ${T(d.reflection.checked)}: ${T(d.reflection.result)}.</p>` : '');
 }
 function reflected(title, type) {
   const xs = ofType(type).sort((a, b) => (b[1].n ?? 0) - (a[1].n ?? 0) || W.label(a[1], a[0]).localeCompare(W.label(b[1], b[0])));
   const card = ([p, d]) => {
-    const part = supersededBy(p).filter((s) => s.part === 'part').map((s) => `${s.p.split('/').pop()}: ${s.what}`).join(' ');
+    const part = supersededBy(p).filter((s) => !W.whole(s)).map((s) => `${s.p.split('/').pop()}: ${s.what || s.how}`).join(' ');
     return `<a class="card" href="#${p}"><span class="top">${holdChip(p)}${chips(d.about)}</span><b>${e(type === 'decision' ? `${d.id} · ${d.title || d.means}` : W.label(d, p))}</b>
       <small>${e(d.means)}</small>${part ? `<small><b>Changed by</b> ${e(part)}</small>` : ''}</a>`;
   };
