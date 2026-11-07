@@ -15,6 +15,7 @@ import * as cache from './cache.js';
 import { LATEST } from './engines.js';
 import { queryOf } from './params.js';
 import { handedPieces } from './box/pieces.js';
+import { lodOf } from './lodcard.js';
 
 export { buildOf, checked, hashText, parseBuild } from './builds.js';
 
@@ -65,7 +66,9 @@ async function load() {
 /** one catalog row into the index, its record and its size */
 const keep = (r) => {
 	const params = r.record?.card?.params;
-	INDEX.recipes[r.hash] = { group: r.group, id: r.id ?? r.slug, v: r.v, variant: r.variant, first: r.first, asset: r.asset, label: r.label, ...(r.proposed ? { proposed: true } : {}), ...(params?.length ? { params } : {}) };
+	// its levels of detail as its card names them (./lodcard.js): a version from before the contract read as it drew
+	const lod = lodOf(r.record?.card);
+	INDEX.recipes[r.hash] = { group: r.group, id: r.id ?? r.slug, v: r.v, variant: r.variant, first: r.first, asset: r.asset, label: r.label, lod, ...(r.proposed ? { proposed: true } : {}), ...(params?.length ? { params } : {}) };
 	records.set(r.hash, r.record);
 	sizes.set(r.hash, r.size);
 };

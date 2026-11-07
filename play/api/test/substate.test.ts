@@ -206,7 +206,7 @@ suite("sub-states on the board", () => {
     expect((await passed(toAccept.id)).stage).toBe("proposal");
     const withWork = await built();
     expect((await passed(withWork.id)).stage).toBe("proposal");
-    expect((await tool("propose_asset", { group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: withWork.id })).error).toBeUndefined();
+    expect((await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: withWork.id })).error).toBeUndefined();
     const toShip = await codeAtProposal();
     const STUB = { state: "working" as const, tag: "stub", why: "The stub says it is working" };
     const real = sub.of;
@@ -304,7 +304,7 @@ suite("sub-states on the board", () => {
     expect((await tool("get_intent", { intent: s.id })).brief).toBeNull();
     const held = heldText(s.id, [{ id: dep.id, title: dep.title, stage: "idea" }]);
     expect(await passed(s.id)).toEqual({ error: held });
-    expect((await tool("propose_asset", { group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: s.id })).error).toBe(held);
+    expect((await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: s.id })).error).toBe(held);
     expect(await intent(s.id)).toMatchObject({ stage: "build", results: null, work: null });
     // main's confirmations after a merge are still taken
     expect((await tool("check_intent", { intent: s.id, results: [{ check: "c1", pass: true, evidence: "on main", where: "main" }] })).stage).toBe("build");

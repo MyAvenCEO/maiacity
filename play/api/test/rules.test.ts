@@ -289,7 +289,7 @@ suite("auto-accept rules", () => {
     // any other kind: refused naming the declared kinds, nothing written
     const story = await tool("propose_story", { title: "Not an artifact", body: BODY, note: "v1", intent: only.id });
     expect(story.error).toContain(`declares its work as ${SCHEMA.artifact}`);
-    const asset = await tool("propose_asset", { group: "plants", label: "Not an artifact", source: SOURCE("no"), note: "v1", intent: only.id });
+    const asset = await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: "Not an artifact", source: SOURCE("no"), note: "v1", intent: only.id });
     expect(asset.error).toContain(`declares its work as ${SCHEMA.artifact}`);
     const pr = await tool("check_intent", { intent: only.id, pr: 4242, results: [{ check: "c1", pass: true, evidence: "exit 0", commit: sha(4242) }] });
     expect(pr.error).toContain(`declares its work as ${SCHEMA.artifact}`);

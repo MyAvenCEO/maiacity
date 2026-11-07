@@ -53,6 +53,13 @@ import { STRETCH } from './lod.js';
 /** the simplifier's code, made ready once */
 export const ready = MeshoptSimplifier.ready;
 
+/**
+ * This simplifier's version: part of the key every level it made is kept by on this device (../cache.js
+ * `levelKeyOf`). Raised whenever what it makes of a build changes (its weights, its passes, its error), so no level made
+ * the old way is drawn again.
+ */
+export const VERSION = 1;
+
 /** what a lower level leaves out: the bones' weights, which only a posed copy, drawn from level 0's tree, uses */
 export const LEFT = new Set(['skinIndex', 'skinWeight']);
 

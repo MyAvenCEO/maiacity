@@ -25,6 +25,7 @@ const PAPAYA_STORY = "7adaf0b3-01a9-8bb9-b250-d2bee7016c4c";
 import { Rate } from "../src/limits";
 import { COOP } from "../src/access";
 import { randomUUID } from "node:crypto";
+import { leveled } from "./fixtures/lod";
 
 const URL_ = process.env.TEST_DATABASE_URL;
 const suite = URL_ ? describe : describe.skip;
@@ -94,7 +95,7 @@ suite("play API", () => {
     return id;
   };
   /** an asset's version proposed over HTTP (POST /api/intents) by admin `as`, for an intent of its own made ready for it */
-  const propose = async (as: string, body: Record<string, unknown>) => call(as, "POST", "/api/intents", { intent: await ready(as), ...body });
+  const propose = async (as: string, body: Record<string, unknown>) => call(as, "POST", "/api/intents", { intent: await ready(as), ...leveled(body) });
   /** an intent's work decided by an admin: what the work came to (its status, number, version, merged, message), or the refusal */
   const decided = async (intent: string, verdict: "accept" | "archive") => {
     const r = await call("ada", "POST", `/api/intents/${intent}/${verdict}`);
@@ -391,7 +392,7 @@ suite("play API", () => {
     expect(listed.data.result.isError).toBeUndefined();
     const proposed = await rpc(made.data.token, "tools/call", {
       name: "propose_asset",
-      arguments: { intent: await ready(), group: "plants", slug: "mcp-fern", label: "MCP fern", source: "module.exports.recipe = function (id, v) {\n  return { meta: { id, v } };\n};\n", note: "proposed by an agent" },
+      arguments: { intent: await ready(), group: "plants", slug: "mcp-fern", label: "MCP fern", source: "module.exports.recipe = function (id, v) {\n  return { meta: { id, v } };\n};\n", note: "proposed by an agent", lod: { levels: "derived" } },
     });
     expect(proposed.data.result.isError).toBeUndefined();
     const open = (await waiting()).find((p: any) => p.slug === "mcp-fern");
@@ -418,7 +419,7 @@ suite("play API", () => {
     expect(worlds.data.result.isError).toBeUndefined();
     const world = await rpc(made.data.token, "tools/call", {
       name: "propose_asset",
-      arguments: { intent: await ready(), group: "worlds", slug: "mcp-test-world", label: "Test world", source: "module.exports.recipe = function (id, v) {\n  return { meta: { group: 'worlds', id, v } };\n};\n", note: "a stand-in world" },
+      arguments: { intent: await ready(), group: "worlds", slug: "mcp-test-world", label: "Test world", source: "module.exports.recipe = function (id, v) {\n  return { meta: { group: 'worlds', id, v } };\n};\n", note: "a stand-in world", lod: { levels: "derived" } },
     });
     expect(world.data.result.isError).toBeUndefined();
     const worldOpen = (await waiting()).find((p: any) => p.slug === "mcp-test-world");
@@ -427,7 +428,7 @@ suite("play API", () => {
     // a new asset with its variants at once (a truck's kinds), each its own recipe
     const kinds = await rpc(made.data.token, "tools/call", {
       name: "propose_asset",
-      arguments: { intent: await ready(), group: "machines", slug: "mcp-truck", label: "Truck", source: "module.exports.recipe = function (id, v, variant) {\n  return { meta: { id, v, variant } };\n};\n", variants: [{ name: "box" }, { name: "tanker", label: "Truck: Tanker" }], default_variant: "tanker", note: "two kinds" },
+      arguments: { lod: { levels: "derived" }, intent: await ready(), group: "machines", slug: "mcp-truck", label: "Truck", source: "module.exports.recipe = function (id, v, variant) {\n  return { meta: { id, v, variant } };\n};\n", variants: [{ name: "box" }, { name: "tanker", label: "Truck: Tanker" }], default_variant: "tanker", note: "two kinds" },
     });
     expect(kinds.data.result.isError).toBeUndefined();
     const kindsOpen = (await waiting()).find((p: any) => p.slug === "mcp-truck");
@@ -436,16 +437,16 @@ suite("play API", () => {
     // a recipe that declares params is refused without them, and records them when given
     const PARAMS = [{ id: "kind", label: "Kind", type: "integer", min: 0, max: 1, value: 0 }];
     const withParams = "module.exports.recipe = function (id, v) {\n  return { meta: { id, v, params: PARAMS } };\n};\nconst PARAMS = [];\n";
-    const noParams = await rpc(made.data.token, "tools/call", { name: "propose_asset", arguments: { intent: await ready(), group: "things", slug: "mcp-lamp", label: "Lamp", source: withParams, note: "params left out" } });
+    const noParams = await rpc(made.data.token, "tools/call", { name: "propose_asset", arguments: { lod: { levels: "derived" }, intent: await ready(), group: "things", slug: "mcp-lamp", label: "Lamp", source: withParams, note: "params left out" } });
     expect(noParams.data.result.isError).toBe(true);
     expect(noParams.data.result.content[0].text).toContain("params");
-    const given = await rpc(made.data.token, "tools/call", { name: "propose_asset", arguments: { intent: await ready(), group: "things", slug: "mcp-lamp", label: "Lamp", source: withParams, params: PARAMS, note: "params given" } });
+    const given = await rpc(made.data.token, "tools/call", { name: "propose_asset", arguments: { lod: { levels: "derived" }, intent: await ready(), group: "things", slug: "mcp-lamp", label: "Lamp", source: withParams, params: PARAMS, note: "params given" } });
     expect(given.data.result.isError).toBeUndefined();
     const lampOpen = (await waiting()).find((p: any) => p.slug === "mcp-lamp");
     const lamp = (await call("ada", "GET", `/api/intents/${lampOpen.id}`)).data.review;
     expect(JSON.stringify(lamp)).toContain('"kind"');
     expect((await archive(lampOpen.id)).data.result.isError).toBeUndefined();
-    const none = await rpc(made.data.token, "tools/call", { name: "propose_asset", arguments: { intent: await ready(), group: "machines", label: "Nothing", note: "no source" } });
+    const none = await rpc(made.data.token, "tools/call", { name: "propose_asset", arguments: { lod: { levels: "derived" }, intent: await ready(), group: "machines", label: "Nothing", note: "no source" } });
     expect(none.data.result.isError).toBe(true);
     for (const id of [byPage.data.intent, theirsOpen.data.intent]) await call("ada", "POST", `/api/intents/${id}/archive`);
     const wrong = await rpc(made.data.token, "tools/call", {
@@ -454,7 +455,7 @@ suite("play API", () => {
     });
     expect(wrong.data.result.isError).toBe(true);
     expect(wrong.data.result.content[0].text).toContain("not readable");
-    const bundled = await rpc(made.data.token, "tools/call", { name: "propose_asset", arguments: { intent: await ready(), group: "plants", slug: "mcp-moss", label: "Moss", recipe: recipe("mcp-moss", 1), note: "no source" } });
+    const bundled = await rpc(made.data.token, "tools/call", { name: "propose_asset", arguments: { lod: { levels: "derived" }, intent: await ready(), group: "plants", slug: "mcp-moss", label: "Moss", recipe: recipe("mcp-moss", 1), note: "no source" } });
     expect(bundled.data.result.isError).toBe(true);
     expect((await call("ada", "DELETE", `/api/tokens/${made.data.id}`)).data.revoked).toBe(true);
     expect((await rpc(made.data.token, "tools/list")).status).toBe(401);

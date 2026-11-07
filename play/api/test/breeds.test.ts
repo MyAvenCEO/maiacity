@@ -96,7 +96,7 @@ suite("breeds", () => {
     token = (await call("POST", "/api/tokens", { name: "agent" })).data.token;
 
     // a papaya of two kinds, proposed as a version of variants and accepted: its variants are its breeds from then on
-    const made = await tool("propose_asset", {
+    const made = await tool("propose_asset", { lod: { levels: "derived" },
       group: "plants", label: "Papaya", note: "its first version", default_variant: "female", intent: await readyIntent("A papaya of two kinds"),
       variants: [
         { name: "female", label: "Papaya: Female", source: SOURCE("a female papaya") },

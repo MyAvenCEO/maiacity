@@ -57,7 +57,10 @@ const RECIPE_RULE =
   "recipe file itself (the asset box's header, then the source, then the line naming this asset and its new version). The code runs only " +
   "in the asset box, the sandboxed frame in the page, never on play's server. Start from the head's source (get_asset gives its hash, " +
   "get_file its text). Every version has one: an imported version's is legacy's own code its recipe file was bundled from (the asset's " +
-  "library, each module marked by the file it came from), made again and checked against that file byte for byte.";
+  "library, each module marked by the file it came from), made again and checked against that file byte for byte. " +
+  "Every new version names its levels of detail on its card, `lod: { levels: 'declared' | 'derived' }` (propose_asset's `lod`; doc_edit's card " +
+  "field `card.lod`, carried on from the head where it has one): 'declared' where its source exports its own L1 and L2 as a plain literal, " +
+  "`module.exports.levels = [{ values: { … } }, …]`, each the same recipe built with those values (its params), else 'derived'; L0 is its build, L3 its picture.";
 
 const STORY_FORMAT =
   "A story is a film as one timeline (format story/1): { schema: 'story/1', format: '9:16' | '16:9' | '1:1' | '4:5', fps: 24 | 25 | 30 | 48 | 50 | 60, duration, tracks }. " +
@@ -206,6 +209,14 @@ export function mcp({ db, store, github = null, commit }: { db: Db; store: BlobS
               "the parameters its recipe declares (its meta.params: { id, label, type: 'number' | 'integer' | 'string', value, min?, max?, step?, names?, maxLength? }), in the order its build takes them. play runs no code, so it knows them only from here: a recipe that declares params and is proposed without them is refused",
             items: { type: "object" },
           },
+          lod: {
+            type: "object",
+            description:
+              "its levels of detail (required: every new version names them): { levels: 'declared' } where its recipe declares its own L1 and L2 (module.exports.levels = [{ values: { detail: 0.25 } }, { values: { detail: 0.1 } }], a plain literal, each the same recipe built with those values, which its params declare), else { levels: 'derived' } (L1 and L2 simplified from its build within the renderer's budgets); L0 is its build, L3 its picture. Optional `budgets`: the triangle counts it is held to, L0 first",
+            properties: { levels: { type: "string", enum: ["declared", "derived"] }, budgets: { type: "array", items: { type: "integer", minimum: 1 }, maxItems: 4 } },
+            required: ["levels"],
+            additionalProperties: false,
+          },
           sheet: { type: ["string", "null"], description: "its reference sheet: the hash of an image play keeps (add it first with add_story_frame, with a label for the Library), a plant's plate of every stage and organ made for it; shown with the version in the asset library and, in the Library, beside the image, the plant it belongs to. Carried on from the head unless given; null takes it away" },
           datasheet: { type: ["string", "null"], description: "its data sheet: the hash of a document play keeps (add_document), the researched numbers with every source. Shown with the version and, in the Library, beside the document. Carried on from the head unless given; null takes it away" },
           brief: { type: ["string", "null"], description: "the brief its reference sheet was made from: the hash of a document play keeps (add_document). Carried on from the head unless given; null takes it away" },
@@ -213,7 +224,7 @@ export function mcp({ db, store, github = null, commit }: { db: Db; store: BlobS
         required: ["group", "label", "note"],
         additionalProperties: false,
       },
-      run: async ({ group, slug, label, source, note, variants, default_variant, params, sheet, datasheet, brief, intent }, me) => {
+      run: async ({ group, slug, label, source, note, variants, default_variant, params, lod, sheet, datasheet, brief, intent }, me) => {
         const kinds = Array.isArray(variants) && variants.length ? variants : null;
         if (!source && !kinds) throw new VersionError("Give its source, or its variants.");
         // play runs no code: a recipe's declared params reach its record only from here (a build with values is refused without them)
@@ -227,7 +238,7 @@ export function mcp({ db, store, github = null, commit }: { db: Db; store: BlobS
           me,
           {
             new: { group, slug, label },
-            ...(params !== undefined ? { card: { params } } : {}),
+            ...(params !== undefined || lod !== undefined ? { card: { ...(params !== undefined ? { params } : {}), ...(lod !== undefined ? { lod } : {}) } } : {}),
             ...(kinds
               ? { variants: Object.fromEntries(kinds.map((x: any) => [`${x.name}`, { source: `${x.source ?? source ?? ""}`, ...(x.label !== undefined ? { label: `${x.label}` } : {}) }])), ...(default_variant ? { defaultVariant: `${default_variant}` } : {}) }
               : { source: `${source}` }),

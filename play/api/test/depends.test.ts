@@ -165,7 +165,7 @@ suite("intents depend on intents", () => {
     const approve = refusal(await decide(atSpecify.id, "approve"));
     const checked = await passed(inBuild.id);
     const proposal = checked.stage === "proposal" ? null : checked.error;
-    const work = await tool("propose_asset", { group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: forWork.id });
+    const work = await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: forWork.id });
     const accept = refusal(await decide(toAccept.id, "accept"));
     const ship = refusal(await decide(toShip.id, "accept"));
     await clearShips();
@@ -194,7 +194,7 @@ suite("intents depend on intents", () => {
     const toAccept = await atProposal();
     const toShip = await codeAtProposal();
     const withWork = await atProposal();
-    expect((await tool("propose_asset", { group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: withWork.id })).error).toBeUndefined();
+    expect((await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: withWork.id })).error).toBeUndefined();
     // in Ship, waiting its turn behind another (only a waiting intent is accepted, intent 2bf8af96): its turn is the gate too
     const ahead = await codeAtProposal();
     const pending = { pr: ahead.pr, head: ahead.head, merge: "", by: "ada", round: 1, started: new Date().toISOString(), steps: [{ key: "ready", name: "Ready to merge", state: "running" }], pending: { kind: "merge", head: ahead.head } };
@@ -208,7 +208,7 @@ suite("intents depend on intents", () => {
       gh.pulls.get(waiting.pr)!.mergeable = true;
       expect(await decide(atSpecify.id, "approve")).toMatchObject({ status: 409, data: { error: "The stub refuses every move." } });
       expect(await passed(inBuild.id)).toMatchObject({ stage: "build", refused: "The stub refuses every move." });
-      expect((await tool("propose_asset", { group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: forWork.id })).error).toBe("The stub refuses every move.");
+      expect((await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: forWork.id })).error).toBe("The stub refuses every move.");
       expect(await decide(toAccept.id, "accept")).toMatchObject({ status: 409, data: { error: "The stub refuses every move." } });
       expect(await decide(toShip.id, "accept")).toMatchObject({ status: 409, data: { error: "The stub refuses every move." } });
       expect(await decide(withWork.id, "accept")).toMatchObject({ status: 409, data: { error: "The stub refuses every move." } });
@@ -311,7 +311,7 @@ suite("intents depend on intents", () => {
     expect(await tool("archive_intent", { intent: a.id })).toMatchObject({ intent: a.id, stage: "archived" });
     // its work at Proposal, archived
     const w = await atProposal();
-    expect((await tool("propose_asset", { group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: w.id })).error).toBeUndefined();
+    expect((await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: `Fern ${++k}`, source: SOURCE, note: "x", intent: w.id })).error).toBeUndefined();
     await depend(w.id, dep.id);
     expect((await decide(w.id, "archive")).data.stage).toBe("archived");
     // a code intent at Proposal, rejected

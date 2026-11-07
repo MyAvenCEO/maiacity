@@ -244,7 +244,7 @@ suite("one version control", () => {
     {
       kind: "asset",
       id: async () => {
-        const made = await tool("propose_asset", { group: "plants", label: "Round fern", source: SOURCE("a round fern"), note: "its first version", intent: await readyIntent("A round fern") });
+        const made = await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: "Round fern", source: SOURCE("a round fern"), note: "its first version", intent: await readyIntent("A round fern") });
         await call("ada", "POST", `/api/intents/${made.intent}/accept`);
         return made.asset;
       },

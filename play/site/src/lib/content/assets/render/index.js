@@ -6,12 +6,14 @@
  *
  * - Every build comes the one way any build comes (../load.js): from this device's cache, else from the asset box,
  *   checked. Nothing of an asset runs here; what it made is only data, and our code draws it.
- * - Each kind is drawn at the level of detail its size on screen calls for (./lod.js): three shapes and, smallest, its
- *   picture (./impostors.js). A recipe that takes a `detail` (the plants) is built at a lower detail for each, its
- *   coarsest first, so a world stands as soon as it has it, and a finer one is asked for only once a copy is near
- *   enough to want it. Every other kind is built once, at its finest, and its two lower levels are made from that
- *   build's own geometry by simplifying it (./lower.js, ./simplify.js), beside the page, in a worker of their own,
- *   each within what it may cost. Its picture is taken from the coarsest shape it was built at.
+ * - Each kind is drawn at the level of detail its size on screen calls for (./lod.js), by one contract for every asset
+ *   (../lodcard.js, play/SPEC.md §4.5): L0 its build; L1 and L2 its recipe's own where its card declares them (the
+ *   same recipe built with the values its levels name), built coarsest first, so a world stands as soon as it has it,
+ *   and a finer one asked for only once a copy is near enough to want it; else made from its build's own geometry by
+ *   simplifying it (./lower.js, ./simplify.js), beside the page, in a worker of their own, each within what it may
+ *   cost; L3 its picture (./impostors.js), taken from the coarsest shape it was built at. Every level made here and
+ *   every picture is kept on this device by its build's hash, the level and its maker's version (./levels.js), so it
+ *   is made once a device.
  * - Every copy of a kind at one level is one more instance of the same few drawings (./prepare.js): a forest of a
  *   thousand trees of forty kinds is a few hundred draw calls, the pictures a handful.
  * - Every material is the renderer's own (./presets.js), with the shader code only we add: the dither a level fades
@@ -34,11 +36,10 @@ import { createImpostors } from './impostors.js';
 import { budget, dropOnUpload } from '../../render/budget.js';
 import { LEVELS, SMALLEST, budgetOf, choose, errorOf, sizeOn, smallestOf, thresholdsOf } from './lod.js';
 import { createLowering } from './lower.js';
+import { createKept } from './levels.js';
+import { levelValues } from '../lodcard.js';
 import { prepare } from './prepare.js';
 import { createPresets } from './presets.js';
-
-/** the details a recipe that takes one is built at, its finest level first (plants: Sandbox 4's two and the whole) */
-export const DETAILS = [1, 0.25, 0.1];
 
 /** after how long (ms) a kind that failed only in passing (`Unread`) is asked for again (`settle`) */
 const AGAIN_AFTER = 60_000;
@@ -69,9 +70,10 @@ function resolve(ref) {
  * @param {{
  *   renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, boxes?: number, details?: number[],
  *   levels?: number[], whole?: number[], px?: number, cache?: boolean, onShadows?: () => void
- * }} o `boxes` how many build side by side; `details` and `levels` the details a recipe is built at and the sizes on
- *   screen each is drawn to (./lod.js); `whole` the sizes on screen of a kind built once, at its finest (one that takes
- *   no detail: a thing), its lower levels made from it, its picture taking over where its second shape's triangles put
+ * }} o `boxes` how many build side by side; `levels` the sizes on screen a kind's built levels are drawn to (./lod.js),
+ *   `details` a world's own details for a version from before the contract that took them (../lodcard.js
+ *   `levelValues`); `whole` the sizes on screen of a kind built once, at its finest (its lower levels derived: a
+ *   thing), its lower levels made from it, its picture taking over where its second shape's triangles put
  *   it (`levels` when not given, its picture where its coarsest shape's put it); `px` each picture's pixels a side;
  *   `cache: false` builds everything afresh;
  *   `onShadows` told when what casts a shadow changed, for a world that draws its shadows again only every so often
@@ -79,7 +81,6 @@ function resolve(ref) {
  */
 export function createAssets(o) {
 	const { renderer, camera } = o;
-	const details = o.details ?? DETAILS;
 	const levels = o.levels ?? LEVELS;
 	const whole = o.whole ?? levels;
 	renderer.localClippingEnabled = true;
@@ -92,6 +93,8 @@ export function createAssets(o) {
 	const presets = createPresets();
 	const pictures = createImpostors(renderer, { px: o.px });
 	const lowering = createLowering();
+	// every level and picture made here kept on this device by its build (./levels.js)
+	const kept = createKept({ lowering, keep: o.cache !== false });
 	group.add(pictures.group);
 
 	/* ── the builds asked for: each read from this device's cache, and those not kept built in the boxes, the most
@@ -206,14 +209,16 @@ export function createAssets(o) {
 	function use(ref, opts) {
 		const { hash, params } = resolve(ref);
 		const at = heldAt(hash);
-		const takes = at.params?.some((p) => p.id === 'detail');
+		// its built levels, as its card declares them (../lodcard.js): its build alone, or its recipe's own levels too
+		const values = levelValues(at.lod, o.details);
+		const declared = values.length > 1;
 		// each named as it is kept, its own values filled in, so two refs of one build are one kind
-		const names = (takes ? details.slice(0, levels.length).map((d) => buildOf(hash, { ...params, detail: String(d) })) : [buildOf(hash, params)]).map((n) => canonical(n).name);
+		const names = values.slice(0, declared ? levels.length : 1).map((v) => canonical(buildOf(hash, { ...params, ...v })).name);
 		const key = names[0];
 		let k = kinds.get(key);
 		if (k) return k;
-		// the sizes on screen its levels are drawn to: a recipe's at its details, or one built whole and lowered from it
-		const sizes = takes ? levels : whole;
+		// the sizes on screen its levels are drawn to: a recipe's own, or one built whole and lowered from it
+		const sizes = declared ? levels : whole;
 		k = {
 			key,
 			label: at.label,
@@ -341,7 +346,7 @@ export function createAssets(o) {
 		const list = k.levels.map((_, j) => j).filter((j) => !k.levels[j].name && k.levels[j].state === 'idle');
 		const made = want(k, k.base).then(() => {
 			const from = k.levels[k.base].level;
-			return lowering.lower(from, list.map((j) => planOf(k, j, from)));
+			return kept.lower(k.names[k.base], from, list.map((j) => ({ L: j, plan: planOf(k, j, from) })));
 		});
 		list.forEach((j, n) => {
 			const lv = k.levels[j];
@@ -349,7 +354,8 @@ export function createAssets(o) {
 			lv.promise = made.then(
 				async (out) => {
 					lv.level = out[n];
-					lv.from = 'made';
+					// made here by simplifying, or read from this device's cache, made once before (./levels.js)
+					lv.from = out[n].kept ? 'kept' : 'made';
 					// nothing taken away (a kiosk of sixty triangles): drawn as the level it was made from
 					if (lv.level.same) lv.as = k.base;
 					await show(k, j);
@@ -377,7 +383,7 @@ export function createAssets(o) {
 	function lighten(k, L) {
 		const lv = k.levels[L], from = lv.level;
 		const most = budgetOf(L, Infinity, k.sizes);
-		lowering.lower(from, [{ ...planOf(k, L, from), budget: most, most, every: true }], true).then(
+		kept.lower(k.names[L], from, [{ L, plan: { ...planOf(k, L, from), budget: most, most, every: true } }], true).then(
 			async ([made]) => {
 				if (gone || lv.level !== from) return;
 				const fresh = { level: made, meshes: made.draws.map((d) => meshOf(k, L, d)) };
@@ -405,7 +411,11 @@ export function createAssets(o) {
 		await compiled(lv, base && k.picture);
 		// its picture taken as soon as its coarsest built shape is here, while the world loads, not by a frame that
 		// wants it: a copy whose picture is missing draws that whole shape in its place
-		if (base && !k.slot && k.picture) k.slot = pictures.add(lv.level);
+		if (base && !k.slot && k.picture) {
+			const slot = await kept.picture(k.names[k.base], lv.level, pictures);
+			if (gone) return;
+			if (!k.slot) k.slot = slot;
+		}
 		lv.state = 'ready';
 		dirty = shadows = true;
 	}
@@ -918,9 +928,14 @@ export function createAssets(o) {
 			materials: presets.size,
 			pages: pictures.pages,
 			building: queue.length + loads + compiling + lowering.busy,
-			builds: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready' && l.from !== 'made').length, 0),
-			/** the levels made by simplifying a build, and those of them it took nothing from */
-			made: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready' && l.from === 'made').length, 0),
+			builds: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready' && l.from !== 'made' && l.from !== 'kept').length, 0),
+			/** the levels made by simplifying a build (here, or read from this device's cache), and those of them it took nothing from */
+			made: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready' && (l.from === 'made' || l.from === 'kept')).length, 0),
+			/** what this renderer simplified and photographed itself, and what it read from this device's cache instead (./levels.js) */
+			derived: kept.counted.derived,
+			keptLevels: kept.counted.keptLevels,
+			taken: kept.counted.taken,
+			keptPictures: kept.counted.keptPictures,
 			same: list.reduce((a, k) => a + k.levels.filter((l) => l.state === 'ready' && l.as >= 0).length, 0)
 		};
 	}

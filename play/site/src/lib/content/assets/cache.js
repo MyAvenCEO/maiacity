@@ -19,6 +19,11 @@
  * built with, sorted (`seed=maia&stage=9`). The same recipe with the same values on the same engine is the same build,
  * so it is kept once; a recipe changed is another hash, so another build, and the old ones fade out by LIMIT.
  *
+ * Beside the builds, what this device made from them (`levelKeyOf`, `getLevel`, `putLevel`): each level of detail
+ * derived by simplifying a build (./render/simplify.js) and each picture taken of it (./render/impostors.js), under the
+ * build, the level and the version of its maker, so a second visit, or a second world, makes none of them again
+ * (play/SPEC.md §4.5). A declared level is a build, kept as builds are.
+ *
  * Beside the builds, each recipe's file as the Maia City vault handed it out (./vault.js), under its own hash (`fileAt`,
  * `keepFile`): what runs in the box after a build came out of here (a machine's clip) needs its recipe, and a second
  * visit reads it from here, not off the feed again. Held to its hash again whenever it is read back.
@@ -36,10 +41,13 @@ export const CONTEXT = 'maiaCITY 2026-10-15 asset cache';
 export const LIMIT = 512 * 1024 * 1024;
 /** the cache's folder in the origin private file system */
 const DIR = 'asset-cache';
-/** a build's file is named BUILD and its key, a recipe's file RECIPE and its hash */
-const BUILD = 'build-', RECIPE = 'recipe-';
+/** a build's file is named BUILD and its key, a recipe's file RECIPE and its hash, a level made from a build LEVEL and its
+ *  key (`levelKeyOf`) */
+const BUILD = 'build-', RECIPE = 'recipe-', LEVEL = 'level-';
 /** an entry's file */
-const ENTRY = /^(build|recipe)-[0-9a-f]{64}$/;
+const ENTRY = /^(build|recipe|level)-[0-9a-f]{64}$/;
+/** the context a level's key is derived in: another than a build's, so no level's key is ever a build's */
+export const LEVELS_CONTEXT = 'maiaCITY 2026-11-07 asset levels';
 /** the file where when each entry was last used is noted, by its file's name */
 const USED = 'used.json';
 /** the IndexedDB database the cache was kept in until 2026-10-20: deleted (Samuel 2026-10-20, "ok for deleting indexdb") */
@@ -55,6 +63,20 @@ export function keyOf({ engine, recipe, params }) {
 	if (!HASH.test(engine)) throw new Error('no engine hash');
 	if (!HASH.test(recipe)) throw new Error('no recipe hash');
 	return bytesToHex(blake3(utf8ToBytes(JSON.stringify([engine, recipe, queryOf(params)])), { context: utf8ToBytes(CONTEXT) }));
+}
+
+/**
+ * The cache key of what is made from a build on this device (play/SPEC.md §4.5, ./lodcard.js): a level derived from it
+ * by simplifying, or its picture. `build` the build it is made from (`<recipe hash>?values`, as ../load.js names it
+ * canonically), `level` which (1, 2 … or 'picture'), `plan` what it is made to (its budget, its error …, or the
+ * picture's pixels), `deriver` the version of what makes it (./render/simplify.js `VERSION`, ./render/impostors.js
+ * `VERSION`): the same build made the same way by the same maker is the same level, so it is made once a device.
+ * @param {{ build: string, level: number | string, plan?: unknown, deriver: number | string }} o @returns {string} 64 hex digits
+ */
+export function levelKeyOf({ build, level, plan, deriver }) {
+	if (typeof build !== 'string' || !/^[0-9a-f]{64}(\?|$)/.test(build)) throw new Error('no build');
+	if (deriver === undefined || deriver === null) throw new Error("no deriver's version");
+	return bytesToHex(blake3(utf8ToBytes(JSON.stringify([build, level, plan ?? null, deriver])), { context: utf8ToBytes(LEVELS_CONTEXT) }));
 }
 
 /**
@@ -592,6 +614,56 @@ export async function drop(key) {
 	if (!d || !HASH.test(key)) return;
 	await removed(d, BUILD + key);
 	held = null;
+}
+
+/**
+ * What was made from a build and kept under `key` (`levelKeyOf`): a level or a picture, plain data (typed arrays,
+ * numbers, strings) as it was kept; undefined if there is none (or no cache), or it doesn't read (then dropped). Its
+ * maker's caller checks it is what it asked for.
+ * @param {string} key @returns {Promise<any>}
+ */
+export async function getLevel(key) {
+	if (!HASH.test(key)) return undefined;
+	const d = await folder();
+	if (!d) return undefined;
+	let file;
+	try {
+		file = await read(d, LEVEL + key);
+	} catch {
+		return undefined;
+	}
+	if (!file) return undefined;
+	touch(LEVEL + key);
+	try {
+		return unpacked(file);
+	} catch {
+		await removed(d, LEVEL + key);
+		return undefined;
+	}
+}
+
+/**
+ * Keeps what was made from a build under `key` (`levelKeyOf`), as a build is kept: once the builds stop coming in, one
+ * after another, the entries used longest ago let go past LIMIT. False if it was not kept.
+ * @param {string} key @param {any} value plain data
+ */
+export function putLevel(key, value) {
+	const turn = quiet()
+		.then(() => keeps())
+		.then(async (yes) => {
+			const d = yes && (await folder());
+			if (!d || !HASH.test(key)) return false;
+			const file = packed(value);
+			if (file.byteLength > LIMIT) return false;
+			await write(d, LEVEL + key, file);
+			if (held !== null) held += file.byteLength;
+			if (held === null || held > LIMIT) held = await trim(d);
+			return true;
+		})
+		.catch(() => false);
+	const after = line.then(() => turn);
+	line = after.catch(() => {});
+	return after;
 }
 
 /** puts something in under `key` as it is, unchecked: for the lab, to show a spoiled entry is refused @param {string} key */

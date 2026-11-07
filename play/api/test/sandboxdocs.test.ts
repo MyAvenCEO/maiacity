@@ -96,7 +96,7 @@ suite("a sandbox's layout as a document", () => {
 
   test("c1: edited in an intent variant with its helpers, proposed, reviewed pin by pin, accepted, its rows written from Main", async () => {
     // a plant of two versions, the second of variants, pinned in Sandbox 2 at v1 as the import writes pins
-    const p1 = await call("ada", "POST", "/api/intents", { new: { group: "plants", slug: "pawpaw-t", label: "Pawpaw" }, recipe: recipe("pawpaw-t", 1), intent: await ready("A pawpaw") });
+    const p1 = await call("ada", "POST", "/api/intents", { new: { group: "plants", slug: "pawpaw-t", label: "Pawpaw" }, recipe: recipe("pawpaw-t", 1), card: { lod: { levels: "derived" } }, intent: await ready("A pawpaw") });
     await call("ada", "POST", `/api/intents/${p1.data.intent}/accept`);
     const asset = p1.data.asset, v1 = p1.data.version;
     await db.query(`INSERT INTO play.sandbox_pins (sandbox_id, slot, version_id, params) VALUES ($1, 'grove/pawpaw', $2, '{"stage":"9"}'), ($1, 'gate', $2, NULL)`, [S2, v1]);

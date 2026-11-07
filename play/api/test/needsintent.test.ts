@@ -87,7 +87,7 @@ suite("no work without an intent", () => {
   };
   /** each work path, with work it takes, for intent `intent` (left out where undefined) */
   const PATHS: Record<string, (intent?: string) => Promise<{ error?: string; status?: number; intent?: string }>> = {
-    propose_asset: (intent) => tool("propose_asset", { group: "plants", label: `A fern ${++n}`, source: SOURCE(`a fern ${n}`), note: "a new asset", ...(intent ? { intent } : {}) }),
+    propose_asset: (intent) => tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: `A fern ${++n}`, source: SOURCE(`a fern ${n}`), note: "a new asset", ...(intent ? { intent } : {}) }),
     propose_story: (intent) => tool("propose_story", { title: `A film ${++n}`, body: BODY, note: "a new story", ...(intent ? { intent } : {}) }),
     propose_doc_version: (intent) => tool("propose_doc_version", { doc: K, note: `more ${++n}`, edits: [{ op: "set", path: ["system"], value: `Say it ${n}.` }], ...(intent ? { intent } : {}) }),
     doc_edit: (intent) => tool("doc_edit", { doc: K, message: `an edit ${++n}`, edits: [{ op: "set", path: ["system"], value: `Edited ${n}.` }], ...(intent ? { intent } : {}) }),
@@ -109,7 +109,7 @@ suite("no work without an intent", () => {
     // what the paths change: a skill, an asset, an artifact, each accepted for an intent of its own
     K = crypto.randomUUID();
     await seedDoc(db, "skill", { id: K, json: { schema: "skill/1", label: "A skill", group: "tests", system: "Say it." }, note: "v1" });
-    const a = await tool("propose_asset", { group: "plants", label: "The fern", source: SOURCE("the fern"), note: "v1", intent: await readyIntent("The fern") });
+    const a = await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: "The fern", source: SOURCE("the fern"), note: "v1", intent: await readyIntent("The fern") });
     expect((await call("ada", "POST", `/api/intents/${a.intent}/accept`)).status).toBe(200);
     asset = a.asset;
     const r = await tool("add_artifact", { ...ARTIFACT("https://needsintent.example/kept"), intent: await readyIntent("A page kept") });

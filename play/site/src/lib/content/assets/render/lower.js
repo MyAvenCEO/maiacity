@@ -4,8 +4,8 @@
  * (./simplify.js), in a worker of its own where the browser has one, so even the biggest machine (the LifeTrac, one
  * shape of 437,713 corners) never holds the page's frames: a second or two of simplifying happens off them. Without a
  * worker, in the page, a step at a time between frames. One kind at a time, in the order they were asked for (a
- * recipe's level made lighter, which is drawn as it came meanwhile, after all the others), and kept only in memory: a
- * device that has the build makes its levels again in a moment.
+ * recipe's level made lighter, which is drawn as it came meanwhile, after all the others). What it makes is kept on
+ * the device by ./levels.js, so a build's levels are made once a device.
  */
 import * as THREE from 'three';
 import { LEFT, lowerDraws } from './simplify.js';
@@ -91,7 +91,7 @@ export function createLowering(o = {}) {
 	/** @type {Map<number, { ok: Function, no: Function }>} */
 	const waiting = new Map();
 	/** one kind at a time, in the order asked for, those that can wait (`later`) after all the others */
-	/** @type {{ source: any, plans: any[], later: boolean, ok: Function, no: Function }[]} */
+	/** @type {{ source: any, plans: any[], later: boolean, raw: boolean, ok: Function, no: Function }[]} */
 	const jobs = [];
 	let running = false;
 
@@ -149,7 +149,7 @@ export function createLowering(o = {}) {
 		running = true;
 		Promise.resolve()
 			.then(() => run(job.source.draws.map(plainOf), job.plans))
-			.then((made) => job.ok(made.map((m) => levelOf(job.source, m))), job.no)
+			.then((made) => job.ok(job.raw ? made : made.map((m) => levelOf(job.source, m))), job.no)
 			.finally(() => {
 				running = false;
 				busy--;
@@ -160,12 +160,13 @@ export function createLowering(o = {}) {
 	return {
 		/**
 		 * The levels of `source` each plan asks for. `later`: one that can wait (a recipe's level made lighter, drawn as
-		 * it came meanwhile) waits for every other asked for.
+		 * it came meanwhile) waits for every other asked for. `raw`: what the simplifier made of each, as plain data (to be
+		 * kept: ./levels.js), not yet a level (`levelOf`).
 		 */
-		lower(source, plans, later = false) {
+		lower(source, plans, later = false, raw = false) {
 			busy++;
 			return new Promise((ok, no) => {
-				jobs.push({ source, plans, later, ok, no });
+				jobs.push({ source, plans, later, raw, ok, no });
 				pump();
 			});
 		},

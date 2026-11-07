@@ -250,6 +250,22 @@ id, number, recipe file and source hash are exactly what they were, and nothing 
   manifest is refused, saying which. The asset viewer and the intents' board name a version's pieces (label, version,
   hash). The imported legacy sources are kept the same way in the repository (`play/api/import/legacy/sources/pieces`,
   each shared part once, every source rebuilt byte for byte to its hash).
+- **One level-of-detail contract for every asset** (intent a2935147, Samuel 2026-11-07). Every asset is drawn at four
+  levels by the one renderer (`play/site`'s `content/assets/render/`), chosen by its size on screen alone (`lod.js`:
+  `LEVELS`, `HOLD`, `BAND`, its budgets): **L0** its build; **L1 and L2** its recipe's own where it declares them,
+  `module.exports.levels = [{ values: { … } }, …]` (a plain literal; each the same recipe built with those values,
+  which its params declare), else derived from its build by simplifying it (`simplify.js`, in a worker), each within
+  its budget; **L3** its picture from eight sides (`impostors.js`). A new version names which on its card, `lod:
+  { levels: 'declared' | 'derived', budgets? }` (`propose_asset`'s `lod`, a card field of the asset's document):
+  `propose_asset`, the page's proposal and `propose_doc_version` refuse a new version without it, or a declared one
+  whose source exports none, or a derived one whose source does (`play/api/src/lod.ts`); play reads a declared one's
+  levels off its source (it runs no code) and writes them on the card as `lod.values`, which the page reads before it
+  builds anything (`content/assets/lodcard.js`). A version from before names none and is read as derived, drawn as it
+  was (one that took a `detail`, every plant until then, as declaring Sandbox 4's details 1, 0.25 and 0.1): no
+  migration. **Every level is made once a device:** each derived level and each picture is kept in the device's cache
+  (`cache.js`, OPFS) under its key, the build's name (`<hash>?values`), the level, what it is made to and its maker's
+  version (`simplify.js` and `impostors.js` `VERSION`; `render/levels.js`), so a second visit, or a second world on the
+  same device, simplifies and photographs nothing; a declared level is a build, kept as builds are.
 
 ### 4.6 A sandbox's layout, a document (Samuel 2026-11-04 and 2026-11-06)
 

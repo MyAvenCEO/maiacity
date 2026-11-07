@@ -103,10 +103,10 @@ suite("pieces", () => {
 
   test("propose_asset requiring a hash that is no accepted piece version is refused; one that is lists it in its manifest", async () => {
     const none = hashText(pieceSource(99));
-    await expect(proposeAsset(db, store, await me(), { new: { group: "machines", label: "Cart" }, note: "a cart", source: assetSource(none), intent: await building("A cart") })).rejects.toThrow(/no accepted version of a piece/);
+    await expect(proposeAsset(db, store, await me(), { card: { lod: { levels: "derived" } }, new: { group: "machines", label: "Cart" }, note: "a cart", source: assetSource(none), intent: await building("A cart") })).rejects.toThrow(/no accepted version of a piece/);
     const piece = await newPiece("Wheels", pieceSource(3));
     const hash = hashText(pieceSource(3));
-    const p = await proposeAsset(db, store, await me(), { new: { group: "machines", label: "Cart" }, note: "a cart on the kit", source: assetSource(hash), intent: await building("A cart") });
+    const p = await proposeAsset(db, store, await me(), { card: { lod: { levels: "derived" } }, new: { group: "machines", label: "Cart" }, note: "a cart on the kit", source: assetSource(hash), intent: await building("A cart") });
     const card = (await db.query<any>(`SELECT card FROM play.asset_versions WHERE id = $1`, [p.version])).rows[0].card;
     expect(card.manifest.pieces).toEqual([hash]);
     expect(card.manifest.libs).toEqual([]);
@@ -116,7 +116,7 @@ suite("pieces", () => {
   test("an accepted asset version keeps building the piece version it names after the piece's next version", async () => {
     const piece = await newPiece("Axles", pieceSource(2));
     const v1 = hashText(pieceSource(2));
-    const p = await proposeAsset(db, store, await me(), { new: { group: "machines", label: "Wagon" }, note: "a wagon", source: assetSource(v1), intent: await building("A wagon") });
+    const p = await proposeAsset(db, store, await me(), { card: { lod: { levels: "derived" } }, new: { group: "machines", label: "Wagon" }, note: "a wagon", source: assetSource(v1), intent: await building("A wagon") });
     expect((await decide(ctx(), await me(), p.intent, "accept")).status).toBe("accepted");
     // the piece's next version
     const next = await proposeDocVersion(ctx(), await me(), { doc: piece, edits: [{ op: "set", path: ["source"], value: pieceSource(6) }], note: "six axles", intent: await building("Six axles") });
@@ -146,7 +146,7 @@ suite("pieces", () => {
     const { rows } = await db.query<any>(`SELECT depth FROM play.piece_versions WHERE hash = $1`, [below]);
     expect(rows[0].depth).toBe(MOST_DEEP);
     // an asset on the top one lists every piece beneath it
-    const p = await proposeAsset(db, store, await me(), { new: { group: "machines", label: "Tower" }, note: "a tower", source: assetSource(below), intent: await building("A tower") });
+    const p = await proposeAsset(db, store, await me(), { card: { lod: { levels: "derived" } }, new: { group: "machines", label: "Tower" }, note: "a tower", source: assetSource(below), intent: await building("A tower") });
     const card = (await db.query<any>(`SELECT card FROM play.asset_versions WHERE id = $1`, [p.version])).rows[0].card;
     expect(card.manifest.pieces).toEqual(chain);
     // one more layer is refused

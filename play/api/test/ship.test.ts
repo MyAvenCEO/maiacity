@@ -175,7 +175,7 @@ suite("accept ships it", () => {
     await tool("specify_intent", { intent: w.id, ...SPEC });
     await call("ada", "POST", `/api/intents/${w.id}/approve`);
     await tool("check_intent", { intent: w.id, results: [{ check: "c1", pass: true, evidence: "ok" }, { check: "c2", pass: true, evidence: "1.0" }] });
-    const made = await tool("propose_asset", { group: "plants", label: "Ship fern", source: SOURCE, note: "x", intent: w.id });
+    const made = await tool("propose_asset", { lod: { levels: "derived" }, group: "plants", label: "Ship fern", source: SOURCE, note: "x", intent: w.id });
     expect(made.error).toBeUndefined();
     expect((await tool("check_intent", { intent: w.id, pr: 8 })).error).toBeDefined();
     const before = gh.calls.length;

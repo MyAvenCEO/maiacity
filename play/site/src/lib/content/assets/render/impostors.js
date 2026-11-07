@@ -20,6 +20,13 @@ import { budget } from '../../render/budget.js';
 export const FRAMES = 8;
 
 /**
+ * This photographer's version: part of the key every picture it took is kept by on this device (../cache.js
+ * `levelKeyOf`, ./levels.js). Raised whenever a picture it takes changes (its light, its frame, its sides), so no
+ * picture taken the old way is laid on a page again.
+ */
+export const VERSION = 1;
+
+/**
  * @typedef {{ page: number, cell: number, size: number, foot: number }} Slot where a kind's pictures are: its page,
  *   its first cell there, and its frame (a square `size` metres a side, its lower edge `foot` metres above the
  *   asset's own ground)
@@ -140,13 +147,9 @@ export function createImpostors(renderer, o = {}) {
 		for (const m of thing.children) m.dispose();
 	}
 
-	/**
-	 * A kind photographed from its eight sides onto a page.
-	 * @param {import('./prepare.js').Level} level the shape it is photographed from (its coarsest)
-	 * @returns {Slot}
-	 */
-	function add(level) {
-		lit();
+	/** room for a kind's pictures on a page, and its frame: square, as wide as it reaches out both ways or as tall as it
+	 *  stands, whichever is more */
+	function slotFor(level) {
 		let p = pages.findIndex((x) => x.kinds < kindsPerPage);
 		if (p < 0) {
 			pages.push(pageOf());
@@ -154,10 +157,23 @@ export function createImpostors(renderer, o = {}) {
 		}
 		const page = pages[p];
 		const cell = page.kinds++ * FRAMES;
-		// its frame: square, as wide as it reaches out both ways or as tall as it stands, whichever is more
 		const size = Math.max(0.05, Math.max(level.reach * 2, level.height - Math.min(0, level.bottom)) * 1.06);
 		const mid = (Math.min(0, level.bottom) + level.height) / 2;
-		const foot = mid - size / 2;
+		return { page: p, cell, size, foot: mid - size / 2, mid };
+	}
+
+	/** where frame f of a slot is on its page (pixels) */
+	const at = (slot, f) => ({ x: ((slot.cell + f) % cols) * px, y: Math.floor((slot.cell + f) / cols) * px });
+
+	/**
+	 * A kind photographed from its eight sides onto a page.
+	 * @param {import('./prepare.js').Level} level the shape it is photographed from (its coarsest)
+	 * @returns {Slot}
+	 */
+	function add(level) {
+		lit();
+		const { page: p, cell, size, foot, mid } = slotFor(level);
+		const page = pages[p];
 		const thing = thingOf(level);
 		studio.add(thing);
 		const D = level.reach + size + 10;
@@ -208,6 +224,51 @@ export function createImpostors(renderer, o = {}) {
 		group,
 		prepare,
 		add,
+		/** each picture's pixels a side, as this device takes them (part of a kept picture's key: ./levels.js) */
+		px,
+		/**
+		 * A kind's eight pictures as they are on its page, read back off the graphics card without holding a frame
+		 * (WebGL 2's asynchronous read): each frame's pixels, RGBA, as the page holds them. Null where this renderer
+		 * can't read a page back so.
+		 * @param {Slot} slot @returns {Promise<Uint8Array[] | null>}
+		 */
+		async read(slot) {
+			const page = pages[slot.page];
+			if (!page || typeof renderer.readRenderTargetPixelsAsync !== 'function' || !renderer.capabilities.isWebGL2) return null;
+			const out = [];
+			for (let f = 0; f < FRAMES; f++) {
+				const { x, y } = at(slot, f);
+				const pixels = new Uint8Array(px * px * 4);
+				await renderer.readRenderTargetPixelsAsync(page.target, x, y, px, px, pixels);
+				out.push(pixels);
+			}
+			return out;
+		},
+		/**
+		 * A kind's pictures laid on a page from what was read back before (`read`, kept on this device: ./levels.js):
+		 * nothing photographed. Its frame as `add` makes it of the same shape.
+		 * @param {import('./prepare.js').Level} level @param {Uint8Array[]} frames @returns {Slot}
+		 */
+		put(level, frames) {
+			if (!Array.isArray(frames) || frames.length !== FRAMES || frames.some((f) => !(f instanceof Uint8Array) || f.length !== px * px * 4)) throw new Error('refused: pictures of another size');
+			const slot = slotFor(level);
+			const page = pages[slot.page];
+			const mips = page.target.texture.generateMipmaps;
+			page.target.texture.generateMipmaps = false;
+			const to = new THREE.Vector2();
+			frames.forEach((data, f) => {
+				const t = new THREE.DataTexture(data, px, px, THREE.RGBAFormat, THREE.UnsignedByteType);
+				t.colorSpace = THREE.SRGBColorSpace;
+				t.generateMipmaps = false;
+				const { x, y } = at(slot, f);
+				renderer.copyTextureToTexture(t, page.target.texture, null, to.set(x, y));
+				t.dispose();
+			});
+			page.target.texture.generateMipmaps = mips;
+			page.stale = true;
+			const { mid: _, ...out } = slot;
+			return out;
+		},
 		/**
 		 * The smaller copies of each page that has new pictures, made again (for afar, where a picture is averaged
 		 * down): once for all the pictures taken since they were last made. Before a frame draws any card.

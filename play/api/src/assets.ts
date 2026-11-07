@@ -2,6 +2,7 @@
 // version's variants, and a ref resolved to the recipe file a sandbox builds.
 import type { Queryable } from "./pg";
 import { piecesShown } from "./pieces";
+import { lodOf } from "./lod";
 
 export class NotFound extends Error {
   status = 404;
@@ -25,6 +26,8 @@ export const summary = (record: any, parent?: any) => {
     sheet: typeof record?.sheet === "string" ? record.sheet : null,
     datasheet: typeof record?.datasheet === "string" ? record.datasheet : null,
     brief: typeof record?.brief === "string" ? record.brief : null,
+    // its levels of detail (./lod.ts): a version from before the contract names none, and is read as derived
+    lod: lodOf(c),
   };
 };
 

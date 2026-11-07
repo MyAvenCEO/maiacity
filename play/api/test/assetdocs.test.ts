@@ -10,7 +10,8 @@ import { app } from "../src/app";
 import { createHuman, initSessions, tokenFor } from "../src/auth";
 import { folderStore, keyOf, type BlobStore } from "../src/blobs";
 import { meOf } from "../src/access";
-import { catalogOf, pinsOf } from "../src/assets";
+import { assetOf, catalogOf, pinsOf } from "../src/assets";
+import { leveled } from "./fixtures/lod";
 import { assetDocId, ensureAssetDocs, HISTORY, proposeAsset, recipeAt } from "../src/assetdocs";
 import * as docs from "../src/docs";
 import { hashText } from "../src/hash";
@@ -104,7 +105,7 @@ suite("assets as documents", () => {
   const me = (n: string) => meOf(db, who[n].id);
   const ctx = () => ({ db, store });
   const decide = (_db: Db, _store: BlobStore, m: any, id: string, v: "accept" | "archive") => decideWith(ctx(), m, id, v);
-  const propose = proposeAsset;
+  const propose: typeof proposeAsset = (db, store, me, body, via) => proposeAsset(db, store, me, leveled(body), via);
   const history = async (m: any, id: string) => docHistory(ctx(), m, id);
 
   test("every asset's history is made from its versions: each version a step named its own number, its source byte for byte, nothing else changed", async () => {
@@ -205,6 +206,9 @@ suite("assets as documents", () => {
     await expect(docEdit(ctx(), ada, { doc: ids.fern, intent, variant: s1.variant, message: "x", edits: [{ op: "replace", find: "nowhere at all", replace: "y" }] })).rejects.toThrow(/not in the source/);
     // Main is untouched by an intent variant
     expect((await docs.readDoc(db, assetDocId(ids.fern))).json.source).toBe(written.fern[4].source);
+    // its head is from before the contract and names no levels of detail: the new version is refused until it names them
+    await expect(proposeDocVersion(ctx(), ada, { doc: ids.fern, note: "a curled frond", variant: s1.variant, intent }, "mcp")).rejects.toThrow(/names its levels of detail/);
+    await docEdit(ctx(), ada, { doc: ids.fern, intent, variant: s1.variant, message: "its levels derived", edits: [{ op: "set", path: ["card", "card", "lod"], value: { levels: "derived" } }] });
     const p: any = await proposeDocVersion(ctx(), ada, { doc: ids.fern, note: "a curled frond", variant: s1.variant, intent }, "mcp");
     expect(p.variant).toBe(s1.variant);
     expect(p.number).toBe(5);
@@ -267,6 +271,39 @@ suite("assets as documents", () => {
     const preview = await docs.previewMerge(db, id, b2.id);
     const v = await docs.accept(db, id, b2.id, { author: a, mergedHash: preview.contentHash });
     expect(v.contentHash).toBe(preview.contentHash);
+  });
+
+  test("a new version names its levels", async () => {
+    const ada = (await me("ada"))!;
+    const PARAMS = [{ id: "detail", label: "Detail", type: "number", value: 1, min: 0.05, max: 1 }];
+    const derived = src("a stool, its levels derived");
+    const declared = `${src("a shrub of its own levels")}module.exports.levels = [\n  { values: { detail: 0.25 } }, // L1\n  { values: { detail: 0.1 } }, // L2\n];\n`;
+    const make = (body: any) => proposeAsset(db, store, ada, { new: { group: "plants", label: "Shrub" }, note: "levels", ...body });
+    // a new asset version without card.lod is refused, saying so, and nothing is written
+    const before = (await db.query(`SELECT count(*)::int AS n FROM play.asset_versions`)).rows[0].n;
+    await expect(make({ source: derived, intent: await building("A stool") })).rejects.toThrow(/names its levels of detail on its card: lod = \{ levels: 'declared' \}/);
+    expect((await db.query(`SELECT count(*)::int AS n FROM play.asset_versions`)).rows[0].n).toBe(before);
+    // its shape and its source are held to it: an unknown level kind, a declared one its source doesn't export, a
+    // derived one whose source exports levels, a level setting a value no param declares
+    await expect(make({ source: derived, card: { lod: { levels: "some" } }, intent: await building("A stool") })).rejects.toThrow(/'declared'.*'derived'/);
+    await expect(make({ source: derived, card: { lod: { levels: "declared" } }, intent: await building("A stool") })).rejects.toThrow(/declares none/);
+    await expect(make({ source: declared, card: { params: PARAMS, lod: { levels: "derived" } }, intent: await building("A shrub") })).rejects.toThrow(/name them with lod.levels 'declared'/);
+    await expect(make({ source: declared, card: { lod: { levels: "declared" } }, intent: await building("A shrub") })).rejects.toThrow(/params don't declare/);
+    await expect(make({ source: `${derived}module.exports.levels = LEVELS;\n`, card: { params: PARAMS, lod: { levels: "declared" } }, intent: await building("A shrub") })).rejects.toThrow(/plain literal/);
+    // with lod it is taken: derived, as named; declared, its levels read from its source onto its card
+    const a = await make({ source: derived, card: { lod: { levels: "derived", budgets: [4000, 1200, 320] } }, intent: await building("A stool") });
+    const ca = (await db.query<any>(`SELECT card FROM play.asset_versions WHERE id = $1`, [a.version])).rows[0].card;
+    expect(ca.card.lod).toEqual({ levels: "derived", budgets: [4000, 1200, 320] });
+    const b = await make({ source: declared, card: { params: PARAMS, lod: { levels: "declared" } }, intent: await building("A shrub") });
+    const cb = (await db.query<any>(`SELECT card FROM play.asset_versions WHERE id = $1`, [b.version])).rows[0].card;
+    expect(cb.card.lod).toEqual({ levels: "declared", values: [{ detail: 0.25 }, { detail: 0.1 }] });
+    // accepted, its next version carries its levels on from its head
+    await decide(db, store, ada, a.intent, "accept");
+    const next = await proposeAsset(db, store, ada, { asset: a.asset, note: "a taller stool", source: src("a taller stool"), intent: await building("A taller stool") });
+    expect((await db.query<any>(`SELECT card FROM play.asset_versions WHERE id = $1`, [next.version])).rows[0].card.card.lod).toEqual({ levels: "derived", budgets: [4000, 1200, 320] });
+    // an existing version, from before the contract, names none and is read as derived
+    const old = await assetOf(db, await writeAsset("plants", "old-shrub", [{ n: 1, source: src("an old shrub") }, { n: 2, source: src("an old shrub, taller") }]));
+    expect(old.versions.map((v: any) => v.lod)).toEqual([{ levels: "derived" }, { levels: "derived" }]);
   });
 
   test("over MCP: doc_edit, doc_history, get_asset at an edit", async () => {

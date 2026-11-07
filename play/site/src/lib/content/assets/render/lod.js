@@ -2,9 +2,9 @@
 /*
  * HOW FINELY TO DRAW A THING — chosen by how big it looks, never by how far off it is, so one rule fits a cup and a
  * tree: its size on the screen (the ball that holds it, as a share of the view's height). Every asset has three levels
- * of its shape and, smallest, its picture (./impostors.js): a recipe that takes a `detail` (the plants) is built at a
- * lower detail for each, and every other asset's lower levels are made from its finest by simplifying it
- * (./simplify.js), each within what it may cost (BUDGETS). Each level is drawn while the thing looks at least as big as
+ * of its shape and, smallest, its picture (./impostors.js), by one contract (../lodcard.js): a recipe that declares its
+ * own L1 and L2 is built with their values for each, and every other asset's lower levels are made from its finest by
+ * simplifying it (./simplify.js), each within what it may cost (BUDGETS). Each level is drawn while the thing looks at least as big as
  * its threshold; a coarser one fades in under it (the dither of ./presets.js) over the last stretch before, so when it
  * takes over it is already there.
  *

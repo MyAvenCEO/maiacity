@@ -32,6 +32,7 @@ import { newId, UUID } from "./uuid";
 import { asVersionError, named, versionAt, VersionError, type Ctx, type Verdict } from "./versioned";
 import { closeWork, holdVariant, putAtProposal, settle, WORK_OF, WorkError } from "./work";
 import { SCHEMA } from "./ids";
+import { heldLod, lodGiven, LodError } from "./lod";
 
 export const HISTORY = join(import.meta.dir, "../import/history");
 export const assetDocId = (asset: string) => `asset:${asset}`;
@@ -626,7 +627,16 @@ function cardFields(card: unknown): Record<string, unknown> {
   if (typeof card !== "object" || Array.isArray(card)) throw new VersionError("The card's fields come as an object.");
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(card)) {
-    if (k !== "params") throw new VersionError(`A proposal sets only the card's params, not ${k}.`);
+    if (k === "lod") {
+      // its levels of detail (./lod.ts), checked for shape here and held to its source once its source is known
+      try {
+        out.lod = lodGiven(v);
+      } catch (e) {
+        throw e instanceof LodError ? new VersionError(e.message) : e;
+      }
+      continue;
+    }
+    if (k !== "params") throw new VersionError(`A proposal sets only the card's params and lod, not ${k}.`);
     if (!Array.isArray(v) || v.length > 24) throw new VersionError("params is a list of at most 24 parameters.");
     const ids = new Set<string>();
     for (const p of v as any[]) {
@@ -743,6 +753,8 @@ export async function proposeAsset(db: Db, store: BlobStore, me: Me | null, give
   // are the version's where the proposal brings none of its own
   let draft: number | undefined;
   let breeding = false;
+  /** the levels of detail its intent variant's card names (./lod.ts), which a variant naming none of its own takes */
+  let draftLod: unknown;
   if (body.variant == null && body.asset !== undefined && (await db.query(`SELECT 1 FROM play.doc_variants WHERE doc_id = $1 AND type = 'breed' AND status = 'open'`, [assetDocId(asset)])).rows.length)
     throw new VersionError("This asset has breeds: change it with doc_edit and propose_doc_version (Main, a breed with `breed`, or a new one with `new_breed`), so every breed is built from it.", 409);
   if (body.variant != null) {
@@ -758,6 +770,7 @@ export async function proposeAsset(db: Db, store: BlobStore, me: Me | null, give
       });
     if ((d.base ?? null) !== (a[0]?.number ?? null)) throw new VersionError(`This asset has a newer version than the one variant ${d.id} was seeded from: start a variant again on its head.`, 409);
     draft = d.id;
+    draftLod = d.json.card?.card?.lod;
     // an asset of breeds (play/SPEC.md "Breeds"): the version is Main as it would then be, with every breed built from
     // it as its variant (the breed the intent variant changes, or makes, as it changes it)
     const bred = await db.transaction((q) => breedsFor(q, asset, d.id, d.json)).catch((e) => {
@@ -832,7 +845,22 @@ export async function proposeAsset(db: Db, store: BlobStore, me: Me | null, give
     refs[k] = h;
   }
   for (const v of Object.values(variants)) v.card = withRefs(v.card, refs);
-  const card = withRefs(recipe ? recordOf(heldRecord(over(inherited(body.record, a[0]?.card), set), own!.libs, own!.source, own!.pieces), grp, slug, n, null, recipe) : variants[defaultVariant!].card, refs);
+  let card = withRefs(recipe ? recordOf(heldRecord(over(inherited(body.record, a[0]?.card), set), own!.libs, own!.source, own!.pieces), grp, slug, n, null, recipe) : variants[defaultVariant!].card, refs);
+  // its levels of detail (./lod.ts, play/SPEC.md §4.5): named on every new version's card, a declared one's levels
+  // read from its source (play runs no code) and written beside them
+  const leveled = (rec: any, text: string, what: string) => {
+    try {
+      const params = ((rec?.card?.params ?? rec?.params ?? []) as any[]).map((p) => `${p?.id}`);
+      return { ...rec, card: { ...(rec?.card ?? {}), lod: heldLod(rec?.card?.lod, text, params, what) } };
+    } catch (e) {
+      throw e instanceof LodError ? new VersionError(e.message) : e;
+    }
+  };
+  // a variant naming none of its own takes the version's (given, its intent variant's, or its head's)
+  const versionLod = set.lod ?? body.record?.card?.lod ?? draftLod ?? a[0]?.card?.card?.lod;
+  for (const [name, x] of Object.entries(variants))
+    x.card = leveled(x.card?.card?.lod === undefined && versionLod !== undefined ? { ...x.card, card: { ...x.card.card, lod: versionLod } } : x.card, variantTexts[name], `A new asset version (its variant ${name})`);
+  card = recipe ? leveled(card, ownText, "A new asset version") : variants[defaultVariant!].card;
   // every other asset a version names, it names by hash (play/SPEC.md §4)
   const readable = [card, ...Object.values(variants).map((x) => x.card)].flatMap((c) => readableRefs(c, `${grp}/${slug}`));
   if (readable.length) throw new VersionError(`Name other assets by their hash, not ${readable.slice(0, 3).join(", ")}.`);
