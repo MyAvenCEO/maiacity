@@ -32,6 +32,7 @@ import { newId, UUID } from "./uuid";
 import { asVersionError, named, versionAt, VersionError, type Ctx, type Verdict } from "./versioned";
 import { closeWork, holdVariant, putAtProposal, settle, stageAfter, WORK_OF, WorkError } from "./work";
 import { SCHEMA } from "./ids";
+import { GROUPS, isGroup } from "./groups";
 
 export const HISTORY = join(import.meta.dir, "../import/history");
 export const assetDocId = (asset: string) => `asset:${asset}`;
@@ -514,7 +515,6 @@ export async function recipeAt(db: Db, store: BlobStore, me: Me | null, asset: s
 /** the work an asset's version is */
 const ASSET_WORK = "asset_version";
 
-const GROUP = /^(plants|things|machines|buildings|actors|biomes|worlds)$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,79}$/;
 /** a label as a slug: its letters and digits, lowercase, joined by '-' */
 const slugOf = (label: string) =>
@@ -707,7 +707,7 @@ export async function proposeAsset(db: Db, store: BlobStore, me: Me | null, give
     // with, made from the label where none is given), and another asset may share them
     grp = `${body?.new?.group ?? ""}`;
     slug = body?.new?.slug == null || body.new.slug === "" ? slugOf(`${body?.new?.label ?? ""}`) : `${body.new.slug}`;
-    if (!GROUP.test(grp)) throw new VersionError("A new asset needs its group (plants, things, machines, buildings, actors, biomes, worlds).");
+    if (!isGroup(grp)) throw new VersionError(`A new asset needs its group (${GROUPS.join(", ")}).`);
     if (!SLUG.test(slug)) throw new VersionError("A new asset's slug is lowercase words joined by '-' (or give a label to make it from).");
     asset = newId();
   }
@@ -747,13 +747,20 @@ export async function proposeAsset(db: Db, store: BlobStore, me: Me | null, give
       .transaction(async (q) => {
         await ensureAssetDoc(q, store, asset);
         const dr = await openVariantOf(q, asset, body.variant);
-        return { ...dr, json: await variantState(q, asset, dr.id) };
+        return { ...dr, json: await variantState(q, asset, dr.id), seed: await docs.seedOf(q, assetDocId(asset), dr.id) };
       })
       .catch((e) => {
         throw e instanceof AssetDocError ? new VersionError(e.message, e.status) : e;
       });
     if ((d.base ?? null) !== (a[0]?.number ?? null)) throw new VersionError(`This asset has a newer version than the one variant ${d.id} was seeded from: start a variant again on its head.`, 409);
     draft = d.id;
+    // a move to another group (intent 89f3ad37): an edit of the asset's own document, its card's group, changed from
+    // what it was at the variant's seed; the version is then of that group, and its Accept moves the asset there
+    const to = d.json.card?.card?.group;
+    if (to !== undefined && to !== grp && to !== d.seed?.card?.card?.group) {
+      if (!isGroup(to)) throw new VersionError(`${to} is not an asset group (${GROUPS.join(", ")}).`);
+      grp = to;
+    }
     // an asset of breeds (play/SPEC.md "Breeds"): the version is Main as it would then be, with every breed built from
     // it as its variant (the breed the intent variant changes, or makes, as it changes it)
     const bred = await db.transaction((q) => breedsFor(q, asset, d.id, d.json)).catch((e) => {
@@ -944,7 +951,10 @@ export async function decideAsset(tx: Queryable, store: BlobStore, me: Me, p: an
     });
     const n = (a[0]?.number ?? 0) + 1;
     await tx.query(`UPDATE play.asset_versions SET number = $2, approved_by = $3 WHERE id = $1`, [p.version, n, me.id]);
-    await tx.query(`UPDATE play.assets SET head = $2 WHERE id = $1`, [p.asset_id, p.version]);
+    // the asset stands in the group its accepted version names (a move by its document, intent 89f3ad37)
+    const { rows: g } = await tx.query<{ grp: string | null }>(`SELECT card->'card'->>'group' AS grp FROM play.asset_versions WHERE id = $1`, [p.version]);
+    const grp = isGroup(g[0]?.grp) ? g[0].grp : null;
+    await tx.query(`UPDATE play.assets SET head = $2, grp = COALESCE($3, grp) WHERE id = $1`, [p.asset_id, p.version, grp]);
     await settle(tx, id, "accepted", byOf(me));
     await acceptVariant(tx, store, p, me, n);
     // a version proposed with its variants given whole: they are the asset's breeds from now on

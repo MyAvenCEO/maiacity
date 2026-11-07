@@ -187,7 +187,7 @@
 	// an intent may change several documents: every one's review, accepted together
 	let alsoDocs = $state<DocReview[]>([]);
 	/** what a proposal is of, its card's tag (Samuel 2026-11-05: the type, not how it came) */
-	const GROUP_TYPE: Record<string, string> = { plants: 'Plant', things: 'Thing', machines: 'Machine', buildings: 'Building', actors: 'Actor', biomes: 'Biome', worlds: 'World', sandboxes: 'Sandbox' };
+	const GROUP_TYPE: Record<string, string> = { plants: 'Plant', things: 'Thing', machines: 'Machine', buildings: 'Building', actors: 'Actor', characters: 'Character', biomes: 'Biome', worlds: 'World', sandboxes: 'Sandbox' };
 	const typeOf = (p: { what?: string | null; grp: string | null }) => GROUP_TYPE[p.grp ?? ''] ?? (p.what ? p.what[0].toUpperCase() + p.what.slice(1) : (p.grp ?? ''));
 	/** an intent's tag: what its work is (a plant, a story …) where it has some, else its kind */
 	const tagOf = (i: Intent) => (i.work ? typeOf(i.work) : kindName(i.kind));

@@ -1217,6 +1217,17 @@ Every route checks the caller's level against `level_rules`; a visitor gets 401 
 a chain, its variants, a viewer) · the intents (a modal from the nav pill's star, not a page: Idea, Specify, Build, Proposal, Ship, Accepted, Archived; §4.12) · `/game/` (placeholder; claim an invite to become a citizen) ·
 `/admin/` (members, invites) · `/artifacts/` (admins: every link we keep, §4.13).
 
+**The asset groups, each its own app** (Samuel 2026-11-04; `play/site/src/lib/app/groups.ts`): plants (`/plants/`),
+**characters** (`/characters/`), actors shown as Animals (`/animals/`), things, machines, buildings, biomes and worlds,
+each the asset library (`AssetLibrary.svelte`) given its group. The API names the groups once (`play/api/src/groups.ts`
+`GROUPS`: list_assets' and propose_asset's enum, a new asset's group and a move checked against it); the site's card and
+asset schemas list the same. **Characters** (intent 89f3ad37) are the people of Maia City (the Stand-in, the Elder
+woman), apart from the animals: the group `characters`, an app for admins only (its tile `admins: true`; its page sends
+anyone else back to `/`, as `/library/`). Who may read an asset is unchanged. **An asset moves to another group by its
+own document**, never by a migration: an intent variant's edit of its card's group (`doc_edit`, the path
+`["card", "card", "group"]`), proposed naming the intent (`propose_doc_version`), its version then of that group, and its
+Accept moves the asset there (`play.assets.grp`; `play/api/src/assetdocs.ts`); an unknown group is refused.
+
 **The Library** (`/library/`, Samuel 2026-11-04; `play/api/src/library.ts`): every image, video and recording play
 keeps among its `files` (§4.3), newest first, for Maia City's admins only. Each shows its preview (a video plays,
 a recording sounds), its media type, size and when it was kept, its **label**, and where the newest version of

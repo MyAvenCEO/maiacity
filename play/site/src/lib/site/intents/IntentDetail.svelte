@@ -54,7 +54,7 @@
 	const workKindName = (k: string) => (k === 'code' ? 'code' : (schemaNames.get(k) ?? k));
 	const whereOf = (r: Results[string]) => (r.where === 'main' ? `main${r.commit ? ` @ ${r.commit.slice(0, 7)}` : ''}` : 'avenBOX');
 	const titleOf = (w: Work) => (w.number == null ? 'a change' : `v${w.number}`);
-	const GROUP_TYPE: Record<string, string> = { plants: 'Plant', things: 'Thing', machines: 'Machine', buildings: 'Building', actors: 'Actor', biomes: 'Biome', worlds: 'World', sandboxes: 'Sandbox' };
+	const GROUP_TYPE: Record<string, string> = { plants: 'Plant', things: 'Thing', machines: 'Machine', buildings: 'Building', actors: 'Actor', characters: 'Character', biomes: 'Biome', worlds: 'World', sandboxes: 'Sandbox' };
 	const typeOf = (w: Work) => GROUP_TYPE[w.grp ?? ''] ?? (w.what ? w.what[0].toUpperCase() + w.what.slice(1) : (w.grp ?? ''));
 	const STEP_MARK: Record<ShipStep['state'], string> = { queued: '·', running: '●', green: '✓', red: '✗', skipped: '–' };
 	const STEP_WORD: Record<ShipStep['state'], string> = { queued: 'waiting', running: 'running', green: 'done', red: 'red', skipped: 'skipped' };

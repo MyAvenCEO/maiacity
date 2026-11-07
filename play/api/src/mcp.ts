@@ -31,13 +31,13 @@ import { instructionsOf, promptOf, promptsOf, SkillError } from "./skills";
 import { adminByToken } from "./tokens";
 import { STORY_ADMINS, AUDIO_TYPES, listStories, MOST_AUDIO, MOST_DOCUMENT, MOST_FRAME, MOST_LINK_DEPTH, MOST_VIDEO, proposeStory, putAudioBase64, putDocument, putFrameBase64, putVideoBase64, slimLinks, storyAt, storyOf, StoryError, VIDEO_TYPES } from "./stories";
 import { AssetDocError, assetAt, proposeAsset } from "./assetdocs";
+import { GROUPS, isGroup } from "./groups";
 import { listSandboxes, sandboxOf, SandboxError } from "./sandboxes";
 import { LIBRARY_KINDS, listLibrary } from "./library";
 import { addArtifact, AUTHOR_KINDS, authorOf, DESCRIPTION_MOST, listAuthors, listArtifacts, ORIGINS, ARTIFACT_KINDS, ArtifactError, artifactOf, SUMMARY_WORDS, TITLE_MOST as ARTIFACT_TITLE_MOST, updateArtifact } from "./artifacts";
 
 const PROTOCOL = "2025-06-18";
 const HASH = /^[0-9a-f]{64}$/;
-const GROUPS = ["plants", "things", "machines", "buildings", "actors", "biomes", "worlds"];
 
 type Tool = {
   name: string;
@@ -136,6 +136,7 @@ export function mcp({ db, store, github = null, commit }: { db: Db; store: BlobS
         additionalProperties: false,
       },
       run: async ({ group, query }) => {
+        if (group !== undefined && !isGroup(group)) throw new VersionError(`${group} is not an asset group (${GROUPS.join(", ")}).`);
         const all = await listAssets(db, group);
         const q = `${query ?? ""}`.trim().toLowerCase();
         return all

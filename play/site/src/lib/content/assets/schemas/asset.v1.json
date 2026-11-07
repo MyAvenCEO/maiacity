@@ -5,7 +5,7 @@
   "properties": {
     "kind": { "const": "asset" },
     "title": { "type": "string", "default": "" },
-    "group": { "enum": ["factories", "machines", "actors", "worlds", "buildings", "things", "biomes", "plants"] },
+    "group": { "enum": ["factories", "machines", "actors", "characters", "worlds", "buildings", "things", "biomes", "plants"] },
     "name": { "type": "string" },
     "version": { "type": "integer", "minimum": 1, "default": 1 },
     "note": { "type": "string", "x-loro": "text", "default": "" },

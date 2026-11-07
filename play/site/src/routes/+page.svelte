@@ -27,7 +27,7 @@
 	type Tile = { href: string; label: string; note: string; icon: (typeof GROUP_APPS)[number]['icon'] | 'play' | 'coops' | 'key' | 'database' | 'factory' | 'studio' | 'gear' | 'media' | 'link' | 'journal' | 'ledger'; admins?: boolean };
 	const APPS: Tile[] = [
 		// the asset library, a tile per group, each the same viewer (Samuel 2026-11-04)
-		...GROUP_APPS.map(({ href, label, note, icon }) => ({ href, label, note, icon })),
+		...GROUP_APPS.map((g) => ({ href: g.href, label: g.label, note: g.note, icon: g.icon, admins: 'admins' in g && g.admins })),
 		// the factories that build our assets, each a live simulation (routes/factories): first the LifeTrac line; admins
 		// only for now (Samuel 2026-11-03)
 		{ href: '/factories/', label: 'Factories', note: 'The LifeTrac line, every part from raw stock', icon: 'factory', admins: true },
