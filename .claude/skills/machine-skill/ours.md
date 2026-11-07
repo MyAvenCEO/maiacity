@@ -36,6 +36,38 @@ file has the same shape as every other sub skill.
   inferred.
 - Never name the brand or startup that inspired a machine, nor an engine's maker.
 
+### The reference sheet first: realism is the gate (Samuel, 2026-11-07)
+
+A machine that copies a real one (a car, a tractor, a pump of one make and year) is held to one picture of that real
+thing before any geometry, as a plant is (`plant-skill`, "The reference sheet"): its **reference sheet**, the
+machine's character sheet. It is not done while it looks less real than its sheet; "stylised" or "good enough at a
+distance" is not a finish. Realism is the gate.
+
+1. **Research and keep the sources** (above): its numbers in a data sheet (`datasheet.md`, every row with its value
+   and the UUID of the artifact it comes from), and 2–5 real photos from the three standard views kept as artifacts.
+2. **Write its brief** (`brief.md`): its exact name (make, model, version, years) and colour with its code, then a
+   paragraph each for the front, side, rear, inside and works, with the data sheet's numbers and every detail that
+   tells this version from its neighbours (hinges, roof, lamps, bumpers, trim); then `LAYOUT:` row by row. Row 1 the
+   turnaround at one scale on one ground line (side, front, rear, top); row 2 the three-quarter views (and any moving
+   state: a roof open, a lid up); row 3 the close-ups a modeller needs (a lamp, a wheel, trim, louvres, the inside, the
+   works) and a paint swatch beside a 24-patch colour checker. The Fiat 500 F's is the example (the intent's sheet,
+   below).
+3. **Make it in one call**: `bun .claude/skills/machine-skill/ours/sheet.ts --brief brief.md --datasheet datasheet.md
+   --out <scratchpad>/<machine> --label "<Machine, colour>"` (Nano Banana Pro on fal, 4K 16:9, `FAL_API_KEY` is the
+   session's; about $0.15–0.30). It writes `sheet-1.png` (5504 × 3072) and a JPEG under 4 MB, keeps it in play's
+   Library at once as `Reference sheet · <label> · 1` and prints its BLAKE3 hash. A wrong cell is made again with
+   `plant-skill/scripts/sheet-edit.ts`, as for a plant.
+4. **Read it like an engineer** against the data sheet and the photos: trust its shapes, proportions within one view,
+   details, materials and the way light falls; never its sizes between cells, its labels, or a colour the sources
+   contradict (the Fiat's sheet drew Rosso Corallo lighter and more salmon than the club's swatch #b1372f: the paint
+   keeps the swatch). Anything the sheet adds that the car must not carry (badges, script, plates with text, a mirror
+   that breaks the cited width) is left off and said so.
+5. **Show it to the user (SendUserFile) with what you found wrong, and wait for their go.** Then build from the sheet:
+   trace the turnaround's outlines (the side profile, the plan, the front and rear sections) off row 1 at the data
+   sheet's scale, place every lamp, seam and trim piece where the sheet has it, and check every render beside its
+   cell, view by view and close-up by close-up, until the two can be mistaken for each other. The version's note and
+   card name the sheet's hash.
+
 ### The Power Cube v3 pattern (`maia/content/machines/powercube.js`)
 
 - The file opens with AirSup's step 1 as its research comment: the machine's measures, its parts and materials, the
